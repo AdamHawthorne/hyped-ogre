@@ -3,7 +3,7 @@ import discord
 from cogs.ogre_voice import pick as ogre_say
 
 ACCENT = 0x8C5A3C
-FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"
+FOREVER_THUMBNAIL = "https://imagizer.imageshack.com/img924/9212/xkmy2Y.png"
 FOREVER_IMAGE = "https://i.vgy.me/CsHiRb.png"
 LEADERSHIP_APPLICATIONS_CHANNEL_ID = 1225020051418255370
 
