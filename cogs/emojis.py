@@ -20,6 +20,8 @@ EMOJI_IDS = {
     "MoveTo": 1565477356326617183,
     "ogrecoin": 1565481626488807434,
     "ogredice": 1565477510651846767,
+    "ogreivory": 1566177408556605460,
+    "ogredie": 1566175682034270288,
 }
 
 def markup(name):
@@ -43,3 +45,16 @@ def combat_role(role, klass="", spec=""):
     }:
         return "Caster"
     return "Melee"
+
+
+def roll_dice_name(day):
+    """Sunday double-coin dice; regular ivory dice on all other UK dates."""
+    return "ogredie" if day.weekday() == 6 else "ogreivory"
+
+
+def roll_dice_markup(day):
+    return markup(roll_dice_name(day))
+
+
+def roll_dice_emoji(day):
+    return option_emoji(roll_dice_name(day))
