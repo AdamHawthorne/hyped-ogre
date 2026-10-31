@@ -243,7 +243,7 @@ class RaidTabsTests(unittest.TestCase):
                     ("43", "Fast Rogue", "Barrows 🔸")
                 ])
 
-    def test_confirm_lock_absences_and_archive_keep_history(self):
+    def test_confirm_keeps_signups_open_absences_and_archive_keep_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             event = self.setup_raid(path)
@@ -254,12 +254,11 @@ class RaidTabsTests(unittest.TestCase):
                 confirmed_entries=[("42", "Snore Mon", "Hyjal"),
                                    ("43", "Fast Rogue", "Barrows 🔸")])
             self.assertEqual(confirmed["roster_published"], 1)
-            self.assertEqual(confirmed["signup_open"], 0)
+            self.assertEqual(confirmed["signup_open"], 1)
             self.assertIn("Roster confirmed:", raid_schedule.raid_roster_status(confirmed))
-            with self.assertRaisesRegex(ValueError, "Reopen"):
-                raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
-            with self.assertRaisesRegex(ValueError, "aren't open"):
-                raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
+            self.assertEqual(raid_schedule.save_raid(
+                path, 1, "2026-12-09 21:00", "Hyjal (20m)")["roster_published"], 1)
+            raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
             self.assertEqual(len(raid_schedule.confirmed_roster(path, 1)), 2)
             raid.save_absence(1, 42, "Away", path)
             self.assertEqual(raid_schedule.confirmed_roster(path, 1, {"42"}),
