@@ -5,7 +5,6 @@ import io
 import logging
 import sqlite3
 import time
-from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from contextlib import contextmanager
 
@@ -22,7 +21,7 @@ from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, read_public_roster, read_signup_roster, record_panel, save_raid, set_softres_url, delete_raid,
-    raid_status,
+    raid_status, validate_wcl_url,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -1391,14 +1390,11 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
         if not self.cog.allowed(interaction):
             await interaction.response.send_message("Officer-only.", ephemeral=True)
             return
-        url = str(self.wcl).strip()
-        if url:
-            parts = urlsplit(url)
-            if (parts.scheme != "https" or parts.hostname not in
-                    ("www.warcraftlogs.com", "warcraftlogs.com") or
-                    not parts.path.startswith("/reports/") or parts.username or parts.password):
-                await interaction.response.send_message("Invalid Warcraft Logs URL.", ephemeral=True)
-                return
+        try:
+            url = validate_wcl_url(str(self.wcl)) or ""
+        except ValueError:
+            await interaction.response.send_message("Invalid Warcraft Logs URL.", ephemeral=True)
+            return
         event = read_raid(RAID_DB, self.raid_id)
         if not event or not event.get("roster_published") or event.get("archived_at"):
             await interaction.response.send_message("Raid must be confirmed and not archived.", ephemeral=True)
@@ -1958,17 +1954,13 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             await interaction.response.send_message("Keep raid notes under 1500 characters.",
                                                     ephemeral=True)
             return
-        url = (wcl_url or "").strip()
-        if url:
-            parts = urlsplit(url)
-            if (len(url) > 500 or parts.scheme != "https"
-                    or parts.hostname not in ("www.warcraftlogs.com", "warcraftlogs.com")
-                    or parts.username or parts.password
-                    or not parts.path.startswith("/reports/")):
-                await interaction.response.send_message(
-                    "Use a secure https://www.warcraftlogs.com/reports/... link.",
-                    ephemeral=True)
-                return
+        try:
+            url = validate_wcl_url(wcl_url) or ""
+        except ValueError:
+            await interaction.response.send_message(
+                "Use an HTTPS Warcraft Logs report link (…/reports/…).",
+                ephemeral=True)
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             raid_status(RAID_DB, number, "archive", notes=notes, wcl_url=url)
