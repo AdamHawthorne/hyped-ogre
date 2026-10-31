@@ -73,7 +73,24 @@ def acknowledge(path, channel_id, message_id, member_id):
             "WHERE raid_id=? AND discord_id=? AND acknowledged_at IS NULL",
             (datetime.now(timezone.utc).isoformat(), raid_id, str(member_id)),
         )
-        return raid_id if changed.rowcount == 1 else None
+        if changed.rowcount != 1:
+            return None
+        con.execute("UPDATE raid_ack_announcements SET needs_refresh=1 "
+                    "WHERE raid_id=?", (raid_id,))
+        return raid_id
+
+
+def dirty_announcements(path):
+    with database(path) as con:
+        return [row[0] for row in con.execute(
+            "SELECT raid_id FROM raid_ack_announcements WHERE needs_refresh=1"
+        )]
+
+
+def mark_refreshed(path, raid_id):
+    with database(path) as con:
+        con.execute("UPDATE raid_ack_announcements SET needs_refresh=0 "
+                    "WHERE raid_id=?", (raid_id,))
 
 
 def render(raid_id, awaiting, total, panel_url=None):
