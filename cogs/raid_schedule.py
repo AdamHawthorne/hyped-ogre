@@ -120,7 +120,8 @@ def ensure_raid_fields(path):
                 raid_id INTEGER PRIMARY KEY REFERENCES raids(raid_id),
                 channel_id INTEGER NOT NULL,
                 message_id INTEGER NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                needs_refresh INTEGER NOT NULL DEFAULT 0
             )
         """)
         con.execute("""
@@ -133,6 +134,12 @@ def ensure_raid_fields(path):
                 PRIMARY KEY(raid_id, discord_id)
             )
         """)
+        ack_cols = {row[1] for row in con.execute(
+            "PRAGMA table_info(raid_ack_announcements)"
+        )}
+        if "needs_refresh" not in ack_cols:
+            con.execute("ALTER TABLE raid_ack_announcements "
+                        "ADD COLUMN needs_refresh INTEGER NOT NULL DEFAULT 0")
         # Older confirmations used to close registration; migrate active raids.
         con.execute("UPDATE raids SET signup_open=1 "
                     "WHERE roster_published=1 AND archived_at IS NULL")
