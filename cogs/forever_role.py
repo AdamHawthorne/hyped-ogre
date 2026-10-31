@@ -3,7 +3,7 @@ import discord
 from cogs.ogre_voice import pick as ogre_say
 
 ACCENT = 0x8C5A3C
-FOREVER_THUMBNAIL = "https://imagizer.imageshack.com/img924/9212/xkmy2Y.png"
+FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"
 FOREVER_IMAGE = "https://i.vgy.me/CsHiRb.png"
 LEADERSHIP_APPLICATIONS_CHANNEL_ID = 1225020051418255370
 
@@ -122,7 +122,6 @@ def build_forever_role_embed():
     )
 
     embed.set_thumbnail(url=FOREVER_THUMBNAIL)
-    embed.set_image(url=FOREVER_IMAGE)
 
     return embed
 
@@ -343,7 +342,4 @@ class ForeverRoleV2Panel(discord.ui.LayoutView):
             leadership_button,
         ))
 
-        gallery = discord.ui.MediaGallery()
-        gallery.add_item(media=FOREVER_IMAGE, description="Hyped")
-        self.add_item(gallery)
 
