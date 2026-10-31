@@ -2,6 +2,7 @@
 import asyncio
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class RollReactions:
@@ -64,7 +65,15 @@ class RollReactions:
                 # Convert bot-authored roll messages to the custom dice.
                 # Preserve message identity, score text and all reactions.
                 from .emojis import roll_dice_markup
-                expected = roll_dice_markup(datetime.fromtimestamp(start, timezone.utc).date())
+                try:
+                    local_day = datetime.fromtimestamp(start, timezone.utc).astimezone(
+                        ZoneInfo("Europe/London")
+                    ).date()
+                except ZoneInfoNotFoundError:
+                    # Test/dev machines without tzdata: the date starts at the
+                    # supplied UK midnight, whose UTC date is the same.
+                    local_day = datetime.fromtimestamp(start, timezone.utc).date()
+                expected = roll_dice_markup(local_day)
                 fixed = re.sub(
                     r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\d+>|(?<!<):(?:ogredice|ogreivory|ogredie):)",
                     lambda _match: expected, message.content,
