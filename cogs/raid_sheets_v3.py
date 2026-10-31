@@ -307,7 +307,7 @@ def _approved(rows, event, *, include_details=False):
 def _header(event, body, tab):
     when = datetime.fromisoformat(event["raid_at"]).astimezone(UK)
     state = ("Archived" if event.get("archived_at") else
-             "Confirmed · locked" if event.get("roster_published") else
+             "Roster published · sign-ups open" if event.get("roster_published") else
              "Forming")
     instances = ", ".join(x for x in (
         event.get("instance_1"), event.get("instance_2"), event.get("instance_3")
@@ -807,10 +807,13 @@ def sync_once(db_path, discord_names=None):
                 if len(r) >= 18 and r[16].isdigit() and r[9] in ("Selected", "Bench")
                 and r[8] == "Signed"]
             if event.get("roster_published"):
-                published[raid_id] = confirmed_roster(
-                    db_path, raid_id, unavailable.get(raid_id, ()),
-                    include_details=True
-                )
+                # After publishing, the Sheet remains authoritative for live
+                # selections; new sign-ups may still be assigned and displayed.
+                approved = _approved(rows, event, include_details=True)
+                published[raid_id] = [
+                    tuple(entry[1:6]) for entry in approved
+                    if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
+                ]
             else:
                 # The collecting roster is sourced only from the actual raid
                 # sign-ups. Sheet selection, Show on Discord and background
