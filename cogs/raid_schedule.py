@@ -39,6 +39,7 @@ RAID_COLUMNS = {
     "archived_at": "TEXT",
     "archive_notes": "TEXT",
     "wcl_url": "TEXT",
+    "wcl_sheet_synced": "TEXT",
     "default_show_discord": "INTEGER NOT NULL DEFAULT 1",
 }
 
@@ -140,6 +141,43 @@ def validate_softres_url(value):
             or not parts.path.startswith("/raid/")):
         raise ValueError("Paste a https://softres.it/raid/... link.")
     return url
+
+
+def validate_wcl_url(value):
+    """Accept a real HTTPS Warcraft Logs report URL, including Classic hosts."""
+    if not value or not str(value).strip():
+        return None
+    url = str(value).strip()
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError("Enter a valid Warcraft Logs report URL.") from exc
+    if (len(url) > 500 or parts.scheme != "https"
+            or not (host == "warcraftlogs.com" or host.endswith(".warcraftlogs.com"))
+            or not parts.path.startswith("/reports/")
+            or not parts.path[len("/reports/"):].strip("/")
+            or parts.username is not None or parts.password is not None
+            or port is not None
+            or any(ch.isspace() or ch in "<>[]()" for ch in url)):
+        raise ValueError("Use an HTTPS Warcraft Logs report link (…/reports/…).")
+    return url
+
+
+def set_wcl_url(path, number, value):
+    """Update only the raid log link, without reopening or changing the roster."""
+    url = validate_wcl_url(value) or ""
+    with database(path) as con:
+        existing = con.execute(
+            "SELECT COALESCE(wcl_url, '') FROM raids WHERE raid_id=?", (number,)
+        ).fetchone()
+        if existing is None:
+            raise ValueError("Raid does not exist.")
+        if existing[0] == url:
+            return False
+        con.execute("UPDATE raids SET wcl_url=? WHERE raid_id=?", (url, number))
+    return True
 
 
 def validate_banner_url(value):
@@ -389,9 +427,10 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
             if not event[0]:
                 raise ValueError("Confirm the raid roster before archiving.")
             con.execute(
-                "UPDATE raids SET archived_at=?, archive_notes=?, wcl_url=?, "
+                "UPDATE raids SET archived_at=?, archive_notes=?, "
+                "wcl_url=COALESCE(NULLIF(?, ''), wcl_url), "
                 "signup_open=0 WHERE raid_id=?",
-                (now, notes or "", wcl_url or "", number),
+                (now, notes or "", validate_wcl_url(wcl_url) or "", number),
             )
     return read_raid(path, number)
 
@@ -596,13 +635,15 @@ def raid_panel_intro(event):
     ]
     softres = event.get("softres_url")
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
+    wcl = event.get("wcl_url")
+    wcl_line = f"\n**Warcraft Logs:** [View report]({wcl})" if wcl else ""
     return (
         f"## {title}\n"
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n"
         + "**Instances:** " + ", ".join(instances)
         + (f"\n**Check:** [View message]({event['check_message_url']})"
            if event.get("check_message_url") else "")
-        + softres_line
+        + softres_line + wcl_line
     )
 
 
