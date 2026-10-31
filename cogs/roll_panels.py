@@ -6,6 +6,7 @@ from .emojis import option_emoji, roll_dice_emoji
 
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
 OGRE_IMAGE = "https://i.vgy.me/zJXBXg.png"
+LEDGER_IMAGE = "https://i.vgy.me/n5T2kU.png"
 GOLD = 0xD19A3B
 PAGE_SIZE = 15
 
@@ -67,14 +68,21 @@ class CoinLeaderboard(discord.ui.LayoutView):
         pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
         self.page = max(0, min(page, pages - 1))
         visible = rows[self.page * PAGE_SIZE:(self.page + 1) * PAGE_SIZE]
-        lines = [f"**{r['rank']}.** <@{ogre_id if r['user_id'] == 0 and ogre_id else r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
+        lines = [f"<@{ogre_id if r['user_id'] == 0 and ogre_id else r['user_id']}> · **{r['coins']}** {coin_emoji}" for r in visible]
+        ledger_text = (
+            "## Ogre' Ledger\n"
+            + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
+            + f"\n\n-# Ogre count {sum(r['coins'] for r in rows)} "
+              f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'} still held."
+        )
         self.add_item(discord.ui.Container(
-            discord.ui.TextDisplay(
-                "## Ogre\' Ledger\n"
-                + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
-                + f"\n\n-# Ogre count {sum(r['coins'] for r in rows)} "
-                  f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'} still held."
-            ), accent_color=GOLD,
+            discord.ui.Section(
+                discord.ui.TextDisplay(ledger_text),
+                accessory=discord.ui.Thumbnail(
+                    LEDGER_IMAGE, description="Ogre's Ledger"
+                ),
+            ),
+            accent_color=GOLD,
         ))
         if pages > 1:
             controls = discord.ui.ActionRow()
