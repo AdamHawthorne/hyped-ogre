@@ -54,7 +54,7 @@ class RollReactions:
             if message.author.id != self.bot.user.id:
                 continue
             match = re.match(
-                r"^<@!?(\\d+)> rolled (?:💯|\\*\\*[\\d,]+\\*\\*) (?:🎲|<:(?:ogredice|ogreivory|ogredie):\\d+>|:(?:ogredice|ogreivory|ogredie):)",
+                r"^<@!?(\\d+)> rolled (?:💯|\\*\\*[\\d,]+\\*\\*) (?:🎲|<:(?:ogredice|ogreivory|ogredie):\d+>|:(?:ogredice|ogreivory|ogredie):)",
                 message.content,
             )
             if not match:
@@ -64,7 +64,7 @@ class RollReactions:
                 # Convert bot-authored roll messages to the custom dice.
                 # Preserve message identity, score text and all reactions.
                 from .emojis import roll_dice_markup
-                expected = roll_dice_markup(datetime.fromtimestamp(start, UK).date())
+                expected = roll_dice_markup(datetime.fromtimestamp(start, timezone.utc).astimezone(__import__("zoneinfo").ZoneInfo("Europe/London")).date())
                 fixed = re.sub(
                     r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\\d+>|(?<!<):(?:ogredice|ogreivory|ogredie):)",
                     lambda _match: expected, message.content,
