@@ -72,8 +72,8 @@ class CoinLeaderboard(discord.ui.LayoutView):
         ledger_text = (
             "## Ogre' Ledger\n"
             + ("\n".join(lines) or "No gold coins awarded yet. First award at midnight UK time.")
-            + f"\n\n-# Ogre count {sum(r['coins'] for r in rows)} "
-              f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'} still held."
+            + f"\n\n-# Ogre give out {sum(r['coins'] for r in rows)} "
+              f"{'coin' if sum(r['coins'] for r in rows) == 1 else 'coins'}."
         )
         self.add_item(discord.ui.Container(
             discord.ui.Section(
