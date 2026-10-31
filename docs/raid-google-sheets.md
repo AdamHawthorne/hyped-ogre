@@ -15,12 +15,22 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    proposed teams. The public panel can show partial previews but describes
    them with **Confirmation:** and the scheduled Discord relative
    timestamp (e.g. "in a week"), which shows the precise date on hover.
-4. In private `#ogre`, run `/raid confirm number:1` when the roster is
-   genuinely ready. The bot takes a locked snapshot, changes its label to
-   **Roster confirmed:**, and closes new sign-ups.
-5. Use `/raid reopen number:1` if corrections are needed. The confirmation
-   countdown returns and sign-ups reopen; confirm again when satisfied.
-6. After the raid, use
+4. In private `#ogre`, open **Preview / Confirm Roster** and check the
+   live Sheet selection. Choose **Publish roster only** or **Publish + ping
+   selected**. Publishing reveals the teams on the existing Discord panel,
+   but **does not close sign-ups or lock the Sheet**.
+5. **Publish + ping selected** posts a separate message in the raid channel
+   tagging each selected Discord member once. Members react ✅ to acknowledge
+   that they have seen the roster. Ogre removes their mention from the list
+   of outstanding responses. The selected player remains on the actual roster.
+   Ogre does not re-ping on subsequent panel refreshes, and a second
+   announcement is blocked for the same raid. PUGs without Discord IDs
+   cannot be tagged and are excluded from acknowledgement tracking.
+6. Keep using the raid Sheet after publication. Later sign-ups flow into the
+   raid tab, and leadership assignment changes update the public roster
+   automatically at the next successful sync (~60 seconds). Use `/raid reopen`
+   only to return the public panel to its unconfirmed state.
+7. After the raid, use
    `/raid archive number:1 wcl_url:https://www.warcraftlogs.com/reports/... notes:...`.
    The date, WCL link and notes are stored on the raid tab. The tab is hidden
    to keep the active Sheet tidy, **not deleted**. Use Google Sheets' hidden
@@ -100,10 +110,12 @@ and the signed-off timestamp and optional reason are recorded in column G
 alongside any original sign-up note. A player signing up again is reset to
 Pending/No, requiring fresh leadership approval.
 
-When confirmed, subsequent manual changes to dropdowns are ignored for
-public roster purposes until `/raid reopen`. Absences can still remove a
-confirmed player; this shows as an **Update:**. Archived raids accept no
-further roster edits or absences.
+After publication, leadership's dropdown changes are reflected on the
+**live public roster**, without another confirmation or ping. The raid stays
+open to new registrations until it is archived. Absences can still remove
+a player from the public roster, shown as an **Update:**. Acknowledgements
+are recorded separately and never alter attendance or roster selection.
+Archived raids accept no further roster edits or absences.
 
 Leadership-entered PUG rows in the old Roster Builder migrate to the new
 tab; PUGs can also be added manually, with a character, class/spec/role,
