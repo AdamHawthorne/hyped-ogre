@@ -1135,6 +1135,9 @@ async def sync_high_roller_role():
 class DailyRollView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+        for item in self.children:
+            if getattr(item, "custom_id", None) == "hyped_diceman_daily_roll":
+                item.emoji = roll_dice_emoji(datetime.now(TZ).date())
 
     @discord.ui.button(
         label="Roll",
