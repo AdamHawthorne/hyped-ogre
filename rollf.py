@@ -1610,7 +1610,7 @@ async def refresh_historical_roll_dice():
         if message.author.id != bot.user.id or not message.content:
             continue
         # Touch only Ogre's roll announcements, not member conversations.
-        if not re.match(r"^(?:<@!?\d+> rolled |Me rolled )", message.content):
+        if not re.match(r"^(?:<@!?\d+> rolled |Me rolled |Ogre rolled |Hyped Ogre rolled )", message.content, re.IGNORECASE):
             continue
         # Historical posts follow the UK date on which the roll occurred.
         expected = roll_dice_markup(message.created_at.astimezone(TZ).date())
