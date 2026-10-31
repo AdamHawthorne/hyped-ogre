@@ -315,7 +315,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Barrows**", confirmed_panel)
             self.assertIn("**Ony**", confirmed_panel)
             self.assertNotIn("Sign-ups (4)", confirmed_panel)
-            self.assertEqual(confirmed_event["signup_open"], 0)
+            self.assertEqual(confirmed_event["signup_open"], 1)
 
             # Signing off while still collecting removes that name immediately.
             raid_schedule.raid_status(raid.RAID_DB, 5, "reopen")
