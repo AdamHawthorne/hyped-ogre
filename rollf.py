@@ -2941,6 +2941,65 @@ if ADMIN_MODE:
         log_event(f"FOREVER ROLE PANEL POSTED user={interaction.user.id} channel={interaction.channel_id}")
 
     @bot.tree.command(
+        name="refreshroles",
+        description="Owner-only refresh of the existing Forever role panel",
+        guild=discord.Object(id=ADMIN_GUILD_ID)
+    )
+    async def refreshroles_admin(interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("No.", ephemeral=True)
+            return
+        if interaction.guild is None or interaction.guild.id != HYPED_GUILD_ID:
+            await interaction.response.send_message(
+                "Role panel is only available in Hyped.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        # Search newest first. Never repost or edit unrelated messages.
+        channel = interaction.channel
+        panel_message = None
+        async for message in channel.history(limit=1000):
+            if message.author.id != bot.user.id:
+                continue
+            found = False
+            for row in message.components:
+                for component in getattr(row, "children", ()):
+                    if getattr(component, "custom_id", None) == "hyped_ogre_forever_role_v2":
+                        found = True
+                        break
+                if found:
+                    break
+            if found:
+                panel_message = message
+                break
+
+        if panel_message is None:
+            await interaction.followup.send(
+                "Ogre cannot find existing Forever role panel in this channel. Nothing changed.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await panel_message.edit(
+                view=ForeverRoleV2Panel(HYPED_GUILD_ID, FOREVER_ROLE_ID, log_event),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log_error(f"FOREVER ROLE REFRESH FAILED message={panel_message.id}: {exc!r}")
+            await interaction.followup.send(
+                "Ogre could not edit the existing panel. Nothing reposted.", ephemeral=True
+            )
+            return
+
+        log_event(f"FOREVER ROLE REFRESHED message={panel_message.id} user={interaction.user.id}")
+        await interaction.followup.send(
+            f"Forever role panel refreshed in place: {panel_message.jump_url}",
+            ephemeral=True,
+        )
+
+    @bot.tree.command(
         name="flamepreview",
         description="Owner-only preview of the Flameboard embed",
         guild=discord.Object(id=ADMIN_GUILD_ID)
