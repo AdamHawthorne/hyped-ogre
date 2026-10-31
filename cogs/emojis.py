@@ -1,5 +1,4 @@
 """Server-specific Discord emoji IDs from the 29 October 2026 audit."""
-import discord
 
 EMOJI_IDS = {
     "Warrior": 1565482101585748109,
@@ -31,7 +30,10 @@ def markup(name):
 
 def option_emoji(name):
     value = EMOJI_IDS.get(name)
-    return discord.PartialEmoji(name=name, id=value) if value else None
+    if not value:
+        return None
+    import discord
+    return discord.PartialEmoji(name=name, id=value)
 
 def combat_role(role, klass="", spec=""):
     """Visual role classification; never changes persisted role."""
