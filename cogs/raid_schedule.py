@@ -115,6 +115,27 @@ def ensure_raid_fields(path):
                 PRIMARY KEY (raid_id, position)
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_ack_announcements (
+                raid_id INTEGER PRIMARY KEY REFERENCES raids(raid_id),
+                channel_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_ack_members (
+                raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
+                discord_id TEXT NOT NULL,
+                character TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                acknowledged_at TEXT,
+                PRIMARY KEY(raid_id, discord_id)
+            )
+        """)
+        # Older confirmations used to close registration; migrate active raids.
+        con.execute("UPDATE raids SET signup_open=1 "
+                    "WHERE roster_published=1 AND archived_at IS NULL")
         for table in ("raid_confirmed_roster", "raid_public_roster"):
             existing_columns = {
                 row[1] for row in con.execute(f"PRAGMA table_info({table})")
@@ -258,8 +279,6 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
         ).fetchone()
         if existing_state and existing_state[1]:
             raise ValueError("Archived raids are read-only.")
-        if existing_state and existing_state[0]:
-            raise ValueError("Reopen the confirmed roster before editing this raid.")
         if custom_title is None:
             existing = con.execute(
                 "SELECT custom_title FROM raids WHERE raid_id=?", (number,)
@@ -320,8 +339,7 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
                 end_at=excluded.end_at,
                 check_channel_id=excluded.check_channel_id,
                 check_message_url=excluded.check_message_url,
-                signup_open=CASE WHEN raids.roster_published=1
-                       OR raids.archived_at IS NOT NULL
+                signup_open=CASE WHEN raids.archived_at IS NOT NULL
                        THEN 0 ELSE 1 END
         """, (number, full_title, start.isoformat(),
               instances[0], instances[1] or None, instances[2] or None,
@@ -378,6 +396,8 @@ def delete_raid(path, number):
         con.execute("DELETE FROM raid_absences WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_ack_members WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_ack_announcements WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
@@ -398,8 +418,6 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
         if event[1]:
             raise ValueError("Archived raids are read-only.")
         if mode == "confirm":
-            if event[0]:
-                raise ValueError("Roster is already confirmed.")
             if not confirmed_entries:
                 raise ValueError("Select and show at least one player before confirming.")
             con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
@@ -412,8 +430,9 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
                  for index, entry in enumerate(confirmed_entries)],
             )
             con.execute(
-                "UPDATE raids SET roster_published=1, signup_open=0, "
-                "confirmed_at=?, roster_posted_at=?, roster_updated_at=NULL "
+                "UPDATE raids SET roster_published=1, signup_open=1, "
+                "confirmed_at=COALESCE(confirmed_at, ?), "
+                "roster_posted_at=COALESCE(roster_posted_at, ?), roster_updated_at=NULL "
                 "WHERE raid_id=?", (now, now, number)
             )
         elif mode == "reopen":
@@ -436,7 +455,7 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
 
 
 def confirmed_roster(path, number, unavailable=(), *, include_details=False):
-    """Public snapshot is locked; only subsequent absences can remove members."""
+    """Last explicitly approved snapshot for attendance and historical use."""
     unavailable = {str(value) for value in unavailable}
     with database(path) as con:
         rows = con.execute(
@@ -766,7 +785,7 @@ class RaidEventPanel(discord.ui.LayoutView):
         sign_up = discord.ui.Button(
             label="Attend", custom_id=f"hyped_raid_{event_id}_signup",
             style=discord.ButtonStyle.success,
-            disabled=not bool(event.get("signup_open")) or bool(event.get("roster_published")),
+            disabled=not bool(event.get("signup_open")) or bool(event.get("archived_at")),
         )
         update = discord.ui.Button(
             label="Characters", custom_id=f"hyped_raid_{event_id}_update",
