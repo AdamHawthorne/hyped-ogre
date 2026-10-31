@@ -111,6 +111,8 @@ class RollReactions:
         guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
+        from .emojis import option_emoji
+        poop_emoji = option_emoji("ogrepoop")
         for user_id, message in messages:
             # Retire the old crown reaction without touching member reactions.
             for reaction in message.reactions:
@@ -119,9 +121,16 @@ class RollReactions:
                         await message.remove_reaction("👑", self.bot.user)
                     except Exception as exc:
                         self.log_error(f"ROLL REACTION CLEANUP FAILED message={message.id}: {exc!r}")
+            # Remove Ogre's old Unicode reaction without touching member reactions.
+            for reaction in message.reactions:
+                if str(reaction.emoji) == "💩" and reaction.me:
+                    try:
+                        await message.remove_reaction("💩", self.bot.user)
+                    except Exception as exc:
+                        self.log_error(f"LEGACY POOP CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
                 (high_emoji, user_id == high and message.id == latest_by_user[user_id]),
-                ("💩", low is not None and user_id == low
+                (poop_emoji, low is not None and user_id == low
                  and message.id == low_message_id),
             ):
                 present = any(str(r.emoji) == str(emoji) and r.me for r in message.reactions)
