@@ -2135,9 +2135,9 @@ async def bot_daily_roll():
 
             try:
                 if value == 100:
-                    await channel.send(ff"Me rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}")
+                    await channel.send(f"Me rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}")
                 else:
-                    await channel.send(ff"Me rolled **{value}** {roll_dice_markup(datetime.now(TZ).date())}")
+                    await channel.send(f"Me rolled **{value}** {roll_dice_markup(datetime.now(TZ).date())}")
             except discord.Forbidden:
                 try:
                     guild = bot.get_guild(guild_id)
@@ -2656,11 +2656,11 @@ async def perform_roll(interaction: discord.Interaction):
     else:
         if value == 100:
             await msg.edit(
-                content=ff"{interaction.user.mention} rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}"
+                content=f"{interaction.user.mention} rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}"
             )
         else:
             await msg.edit(
-                content=ff"{interaction.user.mention} rolled **{display_value:,}** {roll_dice_markup(datetime.now(TZ).date())}"
+                content=f"{interaction.user.mention} rolled **{display_value:,}** {roll_dice_markup(datetime.now(TZ).date())}"
             )
 
     await reply_if_tied_for_highest(interaction, value, msg)
