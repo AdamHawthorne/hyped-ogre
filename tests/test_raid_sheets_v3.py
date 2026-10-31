@@ -331,3 +331,63 @@ class RaidTabsTests(unittest.TestCase):
             sheet._save_public_for_one(path, 1, [("Snore Mon", "Hyjal")])
             self.assertEqual(raid_schedule.read_public_roster(path, 2),
                              [("Old", "Hyjal")])
+
+    def test_sheet_wcl_link_updates_public_panel_and_respects_newer_db_value(self):
+        """Manual B4 edits win; unchanged B4 never erases a later command-side link."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            rows = sheet._header(event, sheet._rows(path, event, {}),
+                                 sheet.tab_title(event))
+            first = "https://classic.warcraftlogs.com/reports/abc123"
+            rows[3][1] = first
+            self.assertIsNone(sheet._apply_wcl_from_sheet(path, event, rows))
+            self.assertEqual(raid_schedule.read_raid(path, 1)["wcl_url"], first)
+            self.assertIn("**Warcraft Logs:** [View report](" + first + ")",
+                          raid_schedule.raid_panel_intro(event))
+
+            # Simulate successful sync recording the value written to B4.
+            with raid_schedule.database(path) as con:
+                con.execute("UPDATE raids SET wcl_sheet_synced=? WHERE raid_id=1",
+                            (first,))
+            event = raid_schedule.read_raid(path, 1)
+            newer = "https://www.warcraftlogs.com/reports/def456"
+            raid_schedule.set_wcl_url(path, 1, newer)
+            event = raid_schedule.read_raid(path, 1)
+            self.assertIsNone(sheet._apply_wcl_from_sheet(path, event, rows))
+            self.assertEqual(event["wcl_url"], newer)
+
+            # Changing the sheet deliberately should take precedence again.
+            third = "https://www.warcraftlogs.com/reports/ghi789"
+            rows[3][1] = third
+            self.assertIsNone(sheet._apply_wcl_from_sheet(path, event, rows))
+            self.assertEqual(raid_schedule.read_raid(path, 1)["wcl_url"], third)
+
+    def test_invalid_sheet_wcl_is_not_published_or_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            rows = sheet._header(event, sheet._rows(path, event, {}),
+                                 sheet.tab_title(event))
+            bad = "https://example.com/reports/abc"
+            rows[3][1] = bad
+            with self.assertLogs(sheet.LOGGER, level="WARNING"):
+                self.assertEqual(sheet._apply_wcl_from_sheet(path, event, rows), bad)
+            self.assertFalse(raid_schedule.read_raid(path, 1)["wcl_url"])
+            self.assertNotIn("Warcraft Logs:", raid_schedule.raid_panel_intro(event))
+
+    def test_archiving_without_new_wcl_preserves_sheet_link(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            self.setup_raid(path)
+            link = "https://www.warcraftlogs.com/reports/abc123"
+            raid_schedule.set_wcl_url(path, 1, link)
+            raid_schedule.raid_status(
+                path, 1, "confirm",
+                confirmed_entries=[("42", "Snore Mon", "Hyjal")]
+            )
+            event = raid_schedule.raid_status(
+                path, 1, "archive", notes="Finished", wcl_url=None
+            )
+            self.assertEqual(event["wcl_url"], link)
+            self.assertIn(link, raid_schedule.raid_panel_intro(event))
