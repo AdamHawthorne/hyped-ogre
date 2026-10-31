@@ -111,8 +111,8 @@ class RollReactions:
         guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
-        from .emojis import option_emoji
-        poop_emoji = option_emoji("ogrepoop")
+        from .emojis import markup
+        poop_emoji = markup("ogrepoop")
         for user_id, message in messages:
             # Retire the old crown reaction without touching member reactions.
             for reaction in message.reactions:
