@@ -134,7 +134,7 @@ class RaidAcknowledgementTests(unittest.TestCase):
                 self.assertEqual([r[0] for r in
                                   schedule.read_public_roster(path, 1)],
                                  ["Snore", "New Mage"])
-                names["Snore"][9] = "Not selected"
+                next(row for row in rows if row[1] == "Snore")[9] = "Not selected"
                 sync_tab.return_value = (0, rows)
                 _, changed = sheet.sync_once(path)
                 self.assertEqual(changed, {1})
