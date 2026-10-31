@@ -174,27 +174,30 @@ def coin_standings(con, guild_id):
     """Rank spendable coins; failed gamble stakes transfer to Ogre (user 0)."""
     rows = con.execute("""
         WITH earned AS (
-            SELECT user_id, SUM(coins_awarded) AS total
+            SELECT user_id, SUM(coins_awarded) AS total, MIN(roll_date) AS first_day
             FROM roll_coin_awards WHERE guild_id=? GROUP BY user_id
         ), spent AS (
             SELECT user_id, COUNT(*) AS lost
             FROM roll_coin_gambles
             WHERE guild_id=? AND stake_returned=0 GROUP BY user_id
         ), ogre_stakes AS (
-            SELECT COUNT(*) AS received FROM roll_coin_gambles
+            SELECT COUNT(*) AS received, MIN(roll_date) AS first_day FROM roll_coin_gambles
             WHERE guild_id=? AND stake_returned=0
         ), balances AS (
             SELECT earned.user_id,
                    earned.total - COALESCE(spent.lost, 0)
                      + CASE WHEN earned.user_id=0 THEN (SELECT received FROM ogre_stakes)
-                            ELSE 0 END AS coins
+                            ELSE 0 END AS coins,
+                   CASE WHEN earned.user_id=0 AND (SELECT first_day FROM ogre_stakes) IS NOT NULL
+                        THEN MIN(earned.first_day, (SELECT first_day FROM ogre_stakes))
+                        ELSE earned.first_day END AS first_day
             FROM earned LEFT JOIN spent ON spent.user_id=earned.user_id
             UNION ALL
-            SELECT 0, (SELECT received FROM ogre_stakes)
+            SELECT 0, (SELECT received FROM ogre_stakes), (SELECT first_day FROM ogre_stakes)
             WHERE NOT EXISTS (SELECT 1 FROM earned WHERE user_id=0)
         )
         SELECT user_id, coins FROM balances WHERE coins > 0
-        ORDER BY coins DESC, user_id ASC
+        ORDER BY coins DESC, first_day ASC, user_id ASC
     """, (guild_id, guild_id, guild_id)).fetchall()
     ranked = []
     previous, rank = None, 0
