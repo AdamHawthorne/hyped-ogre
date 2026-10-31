@@ -92,6 +92,14 @@ class GambleDatabaseTests(unittest.TestCase):
             extra_value=extra, roll_writer=self.writer, now=now,
         )
 
+    def test_leaderboard_ties_put_earliest_coin_first(self):
+        # A larger Discord ID earned its coin first, so it must appear first.
+        self.award(user_id=202, day="2026-10-27")
+        self.award(user_id=101, day="2026-10-28")
+        standings = coin_standings(self.con, 9)
+        self.assertEqual([r["user_id"] for r in standings], [202, 101])
+        self.assertEqual([r["coins"] for r in standings], [1, 1])
+
     def test_without_coin_no_roll_or_charge(self):
         with self.assertRaisesRegex(GambleError, "shiny coin"):
             self.gamble()
