@@ -1394,6 +1394,53 @@ async def daily_roll_action(interaction):
     await perform_roll(interaction)
 
 
+def _message_contains_ogre_ledger(message):
+    """Identify an existing V2 Ledger without matching unrelated bot messages."""
+    def walk(component):
+        if "Ogre' Ledger" in str(getattr(component, "content", "")):
+            return True
+        for field in ("children", "components", "items"):
+            for child in (getattr(component, field, None) or ()):
+                if walk(child):
+                    return True
+        return False
+
+    return any(walk(component) for component in message.components)
+
+
+async def refresh_todays_public_ledger():
+    """Edit today's existing public Ledger in place without making a new claim."""
+    from datetime import time as datetime_time
+    today = datetime.now(UK).date()
+    record = db().execute(
+        "SELECT requested_by FROM roll_public_leaderboards "
+        "WHERE guild_id=? AND roll_date=?",
+        (HYPED_GUILD_ID, today.isoformat()),
+    ).fetchone()
+    if not record:
+        return
+
+    channel = bot.get_channel(ROLL_CHANNEL_ID)
+    if channel is None:
+        channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
+    day_start = datetime.combine(today, datetime_time.min, UK)
+    async for message in channel.history(
+        limit=None, after=day_start - timedelta(seconds=1), oldest_first=False
+    ):
+        if message.author.id != bot.user.id:
+            continue
+        if not _message_contains_ogre_ledger(message):
+            continue
+        await message.edit(view=CoinLeaderboard(
+            coin_standings(db(), HYPED_GUILD_ID),
+            owner_id=record[0], coin_emoji=ogre_coin_emoji(),
+            ogre_id=bot.user.id,
+        ))
+        log_event(f"PUBLIC LEDGER REFRESHED message={message.id} day={today}")
+        return
+    log_event(f"PUBLIC LEDGER REFRESH SKIPPED no_message day={today}")
+
+
 async def show_coin_leaderboard(interaction):
     """One public Ledger per UK day; further views are private, not blocked."""
     if interaction.guild_id != HYPED_GUILD_ID:
@@ -2061,6 +2108,12 @@ async def on_ready():
             except Exception as exc:
                 log_error(f"HISTORIC ROLL DICE FAILED: {exc!r}")
         asyncio.create_task(historical_dice_job())
+        async def public_ledger_job():
+            try:
+                await refresh_todays_public_ledger()
+            except Exception as exc:
+                log_error(f"PUBLIC LEDGER REFRESH FAILED: {exc!r}")
+        asyncio.create_task(public_ledger_job())
 
     if os.getenv("ENABLE_WEBHOOK") == "true":
         await start_webhook()
