@@ -4,6 +4,15 @@ from types import SimpleNamespace
 from cogs.roll_reactions import RollReactions
 
 
+class DiceDayTests(unittest.TestCase):
+    def test_ivory_weekday_and_sunday_bonus_dice(self):
+        from datetime import date
+        from cogs.emojis import roll_dice_markup, roll_dice_emoji
+        self.assertEqual(roll_dice_markup(date(2026, 10, 31)), "<:ogreivory:1566177408556605460>")
+        self.assertEqual(roll_dice_markup(date(2026, 11, 1)), "<:ogredie:1566175682034270288>")
+        self.assertEqual(str(roll_dice_emoji(date(2026, 11, 1))), "<:ogredie:1566175682034270288>")
+
+
 class Message:
     def __init__(self, user):
         self.id = user
