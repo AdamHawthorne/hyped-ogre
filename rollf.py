@@ -1606,7 +1606,8 @@ async def refresh_historical_roll_dice():
     if channel is None:
         channel = await bot.fetch_channel(ROLL_CHANNEL_ID)
     changed = 0
-    async for message in channel.history(limit=None, oldest_first=True):
+    # Process the newest rolls first so rate limits cannot delay today's updates.
+    async for message in channel.history(limit=None, oldest_first=False):
         if message.author.id != bot.user.id or not message.content:
             continue
         # Touch only Ogre's roll announcements, not member conversations.
