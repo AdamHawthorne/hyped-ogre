@@ -10,6 +10,10 @@ class DiceDayTests(unittest.TestCase):
         from cogs.emojis import roll_dice_markup, roll_dice_emoji
         self.assertEqual(roll_dice_markup(date(2026, 10, 31)), "<:ogreivory:1566177408556605460>")
         self.assertEqual(roll_dice_markup(date(2026, 11, 1)), "<:ogredie:1566175682034270288>")
+        try:
+            import discord
+        except ModuleNotFoundError:
+            return  # The markup test does not need discord.py installed.
         self.assertEqual(str(roll_dice_emoji(date(2026, 11, 1))), "<:ogredie:1566175682034270288>")
 
 
