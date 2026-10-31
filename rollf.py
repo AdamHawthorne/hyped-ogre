@@ -1612,7 +1612,7 @@ async def refresh_historical_roll_dice():
         # Historical posts follow the UK date on which the roll occurred.
         expected = roll_dice_markup(message.created_at.astimezone(TZ).date())
         updated = re.sub(
-            r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\\d+>|(?<!<):(?:ogredice|ogreivory|ogredie):)",
+            r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\d+>|(?<!<):(?:ogredice|ogreivory|ogredie):)",
             lambda _match: expected, message.content,
         )
         if updated == message.content:
