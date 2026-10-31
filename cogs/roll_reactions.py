@@ -104,7 +104,12 @@ class RollReactions:
                     if uid == 0 or uid in scores]
         lowest_value = min(value for _, value, _ in eligible)
         lowest_roll = next((entry for entry in eligible if entry[1] == lowest_value))
-        low = (lowest_roll[0] if lowest_roll[0] != 0
+        # An Ogre tie for the lowest score blocks poop, regardless of
+        # who rolled first. Ogre himself never receives the reaction.
+        ogre_tied_lowest = any(uid == 0 and value == lowest_value
+                              for uid, value, _ in eligible)
+        low = (lowest_roll[0] if not ogre_tied_lowest
+               and lowest_roll[0] != 0
                and lowest_value < max(all_scores.values()) else None)
         low_message_id = None
         if low is not None:
