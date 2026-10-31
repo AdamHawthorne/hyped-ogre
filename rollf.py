@@ -29,7 +29,7 @@ from cogs.roll_coins import (
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.roll_gamble import gamble_once, GambleError
 from cogs.ogre_voice import pick as ogre_say
-from cogs.emojis import markup as guild_emoji
+from cogs.emojis import markup as guild_emoji, roll_dice_markup, roll_dice_emoji
 import logging
 import json
 import hmac
@@ -1138,7 +1138,7 @@ class DailyRollView(discord.ui.View):
 
     @discord.ui.button(
         label="Roll",
-        emoji=discord.PartialEmoji(name="ogredice", id=1565477510651846767),
+        emoji=roll_dice_emoji(datetime.now(TZ).date()),
         style=discord.ButtonStyle.primary,
         custom_id="hyped_diceman_daily_roll"
     )
@@ -1204,7 +1204,7 @@ class GambleConfirmView(discord.ui.View):
         stake_text = ("Ogre say good roll. Have coin back!" if result["stake_returned"]
                       else "Ha! Ogre keep this one.")
         notice = (
-            f"{interaction.user.mention} rolled **{result['best']}** <:ogredice:1565477510651846767>\n"
+            f"{interaction.user.mention} rolled **{result['best']}** {roll_dice_markup(datetime.now(TZ).date())}\n"
             f"-# {interaction.user.name} risked a coin to roll again: "
             f"**{result['base']} → {result['extra']}**. {stake_text}"
         )
@@ -1609,9 +1609,12 @@ async def refresh_historical_roll_dice():
         # Touch only Ogre's roll announcements, not member conversations.
         if not re.match(r"^(?:<@!?\d+> rolled |Me rolled )", message.content):
             continue
-        updated = message.content.replace("🎲", "<:ogredice:1565477510651846767>")
-        updated = updated.replace("<:ogredice:1566126699043880992>", "<:ogredice:1565477510651846767>")
-        updated = updated.replace(":ogredice:", "<:ogredice:1565477510651846767>") if "<:ogredice:" not in updated else updated
+        # Historical posts follow the UK date on which the roll occurred.
+        expected = roll_dice_markup(message.created_at.astimezone(TZ).date())
+        updated = re.sub(
+            r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\\d+>|(?<!<):(?:ogredice|ogreivory|ogredie):)",
+            lambda _match: expected, message.content,
+        )
         if updated == message.content:
             continue
         try:
@@ -2129,9 +2132,9 @@ async def bot_daily_roll():
 
             try:
                 if value == 100:
-                    await channel.send(f"Me rolled 💯 <:ogredice:1565477510651846767>")
+                    await channel.send(ff"Me rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}")
                 else:
-                    await channel.send(f"Me rolled **{value}** <:ogredice:1565477510651846767>")
+                    await channel.send(ff"Me rolled **{value}** {roll_dice_markup(datetime.now(TZ).date())}")
             except discord.Forbidden:
                 try:
                     guild = bot.get_guild(guild_id)
@@ -2444,14 +2447,14 @@ async def help_cmd(interaction: discord.Interaction):
         title=BOT_NAME,
         description=(
             "**Daily Roll**\n"
-            "Use the daily **<:ogredice:1565477510651846767> Roll** button or `/roll` once per day. "
+            f"Use the daily **{roll_dice_markup(datetime.now(TZ).date())} Roll** button or `/roll` once per day. "
             "Rolls reset at midnight UK time. The highest roll earns one gold coin.\n\n"
             "**Commands**\n"
             "• `/roll` — Roll your daily number\n"
             "• `/leaderboard` — View gold coin totals\n"
             "• `/stats` — View detailed statistics\n\n"
             "The current daily leader automatically receives the "
-            "**<:ogredice:1565477510651846767> Highest Daily Roller** role. A tied roll does not take the crown."
+            f"**{roll_dice_markup(datetime.now(TZ).date())} Highest Daily Roller** role. A tied roll does not take the crown."
         ),
         color=discord.Color.dark_grey()
     )
@@ -2563,11 +2566,11 @@ async def perform_roll(interaction: discord.Interaction):
 
         if value == 100:
             await interaction.response.send_message(
-                f"{interaction.user.mention} rolled 💯 <:ogredice:1565477510651846767>"
+                f"{interaction.user.mention} rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}"
             )
         else:
             await interaction.response.send_message(
-                f"{interaction.user.mention} rolled **{value}** <:ogredice:1565477510651846767>"
+                f"{interaction.user.mention} rolled **{value}** {roll_dice_markup(datetime.now(TZ).date())}"
             )
 
         await reply_if_tied_for_highest(interaction, value)
@@ -2643,18 +2646,18 @@ async def perform_roll(interaction: discord.Interaction):
     if current_streak in milestones:
         await msg.edit(
             content=(
-                f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1565477510651846767>\n"
+                f"{interaction.user.mention} rolled **{display_value:,}** {roll_dice_markup(datetime.now(TZ).date())}\n"
                 f"🔥 {current_streak}-day streak achieved."
             )
         )
     else:
         if value == 100:
             await msg.edit(
-                content=f"{interaction.user.mention} rolled 💯 <:ogredice:1565477510651846767>"
+                content=ff"{interaction.user.mention} rolled 💯 {roll_dice_markup(datetime.now(TZ).date())}"
             )
         else:
             await msg.edit(
-                content=f"{interaction.user.mention} rolled **{display_value:,}** <:ogredice:1565477510651846767>"
+                content=ff"{interaction.user.mention} rolled **{display_value:,}** {roll_dice_markup(datetime.now(TZ).date())}"
             )
 
     await reply_if_tied_for_highest(interaction, value, msg)
@@ -2671,7 +2674,7 @@ async def roll(interaction: discord.Interaction):
 
     if interaction.channel_id != ROLL_CHANNEL_ID:
         await interaction.response.send_message(
-            f"Use `/roll` in <#{ROLL_CHANNEL_ID}> <:ogredice:1565477510651846767>",
+            f"Use `/roll` in <#{ROLL_CHANNEL_ID}> {roll_dice_markup(datetime.now(TZ).date())}",
             ephemeral=True
         )
         return
