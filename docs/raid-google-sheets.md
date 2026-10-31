@@ -31,6 +31,19 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
 The top rows contain the raid title, date, status, instances, confirmation
 and archive timestamps, Warcraft Logs, review notes and Discord panel link.
 
+**Warcraft Logs:** Paste the HTTPS report URL into **B4**, next to
+**Warcraft Logs**. Ogre reads changes on the next successful ~60-second
+sync and updates the **existing public raid panel** with a
+**Warcraft Logs: View report** link. Refreshing that message does not ping
+anyone. Plain `warcraftlogs.com` and report subdomains such as
+`classic.warcraftlogs.com` are accepted; the URL must link to
+`/reports/...`. An invalid B4 link stays editable in the Sheet but is
+not published. The bot retains the link if you subsequently complete or
+archive the raid without entering another URL in the completion form.
+
+Make B4 edits **before archiving**. Archived raid tabs are hidden and
+not monitored for subsequent Sheet edits.
+
 Below the fixed headings, registrations appear under five sections:
 
 - **TANKS**, grouped by class
