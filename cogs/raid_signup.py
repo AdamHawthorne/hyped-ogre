@@ -13,7 +13,7 @@ from discord import app_commands
 from discord.ext import commands
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from cogs import raid_sheets, raid_sheets_v3
+from cogs import raid_sheets, raid_sheets_v3, raid_announcer
 from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_IDS
 from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
 from cogs.countdown import toggle_raid_dm
@@ -260,7 +260,7 @@ async def refresh_character_signups(interaction, owner_id, character_id):
             raids = con.execute(
                 "SELECT s.raid_id FROM signups s JOIN raids r ON r.raid_id=s.raid_id "
                 "WHERE s.discord_id=? AND s.character_id=? "
-                "AND s.availability='Available' AND r.roster_published=0 "
+                "AND s.availability='Available' AND r.archived_at IS NULL "
                 "AND NOT EXISTS (SELECT 1 FROM raid_absences a "
                 "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id)",
                 (owner_id, character_id),
@@ -579,7 +579,7 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
             raise ValueError("Sign-up note must be 500 characters or less.")
     with database(path) as con:
         event = con.execute(
-            "SELECT signup_open, roster_published FROM raids WHERE raid_id=?",
+            "SELECT signup_open, archived_at FROM raids WHERE raid_id=?",
             (raid_id,),
         ).fetchone()
         if not event or not event[0] or event[1]:
@@ -1505,6 +1505,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         self._last_sheet_error = None
         self._last_sheet_sync = None
         self._sync_lock = asyncio.Lock()
+        self._ack_lock = asyncio.Lock()
 
     def allowed(self, interaction):
         # During testing, live raid panels are ONLY permitted in private #ogre.
@@ -1512,6 +1513,17 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     def raid_db_path(self):
         return RAID_DB
+
+    async def announce_roster(self, raid_id, selected=None):
+        async with self._ack_lock:
+            return await raid_announcer.announce(
+                self.bot, RAID_DB, raid_id, GUILD_ID, selected=selected
+            )
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        async with self._ack_lock:
+            await raid_announcer.reaction(self.bot, RAID_DB, payload, GUILD_ID)
 
     async def delete_raid_from_poster(self, interaction, raid_number):
         """Delete the raid card, then raid-scoped rows; never delete characters."""
@@ -1601,6 +1613,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 # A Sheets outage may not interrupt Discord raid registrations.
                 self._last_sheet_error = str(exc)
                 LOGGER.warning("Raid Sheets sync failed: %s", exc)
+            async with self._ack_lock:
+                await raid_announcer.retry_dirty(self.bot, RAID_DB, GUILD_ID)
             await asyncio.sleep(60)
 
     async def raid_discord_names(self):
@@ -1680,7 +1694,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         try:
             event = read_raid(RAID_DB, raid_id)
-            if not event or not event["signup_open"] or event["roster_published"]:
+            if not event or not event["signup_open"] or event.get("archived_at"):
                 await interaction.followup.send(
                     "Sign-ups are closed for this raid.", ephemeral=True
                 )
@@ -1892,7 +1906,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await message.edit(view=self.make_panel(event))
 
     @app_commands.command(
-        name="confirm", description="Lock the raid selection and confirm the Discord roster"
+        name="confirm", description="Publish the roster while keeping sign-ups open"
     )
     @app_commands.describe(number="Raid number to confirm")
     async def confirm(self, interaction: discord.Interaction, number: int):
@@ -1911,8 +1925,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             await interaction.followup.send(f"Raid confirm: {exc}", ephemeral=True)
             return
         await interaction.followup.send(
-            f"Raid #{number} roster confirmed and locked. "
-            "Sign-ups are closed. Use /raid reopen to make changes.",
+            f"Raid #{number} roster published. Sign-ups remain open and "
+            "Sheet assignments stay editable. Announce selected players from /raid poster.",
             ephemeral=True,
         )
 
