@@ -22,6 +22,7 @@ EMOJI_IDS = {
     "ogredice": 1565477510651846767,
     "ogreivory": 1566177408556605460,
     "ogredie": 1566175682034270288,
+    "ogrepoop": 1566195860746928290,
 }
 
 def markup(name):
