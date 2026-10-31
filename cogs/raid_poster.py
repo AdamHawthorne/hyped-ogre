@@ -209,16 +209,20 @@ class RaidDeleteConfirmation(discord.ui.LayoutView):
 
 
 class RaidRosterPreview(discord.ui.View):
-    """Officer-only two-step confirmation of the live Sheet selection."""
-    def __init__(self, cog, owner_id, raid_id, entries):
+    """Owner-only preview: publish quietly, or publish and ping selected users."""
+    def __init__(self, cog, owner_id, raid_id, entries, already_announced=False):
         super().__init__(timeout=300)
         self.cog, self.owner_id, self.raid_id = cog, owner_id, raid_id
         self.snapshot = tuple(tuple(x) for x in entries)
+        if already_announced:
+            for child in self.children:
+                if isinstance(child, discord.ui.Button) and child.label == "Publish + ping selected":
+                    child.disabled = True
 
-    @discord.ui.button(label="Confirm roster & publish", style=discord.ButtonStyle.success)
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _publish(self, interaction, *, notify):
         if interaction.user.id != self.owner_id or not self.cog.allowed(interaction):
-            await interaction.response.send_message("Only the poster owner can confirm.", ephemeral=True)
+            await interaction.response.send_message(
+                "Only the poster owner can publish.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         from cogs import raid_sheets_v3
@@ -228,7 +232,7 @@ class RaidRosterPreview(discord.ui.View):
                 raid_sheets_v3.read_selected, self.cog.raid_db_path(), self.raid_id)
             if tuple(tuple(x) for x in current) != self.snapshot:
                 await interaction.followup.send(
-                    "The Sheet selection changed. Open a fresh preview before confirming.",
+                    "Sheet selection changed. Open a fresh preview before publishing.",
                     ephemeral=True)
                 return
             raid_status(self.cog.raid_db_path(), self.raid_id, "confirm",
@@ -236,21 +240,36 @@ class RaidRosterPreview(discord.ui.View):
             await self.cog.sync_raid_sheets()
             await self.cog.refresh_saved_panel(self.raid_id)
         except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
-            await interaction.followup.send(f"Roster confirmation: {exc}", ephemeral=True)
+            await interaction.followup.send(f"Roster publish: {exc}", ephemeral=True)
             return
-        for item in self.children:
-            item.disabled = True
+        for child in self.children:
+            child.disabled = True
         await interaction.edit_original_response(view=self)
-        await interaction.followup.send(
-            f"Raid #{self.raid_id} roster confirmed and published. Sign-ups locked.",
-            ephemeral=True)
+        response = (f"Raid #{self.raid_id} roster published. "
+                    "Sign-ups stay open; Sheet assignments remain editable.")
+        if notify:
+            try:
+                link = await self.cog.announce_roster(self.raid_id, selected=current)
+            except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
+                response += f" Ogre could not announce: {exc}"
+            else:
+                response += f" Ogre pinged selected raiders once: {link}"
+        await interaction.followup.send(response, ephemeral=True)
+
+    @discord.ui.button(label="Publish roster only", style=discord.ButtonStyle.success)
+    async def publish_only(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._publish(interaction, notify=False)
+
+    @discord.ui.button(label="Publish + ping selected", style=discord.ButtonStyle.primary)
+    async def publish_and_ping(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._publish(interaction, notify=True)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Only the poster owner.", ephemeral=True)
             return
-        await interaction.response.edit_message(content="Roster confirmation cancelled.", view=None)
+        await interaction.response.edit_message(content="Roster preview cancelled.", view=None)
 
 
 class RaidPosterView(discord.ui.LayoutView):
@@ -674,7 +693,7 @@ class RaidPosterView(discord.ui.LayoutView):
                 await interaction.response.send_message("Only owner.", ephemeral=True)
                 return
             event = read_raid(self.cog.raid_db_path(), self.draft["number"])
-            if not event or event.get("roster_published") or event.get("archived_at"):
+            if not event or event.get("archived_at"):
                 await interaction.response.send_message(
                     "Choose an unconfirmed, active raid.", ephemeral=True)
                 return
@@ -698,9 +717,18 @@ class RaidPosterView(discord.ui.LayoutView):
             preview = f"**Raid #{event['raid_id']} · Confirm roster?**\n" + "\n".join(lines)
             if len(preview) > 1900:
                 preview = preview[:1850] + "\n…"
+            from cogs import raid_acknowledgements as raid_ack
+            announced = bool(raid_ack.announcement(self.cog.raid_db_path(),
+                                                    event["raid_id"]))
+            note = ("Ogre already announced this raid; extra pings disabled."
+                    if announced else
+                    "Publish without a ping, or ping each selected guild member once. "
+                    "They react ✅ to acknowledge; Ogre removes them from the outstanding list.")
             await interaction.followup.send(
-                preview + "\n\nConfirm to lock the Sheet selection and publish the roster.",
-                view=RaidRosterPreview(self.cog, self.owner_id, event["raid_id"], selected),
+                preview + "\n\n" + note +
+                "\nSign-ups stay open and Sheet selections remain editable.",
+                view=RaidRosterPreview(self.cog, self.owner_id, event["raid_id"],
+                                       selected, already_announced=announced),
                 ephemeral=True)
 
         confirm_roster.callback = preview_roster
