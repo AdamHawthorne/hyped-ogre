@@ -63,6 +63,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_ties_restart_and_preserve_member_reactions(self):
         a = self.add(1, 50)
         await self.tracker.sync()
+        self.assertEqual(self.errors, [], 'Reaction synchroniser raised an exception')
         self.assertTrue(self.has(a, '<:ogrecoin:1564336079430099035>'))
         self.assertFalse(self.has(a, '<:ogrepoop:1566195860746928290>'))
         b = self.add(2, 90, 2)
