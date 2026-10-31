@@ -1613,6 +1613,19 @@ async def refresh_historical_roll_dice():
         # Touch only Ogre's roll announcements, not member conversations.
         if not re.match(r"^(?:<@!?\d+> rolled |Me rolled |Ogre rolled |Hyped Ogre rolled )", message.content, re.IGNORECASE):
             continue
+        # Migrate Ogre's own historical poop reaction in place.
+        # Do not touch members' reactions or award new poop to old rolls.
+        old_poop = any(str(r.emoji) == "💩" and r.me for r in message.reactions)
+        new_poop = any(str(r.emoji) == str(poop_emoji) and r.me
+                       for r in message.reactions)
+        if old_poop:
+            try:
+                if not new_poop:
+                    await message.add_reaction(poop_emoji)
+                await message.remove_reaction("💩", bot.user)
+                poop_migrated += 1
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                log_error(f"HISTORIC POOP MIGRATION FAILED message={message.id}: {exc!r}")
         # Historical posts follow the UK date on which the roll occurred.
         expected = roll_dice_markup(message.created_at.astimezone(TZ).date())
         updated = re.sub(
@@ -1626,7 +1639,7 @@ async def refresh_historical_roll_dice():
             changed += 1
         except (discord.Forbidden, discord.HTTPException) as exc:
             log_error(f"HISTORIC ROLL DICE UPDATE FAILED message={message.id}: {exc!r}")
-    log_event(f"HISTORIC ROLL DICE UPDATED count={changed}")
+    log_event(f"HISTORIC ROLL DICE UPDATED count={changed} poop_migrated={poop_migrated}")
 
 
 async def daily_post_loop():
