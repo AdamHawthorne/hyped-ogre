@@ -60,12 +60,12 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         a = self.add(1, 50)
         await self.tracker.sync()
         self.assertTrue(self.has(a, '<:ogrecoin:1564336079430099035>'))
-        self.assertFalse(self.has(a, '💩'))
+        self.assertFalse(self.has(a, '<:ogrepoop:1566195860746928290>'))
         b = self.add(2, 90, 2)
         a.reactions.append(SimpleNamespace(emoji='👑', me=False))
         await self.tracker.sync()
         self.assertFalse(self.has(a, '<:ogrecoin:1564336079430099035>'))
-        self.assertTrue(self.has(a, '💩'))
+        self.assertTrue(self.has(a, '<:ogrepoop:1566195860746928290>'))
         self.assertTrue(self.has(b, '<:ogrecoin:1564336079430099035>'))
         self.assertTrue(any(not r.me for r in a.reactions))
         c = self.add(3, 90, 3)
@@ -73,8 +73,8 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         await self.tracker.sync()
         self.assertTrue(self.has(b, '<:ogrecoin:1564336079430099035>'))
         self.assertFalse(self.has(c, '<:ogrecoin:1564336079430099035>'))
-        self.assertFalse(self.has(a, '💩'))
-        self.assertTrue(self.has(d, '💩'))
+        self.assertFalse(self.has(a, '<:ogrepoop:1566195860746928290>'))
+        self.assertTrue(self.has(d, '<:ogrepoop:1566195860746928290>'))
         await self.tracker.sync()
         self.assertEqual(len(d.reactions), 1)
         self.assertEqual(self.errors, [])
@@ -110,16 +110,16 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         kaja = self.add(1, 15, 1)
         tom_free = self.add(2, 3, 2)
         await self.tracker.sync()
-        self.assertTrue(self.has(tom_free, '💩'))
-        self.assertFalse(self.has(kaja, '💩'))
+        self.assertTrue(self.has(tom_free, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(kaja, '<:ogrepoop:1566195860746928290>'))
         self.con.execute("INSERT INTO rolls VALUES (2, 35, 'gamble', 3)")
         tom_gamble = Message(2)
         tom_gamble.id = 3
         self.messages.append(tom_gamble)
         await self.tracker.sync()
-        self.assertTrue(self.has(tom_free, '💩'))
-        self.assertFalse(self.has(tom_gamble, '💩'))
-        self.assertFalse(self.has(kaja, '💩'))
+        self.assertTrue(self.has(tom_free, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(tom_gamble, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(kaja, '<:ogrepoop:1566195860746928290>'))
         self.assertEqual(self.errors, [])
 
     async def test_low_gamble_is_tagged_on_its_own_message(self):
@@ -130,9 +130,9 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         extra.id = 3
         self.messages.append(extra)
         await self.tracker.sync()
-        self.assertTrue(self.has(extra, '💩'))
-        self.assertFalse(self.has(base, '💩'))
-        self.assertFalse(self.has(other, '💩'))
+        self.assertTrue(self.has(extra, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(base, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(other, '<:ogrepoop:1566195860746928290>'))
 
     async def test_ignore_old_rolls_and_other_channels(self):
         a = self.add(1, 50)
@@ -140,39 +140,39 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.add(3, 1, -1)
         await self.tracker.sync()
         self.assertTrue(self.has(a, '<:ogrecoin:1564336079430099035>'))
-        self.assertFalse(self.has(a, '💩'))
+        self.assertFalse(self.has(a, '<:ogrepoop:1566195860746928290>'))
 
     async def test_ogre_lowest_removes_player_poop(self):
         low = self.add(1, 20)
         high = self.add(2, 80, 2)
         await self.tracker.sync()
-        self.assertTrue(self.has(low, '💩'))
+        self.assertTrue(self.has(low, '<:ogrepoop:1566195860746928290>'))
         self.con.execute("INSERT INTO rolls VALUES (0, 14, 'bot', 3)")
         await self.tracker.sync()
-        self.assertFalse(self.has(low, '💩'))
-        self.assertFalse(self.has(high, '💩'))
+        self.assertFalse(self.has(low, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(high, '<:ogrepoop:1566195860746928290>'))
 
     async def test_ogre_high_roll_moves_poop_to_lowest_player(self):
         sole = self.add(1, 50)
         await self.tracker.sync()
-        self.assertFalse(self.has(sole, '💩'))
+        self.assertFalse(self.has(sole, '<:ogrepoop:1566195860746928290>'))
         self.con.execute("INSERT INTO rolls VALUES (0, 90, 'bot', 2)")
         await self.tracker.sync()
-        self.assertTrue(self.has(sole, '💩'))
+        self.assertTrue(self.has(sole, '<:ogrepoop:1566195860746928290>'))
 
     async def test_ogre_ties_lowest_no_poop(self):
         low = self.add(1, 14)
         self.add(2, 80, 2)
         self.con.execute("INSERT INTO rolls VALUES (0, 14, 'bot', 3)")
         await self.tracker.sync()
-        self.assertFalse(self.has(low, '💩'))
+        self.assertFalse(self.has(low, '<:ogrepoop:1566195860746928290>'))
 
     async def test_legacy_unicode_dice_remains_eligible(self):
         old = self.add(1, 11, 1)
         old.content = '<@1> rolled **11** 🎲'
         higher = self.add(2, 92, 2)
         await self.tracker.sync()
-        self.assertTrue(self.has(old, '💩'))
+        self.assertTrue(self.has(old, '<:ogrepoop:1566195860746928290>'))
         self.assertTrue(self.has(higher, '<:ogrecoin:1564336079430099035>'))
         self.assertIn('<:ogreivory:1566177408556605460>', old.content)
         await self.tracker.sync()
@@ -184,8 +184,22 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.add(2, 92, 2)
         await self.tracker.sync()
         self.assertEqual(message.content, '<@1> rolled **11** <:ogreivory:1566177408556605460>')
-        self.assertTrue(self.has(message, '💩'))
+        self.assertTrue(self.has(message, '<:ogrepoop:1566195860746928290>'))
         await self.tracker.sync()
+        self.assertEqual(self.errors, [])
+
+    async def test_replaces_own_old_poop_but_preserves_member_reactions(self):
+        low = self.add(1, 10, 1)
+        self.add(2, 95, 2)
+        low.reactions.append(SimpleNamespace(emoji='💩', me=True))
+        low.reactions.append(SimpleNamespace(emoji='💩', me=False))
+        await self.tracker.sync()
+        self.assertTrue(self.has(low, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(low, '💩'))
+        self.assertTrue(any(r.emoji == '💩' and not r.me for r in low.reactions))
+        await self.tracker.sync()
+        self.assertEqual(sum(str(r.emoji) == '<:ogrepoop:1566195860746928290>'
+                             for r in low.reactions), 1)
         self.assertEqual(self.errors, [])
 
     async def test_permission_failure_is_contained(self):
