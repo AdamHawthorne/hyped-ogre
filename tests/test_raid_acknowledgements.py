@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import discord
 
@@ -99,4 +100,44 @@ class RaidAcknowledgementTests(unittest.TestCase):
                 con.execute("UPDATE raids SET roster_published=1, signup_open=0 "
                             "WHERE raid_id=1")
             schedule.ensure_raid_fields(path)
+            self.assertEqual(schedule.read_raid(path, 1)["signup_open"], 1)
+
+    def test_published_roster_follows_new_sheet_selections(self):
+        """Published teams update without reopening or repinging any members."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            schedule.record_panel(path, 1, 333, 444)
+            schedule.raid_status(path, 1, "confirm",
+                                 confirmed_entries=[("42", "Snore", "Hyjal")])
+            raid.save_character(43, "New Mage", "Mage", "Frost", "DPS", path)
+            char_id = raid.member_characters(43, path)[0][0]
+            raid.save_signup(1, 43, char_id, path)
+            event = schedule.read_raid(path, 1)
+            body = sheet._rows(path, event, {})
+            names = {r[1]: r for r in body if r[16]}
+            names["Snore"][9:14] = ["Selected", "Yes", "Yes", "No", "No"]
+            names["New Mage"][9:14] = ["Selected", "Yes", "Yes", "No", "No"]
+            rows = sheet._header(event, body, sheet.tab_title(event))
+            session = MagicMock()
+            with patch.object(sheet.raid_sheets, "configured", return_value=True), \
+                 patch.object(sheet.raid_sheets, "_session", return_value=session), \
+                 patch.object(sheet.raid_sheets, "_raid_snapshot",
+                              return_value=([], {1: event}, [], [], [])), \
+                 patch.object(sheet, "_list_tabs",
+                              return_value={sheet.tab_title(event): {"sheetId": 1}}), \
+                 patch.object(sheet, "_one", return_value=(0, rows)) as sync_tab, \
+                 patch.object(sheet, "_sync_permanent"), \
+                 patch.object(sheet, "_hide_legacy"):
+                _, changed = sheet.sync_once(path)
+                self.assertEqual(changed, {1})
+                self.assertEqual([r[0] for r in
+                                  schedule.read_public_roster(path, 1)],
+                                 ["Snore", "New Mage"])
+                names["Snore"][9] = "Not selected"
+                sync_tab.return_value = (0, rows)
+                _, changed = sheet.sync_once(path)
+                self.assertEqual(changed, {1})
+                self.assertEqual(schedule.read_public_roster(path, 1),
+                                 [("New Mage", "Hyjal")])
             self.assertEqual(schedule.read_raid(path, 1)["signup_open"], 1)
