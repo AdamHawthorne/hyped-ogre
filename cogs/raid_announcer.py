@@ -31,6 +31,14 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
     if not isinstance(channel, discord.TextChannel) or channel.guild.id != guild_id:
         raise ValueError("Ogre can't access the raid panel channel.")
+    me = channel.guild.me
+    if me is None:
+        raise ValueError("Ogre couldn't verify channel permissions.")
+    permissions = channel.permissions_for(me)
+    if not (permissions.view_channel and permissions.send_messages
+            and permissions.add_reactions and permissions.read_message_history):
+        raise ValueError("Ogre needs View Channel, Send Messages, Add Reactions "
+                         "and Read Message History in the raid channel.")
     message = await channel.send(
         content=content,
         allowed_mentions=discord.AllowedMentions(
