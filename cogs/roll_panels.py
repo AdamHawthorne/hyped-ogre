@@ -5,7 +5,7 @@ from datetime import date
 from .emojis import option_emoji, roll_dice_emoji
 
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
-OGRE_IMAGE = "https://i.vgy.me/zJXBXg.png"
+OGRE_IMAGE = "https://imagizer.imageshack.com/img924/9212/xkmy2Y.png"
 LEDGER_IMAGE = "https://i.vgy.me/n5T2kU.png"
 GOLD = 0xD19A3B
 PAGE_SIZE = 15
