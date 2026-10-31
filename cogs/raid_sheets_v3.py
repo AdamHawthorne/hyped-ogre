@@ -5,6 +5,7 @@ selection/visibility/instance choices keyed by Discord ID in each raid tab.
 The old RM tabs are intentionally left intact as read-only migration backups.
 """
 from datetime import datetime
+import logging
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -13,9 +14,11 @@ from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
                for key, shift in (("red", 16), ("green", 8), ("blue", 0))}
-from cogs.raid_schedule import confirmed_roster, database, read_raid, read_signup_roster
+from cogs.raid_schedule import (confirmed_roster, database, read_raid,
+                                read_signup_roster, set_wcl_url, validate_wcl_url)
 
 UK = ZoneInfo("Europe/London")
+LOGGER = logging.getLogger(__name__)
 COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
@@ -532,6 +535,35 @@ def _write(session, title, sid, existing, rows):
         new_display))
 
 
+def _apply_wcl_from_sheet(db_path, event, existing):
+    """Resolve the editable B4 link without overwriting newer Discord-side changes.
+
+    wcl_sheet_synced records the last value successfully written to the tab.
+    A changed B4 wins; an unchanged B4 lets /raid archive or completion win.
+    """
+    if len(existing) < 4:
+        return None
+    cell = str(existing[3][1]).strip() if len(existing[3]) > 1 else ""
+    last_synced = event.get("wcl_sheet_synced")
+    current = event.get("wcl_url") or ""
+    sheet_edited = (
+        cell != last_synced if last_synced is not None
+        else bool(cell) and cell != current
+    )
+    if sheet_edited:
+        try:
+            link = validate_wcl_url(cell) or ""
+        except ValueError:
+            # Never publish a malformed URL or erase the player's input.
+            LOGGER.warning("Raid #%s: invalid Warcraft Logs URL in B4",
+                           event["raid_id"])
+            return cell
+        if link != current:
+            set_wcl_url(db_path, event["raid_id"], link)
+            event["wcl_url"] = link
+    return None
+
+
 def _one(session, db_path, event, names, titles):
     number = event["raid_id"]
     matches = [name for name in titles if name.startswith(f"Raid #{number} - ")]
@@ -595,11 +627,19 @@ def _one(session, db_path, event, names, titles):
         elif count < len(COLUMNS):
             raise RuntimeError("Raid tab has an unexpected number of columns.")
     existing = [] if new else _read(session, title)
+    invalid_wcl = _apply_wcl_from_sheet(db_path, event, existing)
     # Also recover a sheet created just before an interrupted first write.
     legacy = _legacy_choices(session, event) if new or not existing else None
     body = _rows(db_path, event, names, old_rows=existing, legacy=legacy)
     full = _header(event, body, title)
+    if invalid_wcl is not None:
+        # Retain an invalid entry for leadership to correct; don't echo it to Discord.
+        full[3][1] = invalid_wcl
     changed = _write(session, title, sid, existing, full)
+    if invalid_wcl is None:
+        with database(db_path) as con:
+            con.execute("UPDATE raids SET wcl_sheet_synced=? WHERE raid_id=?",
+                        (event.get("wcl_url") or "", event["raid_id"]))
     if event.get("archived_at"):
         if not titles[title].get("hidden"):
             raid_sheets._json(
@@ -744,6 +784,7 @@ def sync_once(db_path, discord_names=None):
         _, raids, _, absences, _ = raid_sheets._raid_snapshot(db_path)
         titles = _list_tabs(session)
         counts, published = {"raid_tabs": 0}, {}
+        metadata_changed = set()
         raid_rosters = {}
         unavailable = {}
         for absence in absences:
@@ -757,7 +798,10 @@ def sync_once(db_path, discord_names=None):
                     title.startswith(f"Raid #{raid_id} - ") and
                     not props.get("hidden") for title, props in titles.items()):
                 continue
+            before_wcl = event.get("wcl_url") or ""
             changes, rows = _one(session, db_path, event, discord_names, titles)
+            if (event.get("wcl_url") or "") != before_wcl:
+                metadata_changed.add(raid_id)
             counts["raid_tabs"] += changes
             raid_rosters[raid_id] = [r for r in rows[7:]
                 if len(r) >= 18 and r[16].isdigit() and r[9] in ("Selected", "Bench")
@@ -777,7 +821,7 @@ def sync_once(db_path, discord_names=None):
         # Once an active raid tab exists, hide (never delete) old management tabs.
         if any(name.startswith("Raid #") for name in titles):
             _hide_legacy(session, titles)
-        changed = set()
+        changed = set(metadata_changed)
         for raid_id, selected in published.items():
             changed.update(_save_public_for_one(db_path, raid_id, selected))
         return counts, changed
