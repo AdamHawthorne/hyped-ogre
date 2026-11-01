@@ -396,7 +396,7 @@ class RaidPosterView(discord.ui.LayoutView):
                if d.get("instance_2") else "")
             + (f" · {discord.utils.escape_markdown(d['instance_3'])}"
                if d.get("instance_3") else "")
-            + f"\n**Roster confirmation:** {confirm_date}\n"
+            + f"\n**Roster confirmation target:** {confirm_date}\n"
             f"**Destination:** {channel}\n"
         )
         if self.page == "schedule":
@@ -405,7 +405,7 @@ class RaidPosterView(discord.ui.LayoutView):
                 + f"**WoWSims:** {WOWSIMS_POLICIES[d.get('wowsims_policy', 'missing')]}\n\n"
                 "**Workflow:** Post raid → Collect sign-ups → Build teams in Sheets "
                 "→ Publish roster → Manage attendance → Complete raid.\n"
-                "-# Roster confirmation never closes Attend or WoWSims. "
+                "-# Confirmation is manual, not scheduled automatically. It never closes Attend or WoWSims. "
                 "Only completion closes the raid. No automatic roster pings.\n"
                 "-# Select **Advanced settings** for links, visibility, pings, "
                 "extra instances and WoWSims rules."
@@ -678,7 +678,7 @@ class RaidPosterView(discord.ui.LayoutView):
                 ))
             else:
                 await self.changed(interaction, announce=picker.values[0])
-        picker = self._select("When to announce the roster?", options, choose)
+        picker = self._select("Target roster confirmation (manual)", options, choose)
 
     def add_controls(self):
         row = discord.ui.ActionRow()
@@ -703,8 +703,7 @@ class RaidPosterView(discord.ui.LayoutView):
         )
         manage = discord.ui.Button(
             label="Manage Raid", style=discord.ButtonStyle.primary,
-            disabled=not bool(self.saved_event and
-                              self.saved_event.get("roster_published")) or closed
+            disabled=self.saved_event is None or closed
         )
         delete = discord.ui.Button(
             label="Delete Raid", style=discord.ButtonStyle.danger,
@@ -797,7 +796,20 @@ class RaidPosterView(discord.ui.LayoutView):
                     f"Check raid details before posting: {exc}", ephemeral=True
                 )
                 return
-            await self.cog.post_panel(interaction, event, destination_id=self.draft.get("channel_id"), ping_role_ids=self.draft.get("ping_role_ids", []))
+            await self.cog.post_panel(
+                interaction, event, destination_id=self.draft.get("channel_id"),
+                ping_role_ids=self.draft.get("ping_role_ids", []),
+            )
+            # Update private poster state so next actions unlock immediately.
+            saved = read_raid(self.cog.raid_db_path(), event["raid_id"])
+            message = getattr(interaction, "message", None)
+            if message and saved and saved.get("panel_message_id"):
+                try:
+                    await message.edit(view=RaidPosterView(
+                        self.cog, self.owner_id, self.draft, page=self.page
+                    ))
+                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                    pass
 
         async def ask_delete(interaction):
             if not self.authorised(interaction):
@@ -864,9 +876,17 @@ class RaidPosterView(discord.ui.LayoutView):
             if not event:
                 await interaction.response.send_message("Save the raid first.", ephemeral=True)
                 return
+            if event.get("archived_at"):
+                await interaction.response.send_message(
+                    "Raid completed. Manage attendance before archiving.",
+                    ephemeral=True,
+                )
+                return
             if not event.get("roster_published"):
                 await interaction.response.send_message(
-                    "Confirm the roster before managing attendance.", ephemeral=True)
+                    "Publish roster first, then manage attendance.",
+                    ephemeral=True,
+                )
                 return
             from cogs.raid_signup import RaidManageView
             await interaction.response.send_message(
