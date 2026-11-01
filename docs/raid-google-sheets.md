@@ -95,6 +95,37 @@ paused during the coordinated deletion to avoid recreating a tab.
 The top rows contain the raid title, date, status, instances, confirmation
 and archive timestamps, Warcraft Logs, review notes and Discord panel link.
 
+### Top-of-sheet controls (rows 1-5)
+
+The existing **title (A1)**, **date (A2/B2)**, **instances (A3/B3)**,
+**status (C2/D2)** and **signed/absent count (A5)** remain unchanged.
+
+**B4: Warcraft Logs** is user-editable. Paste a valid HTTPS Warcraft
+Logs report URL. Ogre reads it during its next successful Sheets sync,
+stores it in the raid record and updates the original Discord raid
+panel with the **Warcraft Logs: View report** link. The bot remembers
+the last value it wrote to B4, so routine sync will not overwrite a
+new manual edit.
+
+**D4: Raid Notes** is also user-editable. A changed D4 is saved to
+the raid record on the next successful sync; it is retained after
+completion. Raid Notes are leadership-only in the Sheet and saved
+record; they are not added to the public sign-up panel. The **Complete
+Raid** modal continues requesting Warcraft Logs and raid notes,
+prefilled from the last synchronised values where available. Leaving
+them unchanged will not clear existing entries.
+
+**G2:H5: Buff coverage** updates on each successful sync, using only
+**Selected** and **Signed** character assignments, even if **Show = No**.
+G2 and G3 show the Barrows 🔸 and 🔹 teams; G4 shows Hyjal; G5 shows
+Onyxia when configured. H2-H5 show potential missing class/spec buffs.
+This is a roster planning checklist based on WoW: Forever's October
+2026 class changes, not proof that buffs are talented, cast or active.
+Key Forever changes include raid-wide Warrior Battle Shout, Hunter
+Trueshot Aura, Druid Moonkin/Leader of the Pack, and Shaman totems.
+[Wowhead Forever changes](https://www.wowhead.com/forever/news/many-buffs-now-raid-wide-class-changes-in-latest-wow-forever-build-383456).
+If nobody is selected for an instance, H displays **No team selected**.
+
 **Warcraft Logs:** Paste the HTTPS report URL into **B4**, next to
 **Warcraft Logs**. Ogre reads changes on the next successful ~60-second
 sync and updates the **existing public raid panel** with a
@@ -124,19 +155,19 @@ Below the fixed headings, registrations appear under five sections:
 | D | Spec | Ogre |
 | E | Role | Ogre |
 | F | Main / Alt | Ogre |
-| G | Sign-up notes (and absence note) | Ogre |
-| H | Signed / Absent | Ogre |
-| I | Selection: Pending / Selected / Bench / Not selected | Leadership |
-| J | Hyjal: No / Yes | Leadership |
-| K | Barrows: No / 🔸 / 🔹 | Leadership |
-| L | Ony: No / Yes | Leadership |
-| M | Show on Discord: No / Yes | Leadership |
-| N | WoWSims average iLvl and conservative enchant gaps | Ogre |
+| G | Selection: Pending / Selected / Bench / Not selected | Leadership |
+| H | Hyjal: No / Yes | Leadership |
+| I | Barrows: No / 🔸 / 🔹 | Leadership |
+| J | Ony: No / Yes | Leadership |
+| K | Show: No / Yes | Leadership |
+| L | WoWSims average known iLvl and enchant gaps | Ogre |
+| M | Past 3 / Next 3 raid status | Ogre |
+| N | Sign-up notes and absence reasons | Ogre |
 | O | Leadership notes | Leadership |
-| P-Q | Internal Discord and character IDs, hidden for readability | Ogre |
+| P-Q | Internal Discord and character IDs, hidden | Ogre |
 | R | Signed-off/absent timestamp | Ogre |
-| S | Original signed-at timestamp (readable UK time) | Ogre |
-| T | Past 3 / Next 3 raid status relative to this raid date | Ogre |
+| S | Original signed-at timestamp (UK) | Ogre |
+| T | Status: Signed / Absent | Ogre |
 
 Every new player is **Signed** by default. The raid poster's
 **Default sign-up visibility** controls whether new players' names
@@ -156,9 +187,9 @@ publishes the roster; **Show on Discord** continues to apply then.
 Existing players' manual visibility choices in Sheets are preserved
 when the poster's default is changed.
 
-For a player to appear in Hyjal, for example: choose **Selected** (I),
-**Yes** (M, Show on Discord), and **Yes** (J, Hyjal). For Barrows, select
-the relevant team symbol in column K. Changes are noticed at the next successful ~60-second sync.
+For a player to appear in Hyjal, for example: choose **Selected** (G),
+**Yes** (K, Show), and **Yes** (H, Hyjal). For Barrows, select the relevant
+team symbol in column I. Changes are noticed at the next successful ~60-second sync.
 Hyjal remains one roster headed by 🔹🔸 and Barrows has two rosters
 headed 🔸 and 🔹. The diamond headers stay visible after players appear.
 Names have no bullet prefixes. The bot uses server custom emoji named
@@ -166,10 +197,11 @@ Names have no bullet prefixes. The bot uses server custom emoji named
 `Mage`, when present; readable Unicode icons are the fallback.
 Class/spec/role data travels with the private selected roster, including PUGs.
 
-The columns above reflect the actual displayed order, not the internal
-Python/SQLite field indices. During sync, Ogre migrates existing 19-column
-raid sheets by appending T. Earlier 18-column sheets are extended without
-moving their existing signed-at history into the new status column.
+The columns above describe the new displayed order, not the internal
+Python/SQLite field indices. Ogre reads existing raid tabs by the original
+column headings (including the old **Show on Discord**) before rewriting
+the new layout, keeping manual selections and leadership notes attached
+to the correct Discord ID. The internal IDs remain in P-Q.
 
 The Discord paste field supports a maximum of 4,000 characters. Ogre
 validates WoWSims JSON and confirms its character name matches the
@@ -189,9 +221,9 @@ full scheduled date and time.
 
 When a player clicks **Absent**, Ogre moves the row to **ABSENT**, sets
 selection to Not selected, disables public display, and removes them from
-the public roster if necessary. The original sign-up time stays in column H,
-and the signed-off timestamp and optional reason are recorded in column G
-alongside any original sign-up note. A player signing up again is reset to
+the public roster if necessary. The original sign-up time stays in column S,
+and the signed-off timestamp and optional reason are recorded in R and N
+alongside the original sign-up note. A player signing up again is reset to
 Pending/No, requiring fresh leadership approval.
 
 After publication, leadership's dropdown changes are reflected on the
