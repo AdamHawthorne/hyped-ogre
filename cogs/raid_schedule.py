@@ -707,9 +707,10 @@ def raid_panel_intro(event):
         f"## {title}\n"
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n"
         + "**Instances:** " + ", ".join(instances)
+        + wse_line
         + (f"\n**Check:** [View message]({event['check_message_url']})"
            if event.get("check_message_url") else "")
-        + softres_line + wse_line + wcl_line
+        + softres_line + wcl_line
     )
 
 
