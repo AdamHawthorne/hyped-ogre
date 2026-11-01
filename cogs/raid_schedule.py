@@ -40,6 +40,7 @@ RAID_COLUMNS = {
     "archive_notes": "TEXT",
     "wcl_url": "TEXT",
     "wcl_sheet_synced": "TEXT",
+    "raid_notes_sheet_synced": "TEXT",
     "default_show_discord": "INTEGER NOT NULL DEFAULT 1",
     # 'missing' is the default for new and pre-existing raids.
     "wowsims_policy": "TEXT NOT NULL DEFAULT 'missing'",
@@ -481,7 +482,8 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
             if not event[0]:
                 raise ValueError("Confirm the raid roster before archiving.")
             con.execute(
-                "UPDATE raids SET archived_at=?, archive_notes=?, "
+                "UPDATE raids SET archived_at=?, "
+                "archive_notes=COALESCE(NULLIF(?, ''), archive_notes), "
                 "wcl_url=COALESCE(NULLIF(?, ''), wcl_url), "
                 "signup_open=0 WHERE raid_id=?",
                 (now, notes or "", validate_wcl_url(wcl_url) or "", number),
