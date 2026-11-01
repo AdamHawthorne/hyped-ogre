@@ -942,14 +942,14 @@ class WoWSimsExportModal(discord.ui.Modal):
             await interaction.response.send_message(
                 f"Ogre got **{name}** WoWSims! Signed for Raid #{self.raid_id}. "
                 "Ogre keep export for next raids too. "
-                "You can replace it using **WoWSims** before roster confirmation.",
+                "Ogre keep WoWSims open until raid completed. Update any time.",
                 ephemeral=True)
             await refresh_player_signup_panel(interaction, self.raid_id)
             return
         await interaction.response.send_message(
             f"Ogre got **{name}** WoWSims! Ogre keep this export. "
             "Use **WoWSims** again whenever gear changes, especially "
-            "before roster confirmation.", ephemeral=True)
+            "before roster confirmation. Ogre take updates until raid completed.", ephemeral=True)
 
 
 class WoWSimsInstructionsView(discord.ui.LayoutView):
@@ -961,7 +961,7 @@ class WoWSimsInstructionsView(discord.ui.LayoutView):
         deadline = (format_discord_date(event["roster_announce_at"], style="F",
                                         with_relative=False)
                     if event and event.get("roster_announce_at") else None)
-        hint = (f"before roster confirmation ({deadline})"
+        hint = (f"by roster confirmation ({deadline})"
                 if deadline else "before Ogre confirms roster")
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
@@ -973,7 +973,8 @@ class WoWSimsInstructionsView(discord.ui.LayoutView):
                 "2. In game, type `/wse export`. Export window opens, "
                 "your data already selected. Press **Ctrl+C**.\n"
                 "3. Come back and press **Paste export**, then **Ctrl+V**.\n\n"
-                f"Ogre let you update export any time {hint}. "
+                f"Ogre prefer latest export {hint}. "
+                "Ogre take updates until raid completed. "
                 "One export per character, reused for future raids."
             ), accent_color=ACCENT,
         ))
