@@ -16,6 +16,11 @@ UK = ZoneInfo("Europe/London")
 INSTANCES = ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)")
 TIMES = ("18:00", "18:30", "19:00", "19:30", "20:00", "20:30",
          "21:00", "21:30", "22:00")
+WOWSIMS_POLICIES = {
+    "missing": "Required if missing (default)",
+    "fresh": "Require fresh export for this raid",
+    "optional": "Optional (no requirement)",
+}
 ANNOUNCEMENTS = {
     "1": "1 day before",
     "2": "2 days before",
@@ -31,7 +36,7 @@ def draft_from_event(event):
     """Existing raid loads without losing optional instance or SoftRes values."""
     if not event:
         return {
-            "number": None, "day": None, "time": "20:00", "channel_id": None, "ping_role_ids": [], "default_show_discord": True,
+            "number": None, "day": None, "time": "20:00", "channel_id": None, "ping_role_ids": [], "default_show_discord": True, "wowsims_policy": "missing",
             "end_time": None, "check_message_url": None,
             "instance_1": None, "instance_2": None, "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
@@ -41,6 +46,7 @@ def draft_from_event(event):
     return {
         "number": event["raid_id"], "channel_id": event.get("panel_channel_id"), "ping_role_ids": [],
         "default_show_discord": bool(event.get("default_show_discord", 1)),
+        "wowsims_policy": event.get("wowsims_policy") or "missing",
         "day": start.date().isoformat(),
         "time": start.strftime("%H:%M"),
         "end_time": (datetime.fromisoformat(event["end_at"]).astimezone(UK).strftime("%H:%M")
@@ -293,6 +299,7 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_destination_picker()
         self.add_ping_role_picker()
         self.add_visibility_picker()
+        self.add_wowsims_picker()
         self.add_date_picker()
         self.add_time_picker()
         self.add_end_time_picker()
@@ -340,7 +347,11 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Bottom banner:** {banner}\n"
             f"**Post destination:** {'<#' + str(d['channel_id']) + '>' if d.get('channel_id') else 'Current channel (private #ogre)'}\n\n"
             f"**Ping roles on new post:** {', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
-            f"**Default Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n\n"
+            f"**Default Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n"
+            f"**WoWSims:** {WOWSIMS_POLICIES[d.get('wowsims_policy', 'missing')]}\n"
+            "-# Missing: Ogre collect export once per character before Attend. "
+            "Fresh: Ogre require new export after you enable fresh mode. "
+            "Optional: Attend without export. Existing sign-ups stay.\n\n"
             "Sign-ups appear by class and role immediately. Team assignments stay private until roster confirmation.\n"
             "-# Show on Discord controls the confirmed team roster, not the live sign-up list."
         )
@@ -421,6 +432,27 @@ class RaidPosterView(discord.ui.LayoutView):
                                  default=bool(self.draft.get("default_show_discord", True))),
             discord.SelectOption(label="No - hide until individually enabled", value="no",
                                  default=not bool(self.draft.get("default_show_discord", True))),
+        ], choose)
+
+    def add_wowsims_picker(self):
+        async def choose(interaction):
+            await self.changed(interaction, wowsims_policy=picker.values[0])
+        picker = self._select("WoWSims requirement", [
+            discord.SelectOption(
+                label="Required if missing (default)", value="missing",
+                description="Existing export works; new chars must paste one",
+                default=self.draft.get("wowsims_policy", "missing") == "missing",
+            ),
+            discord.SelectOption(
+                label="Require fresh export", value="fresh",
+                description="New export required after enabling this mode",
+                default=self.draft.get("wowsims_policy") == "fresh",
+            ),
+            discord.SelectOption(
+                label="Optional / off", value="optional",
+                description="Let anyone Attend without a WoWSims export",
+                default=self.draft.get("wowsims_policy") == "optional",
+            ),
         ], choose)
 
     def add_date_picker(self):
@@ -657,6 +689,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     banner_url=self.draft.get("banner_url") or "",
                     end_at=end_at,
                     check_message_url=self.draft.get("check_message_url"),
+                    wowsims_policy=self.draft.get("wowsims_policy", "missing"),
                 )
                 from cogs.raid_schedule import database
                 with database(self.cog.raid_db_path()) as con:
