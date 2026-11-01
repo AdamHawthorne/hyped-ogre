@@ -1,3 +1,4 @@
+from wowsims_helper import signup_with_export, seed_export, example_export
 """Offline tests of isolated raid sign-up preview and attendance schema."""
 import json
 import discord
@@ -199,7 +200,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 [button.label for button in panel.walk_children()
                  if isinstance(button, discord.ui.Button)],
-                ["Attend", None, "Characters", "SimC", "Absent"],
+                ["Attend", None, "Characters", "WoWSims", "Absent"],
             )
             self.assertIn("Roster confirmed:", json.dumps(rendered))
             self.assertNotIn("y6bCxy.png", json.dumps(rendered))
@@ -264,7 +265,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             for member_id, name, klass, spec, role in players:
                 raid.save_character(member_id, name, klass, spec, role, raid.RAID_DB)
                 character_id = raid.member_characters(member_id, raid.RAID_DB)[0][0]
-                raid.save_signup(5, member_id, character_id, raid.RAID_DB)
+                signup_with_export(5, member_id, character_id, raid.RAID_DB)
 
             roster = raid_schedule.read_signup_roster(raid.RAID_DB, 5)
             self.assertEqual([entry[0] for entry in roster],
@@ -560,12 +561,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
             raid.save_character(42, "Firstname Lastname", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             with raid.database(path) as con:
                 con.execute(
                     "UPDATE signups SET submitted_at='2026-12-01T12:00:00+00:00'"
                 )
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             with raid.database(path) as con:
                 row = con.execute(
                     "SELECT COUNT(*), submitted_at FROM signups "
@@ -584,8 +585,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             characters = raid.member_characters(42, path)
             original = next(r[0] for r in characters if r[1] == "Snore Mon")
             replacement = next(r[0] for r in characters if r[1] == "Second Character")
-            raid.save_signup(1, 42, original, path)
-            raid.save_signup(1, 42, replacement, path)
+            signup_with_export(1, 42, original, path)
+            signup_with_export(1, 42, replacement, path)
             self.assertEqual(raid.my_signup(1, 42, path),
                              ("Second Character", "Available"))
             with raid.database(path) as con:
@@ -805,7 +806,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('"label": "Attend"', components)
             self.assertIn('"style": 3', components)
             self.assertIn('"label": "Characters"', components)
-            self.assertIn('"label": "SimC"', components)
+            self.assertIn('"label": "WoWSims"', components)
             self.assertIn('"label": "Absent"', components)
             self.assertNotIn('"label": "Register character"', components)
             self.assertNotIn('"label": "My characters"', components)
@@ -815,18 +816,18 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                        if isinstance(item, discord.ui.Button)]
             self.assertFalse(next(b for b in buttons if b.label == "Attend").disabled)
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", None, "Characters", "SimC", "Absent"])
+                             ["Attend", None, "Characters", "WoWSims", "Absent"])
             self.assertFalse(all(b.disabled for b in buttons))
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
             # Registration and signup must work before any SimC gear upload.
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with self.assertRaises(ValueError):
                 raid.save_gear(999, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
             raid.save_gear(42, char_id, "player=SnoreMon\nlevel=60\n" * 5, path)
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with raid.database(path) as con:
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM signups").fetchone()[0], 1)
@@ -835,7 +836,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(timestamp.endswith("+00:00"))
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Unavailable"))
             self.assertEqual(raid.my_absence(1, 42, path), ("Running late", timestamp))
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             self.assertIsNone(raid.my_absence(1, 42, path))
 
@@ -926,7 +927,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid_schedule.save_raid(
                     path, number, "2026-11-05 20:00", "Hyjal (20m)"
                 )
-                raid.save_signup(number, 42, char_id, path)
+                signup_with_export(number, 42, char_id, path)
                 raid.save_absence(number, 99, "", path)
                 with raid.database(path) as con:
                     con.execute(
