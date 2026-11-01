@@ -1,298 +1,61 @@
-# RollF 🎲
+# Hyped Ogre
 
-![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/github/v/release/hegernat/rollf-bot)
-![Discord Bot](https://img.shields.io/badge/bot-live-blue)
-
-[![Invite RollF](https://img.shields.io/badge/Invite-RollF-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1409207722783543347&permissions=2147568640&integration_type=0&scope=bot+applications.commands)
-
-RollF is a minimal daily roll Discord bot built around one simple idea:
-
-Everyone gets exactly **one roll per day** (1–100).
-
-No rerolls.  
-No economy.  
-No gambling mechanics.
-
-Just a daily number and some competition.
-
-RollF is the official public instance operated by the original author.
-The source code for the bot is available here on GitHub.
-
----
+**Hyped Ogre** is an independent Python Discord bot for the Hyped World of Warcraft guild. It combines raid organisation, character and group tools, daily rolls and coins, Twitch notifications, and community utilities.
 
 ## Features
 
-- One roll per user per calendar day (Europe/Stockholm)
-- Seasonal easter egg event
-- Roll range: 1–100
-- Automatic daily bot roll
-- Global cross-server leaderboards
-- Period-based leaderboards:
-  - Today
-  - Week
-  - Month
-  - Year
-  - All Time
-  - Longest Streaks
-- PNG-rendered leaderboards with integrated reset timers
-- Cosmetic top.gg voter reward (random pastel username for 24 hours)
-- Historical streak leaderboards
-- Admin user lookup by Discord User ID
-- Streak tracking (current and best)
-- Streak milestone notifications
-- Detailed user statistics:
-  - Rank
-  - Best roll
-  - Averages
-  - Period breakdown (week & month)
-- Special display for perfect roll (💯)
-- Reset timers for active periods
-- Persistent SQLite storage
-- Automated compressed weekly database backups (180-day retention)
-- Optional rotating operational logs
-- Slash command usage logging
-- Owner admin tools for maintenance
+- **Daily rolls:** one free roll per UK day, a gold-coin ledger, Sunday double-coin awards, a once-per-day coin gamble, statistics and a High Roller role
+- **Raids:** signups, saved characters, roster management, attendance, Warcraft Logs links, and Google Sheets integration
+- **Characters and equipment:** saved characters, class/role handling and WoWSims export support
+- **LFG/LFM:** dungeon and group-planning panels
+- **Streams:** Twitch registration and stream notifications
+- **Guild utilities:** Forever role panels, countdowns, suggestions, flameboard and Ogre messaging
 
----
+Feature behaviour is covered by regression tests in `tests/`.
 
-## Commands
+## Runtime and persistence
 
-Public:
+The **current production entry point is `rollf.py`** for backwards compatibility during the structural migration. The Dockerfile still launches `python rollf.py`. The project is being reorganised into feature modules incrementally. Do not change the Docker entry point without verifying the whole application.
 
-- `/roll` – Roll your daily number
-- `/leaderboards` – View period-based rankings
-- `/stats` – View detailed statistics
-- `/setchannel` – Configure daily bot roll channel (admin)
-- `/help` – Show setup information and support links
+The Fly.io application is `hyped-diceman` (configured in `fly.toml`). Its persistent SQLite data is stored on the mounted `/data` volume:
 
-Owner-only (optional, requires ADMIN_MODE=true):
+| Data | Fly path |
+| --- | --- |
+| Rolls and coin ledger | `/data/bot.db` |
+| Raid signups and characters | `/data/raid_signup.db` |
+| LFG board | `/data/lfg_board.db` |
+| Countdown data | `/data/countdown.db` |
+| Stream registrations | `/data/streams.db` |
 
-- `/export` – Export guild & global bot statistics
-- `/user` – View full roll history summary for a user
+Never delete, overwrite, move, or reinitialise these live databases as part of a code refactor. Keep the Fly volume mounted at `/data`. Database migrations must be additive and tested before deployment.
 
+## Local setup
 
----
+Use Python 3.13. Create a local `.env` from `.env.example`, supply your own credentials, and install dependencies:
 
-### Example Roll
-
-<p align="center">
-  <img src="assets/roll-example.gif" width="500">
-</p>
-
-### Leaderboards
-
-<p align="center">
-  <img src="assets/rollf-leaderboards.png" width="500">
-</p>
-
----
-
-## Try RollF
-
-RollF is also listed on:
-
-- top.gg
-  https://top.gg/bot/1409207722783543347
-
-- Discord Bot List
-  https://discordbotlist.com/bots/rollf
-
-If you enjoy RollF, consider voting on top.gg.
-
-Voting unlocks a randomly selected pastel-colored username on the global leaderboards for 24 hours.
-
-The reward is cosmetic only and does not affect gameplay.
-
----
-
-## Optional: top.gg Integration
-
-RollF can optionally integrate with top.gg.
-
-Features include:
-
-- Automatic server count updates
-- Cosmetic voting rewards
-- Random pastel-colored usernames on leaderboards for 24 hours after a vote
-
-To enable voting rewards:
-
-1. Create a webhook in your top.gg bot settings.
-2. Point the webhook to:
-
-```
-http://your-domain-or-ip:8080/topgg
+```powershell
+cd "C:\Users\Adam\hyped-ogre"
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe rollf.py
 ```
 
-3. Forward the webhook port in your router.
-4. Allow the port through your firewall.
+**Do not run a second local production bot using the same Discord token while Fly.io is serving the guild.** For ordinary development, run offline tests instead:
 
-Without this configuration, RollF works normally. Only the cosmetic voting reward is disabled.
-
-
----
-
-## Requirements
-
-For RollF to function correctly, the bot needs permission to:
-
-- Send messages
-- Embed links
-- Read message history
-- Use slash commands
-
-Daily bot rolls are posted in the configured channel using `/setchannel`.
-
----
-
-## Docker
-
-RollF can be run as a Docker container.
-
-### Build and start
-
-```bash
-docker compose up -d --build
+```powershell
+python -m unittest discover -s tests -v
 ```
 
-### Stop
+## Development and deployment
 
-```bash
-docker compose down
-```
+- `main` is intended to be the stable, reviewed code baseline.
+- Use short-lived `feature/*`, `fix/*` or `refactor/*` branches for changes; features are **folders/modules**, not permanent branches.
+- Run syntax checks, unit tests and Docker build checks before merging.
+- A merge does **not** automatically deploy to Fly.io unless an explicit deployment workflow is configured.
+- Don't deploy structural migrations without a verified database backup, health checks and a rollback plan.
 
-### View logs
+See [architecture](docs/architecture.md) and [operational safety](docs/operations.md).
 
-```bash
-docker compose logs -f
-```
+## Licence and provenance
 
-The container uses:
-
-- ```bot.db``` for persistent SQLite storage
-- ```assets/``` for static assets
-- ```.env``` for runtime configuration and secrets
-
-The SQLite database and ```.env``` file are intentionally excluded from Git.
-
-The included ```compose.yml``` exposes the optional webhook endpoint on:
-
-```127.0.0.1:8080```
-
----
-
-## Setup
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-Dependencies are installed via `requirements.txt` and include:
-
-- discord.py
-- aiohttp
-- python-dotenv
-
-Create a .env file in the project root:
-```env
-# Required
-DISCORD_TOKEN=your_discord_bot_token
-
-# Optional
-ADMIN_MODE=true
-ENABLE_COMMAND_LOGGING=true
-
-OWNER_ID=your_discord_user_id
-ADMIN_GUILD_ID=your_admin_guild_id
-
-# Optional bot listing integrations
-BOTLIST_TOKEN=your_discordbotlist_token
-TOPGG_TOKEN=your_topgg_api_token
-```
-
-Run the bot:
-```
-python rollf.py
-```
-
----
-
-## Admin Mode (Optional)
-
-RollF supports an optional admin mode for maintenance tasks.
-
-Admin commands are:
-
-- Only registered if `ADMIN_MODE=true`
-- Restricted to `ADMIN_GUILD_ID`
-- Usable only by `OWNER_ID`
-
-If `ADMIN_MODE=false`, admin commands are not registered at all.
-
-Example:
-
-```env
-ADMIN_MODE=true
-OWNER_ID=your_discord_user_id
-ADMIN_GUILD_ID=your_admin_guild_id
-```
-
----
-
-## top.gg Voting Rewards (Optional)
-
-RollF can optionally reward users who vote on top.gg.
-
-When enabled:
-
-- Random pastel-colored username on the global leaderboards.
-- Reward lasts until the vote expires (normally 24 hours).
-- Purely cosmetic — gameplay is unaffected.
-
-To enable this feature:
-
-1. Create a webhook in your top.gg bot settings.
-2. Point it to:
-
-```
-http://your-domain-or-ip:8080/topgg
-```
-
-3. Forward port `8080` to the machine running RollF.
-4. Allow the port through your firewall.
-
-If this integration is not configured, RollF continues to function normally. Only the cosmetic voting reward is unavailable.
-
----
-
-## Production Notes
-
-RollF is designed for long-term unattended operation.
-
-The bot:
-
-- Uses persistent SQLite storage
-- Performs automatic schema migrations on startup
-- Supports Docker deployment
-- Supports optional operational logging
-- Supports slash command usage logging
-- Supports automated database backups
-
-RollF performs automatic schema migrations on startup, including backfilling `roll_date` for historical roll records.
-
-Statistics are derived directly from stored roll history.
-
----
-
-## Name & Official Instance
-
-RollF is open source under the MIT license.
-
-However, the name **"RollF"** and the official public bot instance are maintained by the original author.
-
-Forks and modified versions are welcome, but please do not present them as the official RollF bot.
-
-If you run your own instance, please use a different bot name to avoid confusion with the official deployment.
+Hyped Ogre is an **independent GitHub repository** and is not part of the RollF fork network. Some original code derives from [RollF](https://github.com/hegernat/rollf-bot), by hegernat/plutonium87. Attribution and the original MIT licence notice are retained in [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md). Independence does not remove inherited licence obligations.
