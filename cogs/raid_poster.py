@@ -242,6 +242,48 @@ class RaidDeleteConfirmation(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(confirm, cancel))
 
 
+class RaidPostConfirmation(discord.ui.View):
+    """Explicit owner-only confirmation before a NEW raid appears in chat."""
+
+    def __init__(self, poster, original_message):
+        super().__init__(timeout=180)
+        self.poster = poster
+        self.original_message = original_message
+
+    @discord.ui.button(label="Confirm and post raid",
+                       style=discord.ButtonStyle.success)
+    async def confirm(self, interaction, button):
+        if not self.poster.authorised(interaction):
+            await interaction.response.send_message(
+                "Only poster owner can confirm.", ephemeral=True
+            )
+            return
+        # A second confirmation, or another admin post, must not create
+        # another public panel. Existing cards are updated silently.
+        await self.poster.save_and_post(
+            interaction, original_message=self.original_message
+        )
+        event = read_raid(
+            self.poster.cog.raid_db_path(), self.poster.draft["number"]
+        )
+        if event and event.get("panel_message_id"):
+            for child in self.children:
+                child.disabled = True
+            await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        if not self.poster.authorised(interaction):
+            await interaction.response.send_message(
+                "Only poster owner.", ephemeral=True
+            )
+            return
+        await interaction.response.edit_message(
+            content="Raid posting cancelled. Your poster settings are unchanged.",
+            view=None
+        )
+
+
 class RaidRosterPreview(discord.ui.View):
     """Owner-only preview: publish quietly, or publish and ping selected users."""
     def __init__(self, cog, owner_id, raid_id, entries, already_announced=False,
@@ -692,6 +734,57 @@ class RaidPosterView(discord.ui.LayoutView):
                 await self.changed(interaction, announce=picker.values[0])
         picker = self._select("Target roster confirmation (manual)", options, choose)
 
+    async def save_and_post(self, interaction, *, original_message=None):
+        """Persist poster settings and post/edit public panel once authorised."""
+        if not self.authorised(interaction):
+            await interaction.response.send_message("Only owner.", ephemeral=True)
+            return
+        try:
+            raid_at, announce = poster_schedule(self.draft)
+            end_at = poster_end_at(self.draft)
+            event = save_raid(
+                self.cog.raid_db_path(), self.draft["number"], raid_at,
+                self.draft["instance_1"], self.draft["instance_2"],
+                self.draft["instance_3"], announce, self.draft["softres_url"],
+                custom_title=self.draft.get("custom_title") or "",
+                banner_url=self.draft.get("banner_url") or "",
+                end_at=end_at,
+                check_message_url=self.draft.get("check_message_url"),
+                wowsims_policy=self.draft.get("wowsims_policy", "missing"),
+            )
+            from cogs.raid_schedule import database
+            with database(self.cog.raid_db_path()) as con:
+                con.execute(
+                    "UPDATE raids SET default_show_discord=? WHERE raid_id=?",
+                    (int(self.draft.get("default_show_discord", True)),
+                     event["raid_id"])
+                )
+            event = read_raid(self.cog.raid_db_path(), event["raid_id"])
+            if self.draft["softres_url"] is None:
+                event = set_softres_url(
+                    self.cog.raid_db_path(), self.draft["number"], None
+                )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Check raid details before posting: {exc}", ephemeral=True
+            )
+            return
+        await self.cog.post_panel(
+            interaction, event, destination_id=self.draft.get("channel_id"),
+            ping_role_ids=self.draft.get("ping_role_ids", []),
+        )
+        # Refresh the ORIGINAL private poster, not the temporary ephemeral
+        # confirmation message.
+        saved = read_raid(self.cog.raid_db_path(), event["raid_id"])
+        message = original_message or getattr(interaction, "message", None)
+        if message and saved and saved.get("panel_message_id"):
+            try:
+                await message.edit(view=RaidPosterView(
+                    self.cog, self.owner_id, self.draft, page=self.page
+                ))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
+
     def add_controls(self):
         row = discord.ui.ActionRow()
         title = discord.ui.Button(label="Optional Raid Title",
@@ -778,50 +871,54 @@ class RaidPosterView(discord.ui.LayoutView):
 
         async def post(interaction):
             if not self.authorised(interaction):
-                await interaction.response.send_message("Only owner.", ephemeral=True)
-                return
-            try:
-                raid_at, announce = poster_schedule(self.draft)
-                end_at = poster_end_at(self.draft)
-                event = save_raid(
-                    self.cog.raid_db_path(), self.draft["number"], raid_at,
-                    self.draft["instance_1"], self.draft["instance_2"],
-                    self.draft["instance_3"], announce, self.draft["softres_url"],
-                    custom_title=self.draft.get("custom_title") or "",
-                    banner_url=self.draft.get("banner_url") or "",
-                    end_at=end_at,
-                    check_message_url=self.draft.get("check_message_url"),
-                    wowsims_policy=self.draft.get("wowsims_policy", "missing"),
-                )
-                from cogs.raid_schedule import database
-                with database(self.cog.raid_db_path()) as con:
-                    con.execute("UPDATE raids SET default_show_discord=? WHERE raid_id=?",
-                                (int(self.draft.get("default_show_discord", True)), event["raid_id"]))
-                event = read_raid(self.cog.raid_db_path(), event["raid_id"])
-                if self.draft["softres_url"] is None:
-                    event = set_softres_url(
-                        self.cog.raid_db_path(), self.draft["number"], None
-                    )
-            except (ValueError, sqlite3.Error) as exc:
-                # Configuration errors should never publish a partial raid.
                 await interaction.response.send_message(
-                    f"Check raid details before posting: {exc}", ephemeral=True
+                    "Only owner.", ephemeral=True
                 )
                 return
-            await self.cog.post_panel(
-                interaction, event, destination_id=self.draft.get("channel_id"),
-                ping_role_ids=self.draft.get("ping_role_ids", []),
+            current = read_raid(
+                self.cog.raid_db_path(), self.draft["number"]
             )
-            # Update private poster state so next actions unlock immediately.
-            saved = read_raid(self.cog.raid_db_path(), event["raid_id"])
-            message = getattr(interaction, "message", None)
-            if message and saved and saved.get("panel_message_id"):
+            if not current or not current.get("panel_message_id"):
+                # Validation without committing a draft to SQLite: cancel
+                # must leave both Discord and database unchanged.
                 try:
-                    await message.edit(view=RaidPosterView(
-                        self.cog, self.owner_id, self.draft, page=self.page
-                    ))
-                except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                    pass
+                    poster_schedule(self.draft)
+                    poster_end_at(self.draft)
+                    if not self.draft.get("instance_1"):
+                        raise ValueError("Choose the first raid instance.")
+                    if not self.draft.get("channel_id"):
+                        raise ValueError("Choose the destination channel.")
+                except ValueError as exc:
+                    await interaction.response.send_message(
+                        f"Check raid details before posting: {exc}",
+                        ephemeral=True,
+                    )
+                    return
+                destination = f"<#{self.draft['channel_id']}>"
+                mention_count = len(self.draft.get("ping_role_ids") or [])
+                ping_text = (f"{mention_count} role(s) on initial post"
+                             if mention_count else "No roles pinged")
+                await interaction.response.send_message(
+                    f"**Post <Hyped> Raid #{self.draft['number']}?**\n"
+                    f"**Date / time:** {self.draft['day']} · "
+                    f"{self.draft['time']} UK\n"
+                    f"**Instances:** "
+                    + ", ".join(str(self.draft[key]) for key in (
+                        "instance_1", "instance_2", "instance_3"
+                    ) if self.draft.get(key))
+                    + f"\n**Channel:** {destination}\n"
+                    f"**Pings:** {ping_text}\n"
+                    "**Action:** Create a new public sign-up panel.",
+                    view=RaidPostConfirmation(
+                        self, getattr(interaction, "message", None)
+                    ),
+                    ephemeral=True,
+                )
+                return
+            # Editing an already-posted card remains silent and immediate.
+            await self.save_and_post(
+                interaction, original_message=getattr(interaction, "message", None)
+            )
 
         async def ask_delete(interaction):
             if not self.authorised(interaction):
