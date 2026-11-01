@@ -22,7 +22,7 @@ UK = ZoneInfo("Europe/London")
 LOGGER = logging.getLogger(__name__)
 COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
-    "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
+    "Sign-up Notes", "Signed At", "Status", "Selection", "Show",
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "WoWSims gear",
     "Discord ID (internal)", "Character ID (internal)", "Absent At",
     "Past 3 | Next 3"
@@ -47,8 +47,9 @@ MAX_BODY_ROWS = 460
 _FORMATTED_SECTION_LAYOUTS = {}
 
 
-# Absent At is displayed in R; Signed At remains the far-right column S.
-DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 10, 15, 14, 16, 17, 18, 7, 19)
+# A-F identity, G-K assignments, L gear, M timeline, N-O notes,
+# P-Q hidden IDs, R-S timestamps, T signup status.
+DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 9, 11, 12, 13, 10, 15, 19, 6, 14, 16, 17, 18, 7, 8)
 
 
 def _uk_timestamp(value):
@@ -95,6 +96,19 @@ def _read(session, tab):
         session, "GET", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/{_q(tab)}",
         params={"valueRenderOption": "FORMATTED_VALUE"},
     ).get("values", [])
+    # Read the actual row-seven labels to migrate old physical layouts
+    # safely. Leadership selections and notes must follow their labels,
+    # never the old column positions, on the first sync after deployment.
+    headers = result[6] if len(result) > 6 else []
+    aliases = {"Show on Discord": "Show"}
+    by_name = {aliases.get(str(value).strip(), str(value).strip()): i
+               for i, value in enumerate(headers)}
+    if len(by_name) >= 12 and "Discord Name" in by_name:
+        def from_labels(row):
+            return [row[by_name[name]] if name in by_name and
+                    by_name[name] < len(row) else ""
+                    for name in COLUMNS]
+        return [from_labels(row) for row in result]
     return [_internal(row) for row in result]
 
 
@@ -468,8 +482,8 @@ def _make_tab(session, title):
     # Selected players have a light-green selection cell, not a green row.
     requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
         "ranges": [{"sheetId": sid, "startRowIndex": 7,
-                    "endRowIndex": 500, "startColumnIndex": 8,
-                    "endColumnIndex": 9}],
+                    "endRowIndex": 500, "startColumnIndex": 6,
+                    "endColumnIndex": 7}],
         "booleanRule": {"condition": {"type": "TEXT_EQ",
                        "values": [{"userEnteredValue": "Selected"}]},
                         "format": {"backgroundColor": {
@@ -478,10 +492,10 @@ def _make_tab(session, title):
                             "textFormat": {"foregroundColor": {
                                 "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 200), (7, 95),
-                       (8, 110), (9, 95), (10, 95), (11, 75),
-                       (12, 135), (13, 145), (14, 205),
-                       (17, 195), (18, 195), (19, 340)):
+                       (4, 90), (5, 90), (6, 110), (7, 85),
+                       (8, 130), (9, 85), (10, 75), (11, 220),
+                       (12, 330), (13, 210), (14, 210),
+                       (17, 195), (18, 195), (19, 95)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": col, "endIndex": col + 1},
@@ -539,11 +553,11 @@ def _paint_sections(session, sid, rows):
     requests = [paint(7, 500, grey, ink)]
     requests.extend(paint(index, index + 1, black, white, bold=True, size=11)
                     for index in _section_positions(rows))
-    requests.append(
-        {"setDataValidation": {"range": {
-            "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
-            "startColumnIndex": 7, "endColumnIndex": 8}}}
-    )
+    # Old dropdowns can linger after a layout migration. Clear the entire
+    # management area and reapply only the actual selection controls.
+    requests.append({"setDataValidation": {"range": {
+        "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
+        "startColumnIndex": 6, "endColumnIndex": 15}}})
     # Leadership Notes (display column O) is free text, not a dropdown.
     requests.append({"setDataValidation": {"range": {
         "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
@@ -560,7 +574,7 @@ def _paint_sections(session, sid, rows):
         if not row[1].strip():
             requests.append({"setDataValidation": {"range": {
                 "sheetId": sid, "startRowIndex": i, "endRowIndex": i + 1,
-                "startColumnIndex": 8, "endColumnIndex": 13}}})
+                "startColumnIndex": 6, "endColumnIndex": 11}}})
     raid_sheets._json(
         session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
         json={"requests": requests},
