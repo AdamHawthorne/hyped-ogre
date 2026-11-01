@@ -114,3 +114,16 @@ jobs:
               assert "Back to schedule" in str(advanced.to_components())
           print("Private raid poster schedule and advanced views built successfully")
           '
+
+      - name: Verify legacy raid Sheets bridge is canonical in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs import raid_sheets, raid_sheets_v3, raid_signup
+          from hyped_ogre.integrations import sheets
+          assert raid_sheets is sheets
+          assert raid_sheets_v3.raid_sheets is sheets
+          assert raid_signup.raid_sheets is sheets
+          assert sheets.SHEETS["roster"][0] == "RM - Roster Builder"
+          assert sheets._existing_keys("roster", [[], ["1", "", "42"]]) == {"1:42": 2}
+          print("Google Sheets bridge imports and legacy roster keys validated")
+          '
