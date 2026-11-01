@@ -284,3 +284,23 @@ jobs:
           assert lfg_preview.raid_signup is raid_signup
           print("Legacy Discord extensions load relocated feature source successfully")
           '
+
+      - name: Verify legacy executable reaches configuration guard without Discord token
+        run: |
+          set +e
+          docker run --rm --entrypoint python \
+            -e DISCORD_TOKEN= -e HYPED_GUILD_ID=0 \
+            -e ROLL_CHANNEL_ID=0 -e HIGH_ROLLER_ROLE_ID=0 \
+            hyped-ogre-test rollf.py > /tmp/hyped-startup-smoke.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Bot unexpectedly launched with no credentials"
+            exit 1
+          fi
+          if ! grep -q "Missing required configuration:" /tmp/hyped-startup-smoke.log; then
+            cat /tmp/hyped-startup-smoke.log
+            echo "Entrypoint did not reach the original configuration guard"
+            exit 1
+          fi
+          echo "Original rollf.py command reached the canonical bot safely"
