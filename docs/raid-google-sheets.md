@@ -115,17 +115,22 @@ Raid** modal continues requesting Warcraft Logs and raid notes,
 prefilled from the last synchronised values where available. Leaving
 them unchanged will not clear existing entries.
 
-**G2:G5: Missing buffs/debuffs** updates on each successful sync,
-using only **Selected** and **Signed** character assignments, even if
-**Show = No**. **G2:G5 contain the actual missing-coverage text**;
-the corresponding instance labels are in H2:H5: Barrows 🔸, Barrows 🔹,
-Hyjal and Ony (when configured). The rest of the top section, including
-B4 Warcraft Logs and D4 Raid Notes, is unchanged.
+**G2:G5: Instances and missing-buff counts** updates on each successful
+sync, using only **Selected** and **Signed** character assignments, even
+if **Show = No**. G2:G5 show Barrows 🔸, Barrows 🔹, Hyjal and Ony
+(when configured), with the number of missing class/spec buff checks
+in brackets. For example, **Barrows 🔸 (7)** means seven missing
+buffs in the current checklist, **not seven players**. H2:H5 list
+which buffs are missing. An unassigned team shows **No team selected**
+in H and the full number of unchecked buffs in G. The rest of the top
+section, including B4 Warcraft Logs and D4 Raid Notes, is unchanged.
 This is a roster planning checklist based on WoW: Forever's October
 2026 class changes, not proof that buffs are talented, cast or active.
 Key Forever changes include raid-wide Warrior Battle Shout, Hunter
 Trueshot Aura, Druid Moonkin/Leader of the Pack, and Shaman totems.
 [Wowhead Forever changes](https://www.wowhead.com/forever/news/many-buffs-now-raid-wide-class-changes-in-latest-wow-forever-build-383456).
+The bracket counts the currently implemented buff checks; it does not yet
+represent a comprehensive list of every possible Forever debuff or cooldown.
 If nobody is selected for an instance, H displays **No team selected**.
 
 **Warcraft Logs:** Paste the HTTPS report URL into **B4**, next to
