@@ -949,7 +949,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                     con.execute("SELECT COUNT(*) FROM attendance").fetchone()[0], 1
                 )
                 self.assertEqual(
-                    con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 1
+                    con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 2
                 )
                 self.assertEqual(
                     con.execute("SELECT COUNT(*) FROM characters").fetchone()[0], 1
