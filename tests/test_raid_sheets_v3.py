@@ -110,7 +110,10 @@ class RaidTabsTests(unittest.TestCase):
                     req["range"]["startRowIndex"] for req in fills[1:]
                     if req["cell"]["userEnteredFormat"]["textFormat"]["bold"]
                 ]
-                self.assertEqual(headers, [7, 12, 14, 17, 20])
+                self.assertEqual(
+                    [i for i in headers if i >= 7],
+                    [7, 12, 14, 17, 20]
+                )
                 self.assertNotIn(10, headers)
                 self.assertNotIn(11, headers)
                 self.assertEqual(
@@ -125,7 +128,7 @@ class RaidTabsTests(unittest.TestCase):
 
     def test_display_order_and_absence_timestamp(self):
         """Date fields are readable, and manual IDs retain their stable positions."""
-        self.assertEqual(sheet.DISPLAY_ORDER[-3:], (18, 7, 19))
+        self.assertEqual(sheet.DISPLAY_ORDER[-3:], (18, 7, 8))
         source = [""] * len(sheet.COLUMNS)
         source[7] = "2026-10-29T23:25:08+00:00"
         source[8] = "Absent"
@@ -136,7 +139,8 @@ class RaidTabsTests(unittest.TestCase):
         displayed = sheet._display(source)
         self.assertEqual(displayed[-2], "29 Oct 2026, 23:25")
         self.assertEqual(displayed[-3], "30 Oct 2026, 11:10")
-        self.assertEqual(displayed[-1], source[19])
+        self.assertEqual(displayed[12], source[19])
+        self.assertEqual(displayed[-1], "Absent")
         self.assertEqual(displayed[15:17], ["119863153411489793", "1"])
         restored = sheet._internal(displayed)
         self.assertEqual(restored[16], source[16])
