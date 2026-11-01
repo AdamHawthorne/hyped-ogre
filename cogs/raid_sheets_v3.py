@@ -569,6 +569,29 @@ def _apply_wcl_from_sheet(db_path, event, existing):
     return None
 
 
+def _cache_signup_visibility(db_path, raid_id, body):
+    """Apply Sheet 'Show on Discord' flags after a successful sync.
+
+    Only registered members are updated. Guest rows, attendance, instance
+    assignments and leadership selections are never modified.
+    """
+    updates = []
+    for row in body:
+        if len(row) < 17:
+            continue
+        member_id = str(row[16]).strip()
+        visibility = str(row[10]).strip().casefold()
+        if member_id.isdecimal() and visibility in ("yes", "no"):
+            updates.append((1 if visibility == "yes" else 0,
+                            raid_id, int(member_id)))
+    if updates:
+        with database(db_path) as con:
+            con.executemany(
+                "UPDATE signups SET show_on_discord=? "
+                "WHERE raid_id=? AND discord_id=?", updates
+            )
+
+
 def _one(session, db_path, event, names, titles):
     number = event["raid_id"]
     matches = [name for name in titles if name.startswith(f"Raid #{number} - ")]
@@ -641,6 +664,9 @@ def _one(session, db_path, event, names, titles):
         # Retain an invalid entry for leadership to correct; don't echo it to Discord.
         full[3][1] = invalid_wcl
     changed = _write(session, title, sid, existing, full)
+    # The live unconfirmed panel uses the same visibility choices as Sheets,
+    # independently of the confirmed roster and without exposing assignments.
+    _cache_signup_visibility(db_path, number, body)
     if invalid_wcl is None:
         with database(db_path) as con:
             con.execute("UPDATE raids SET wcl_sheet_synced=? WHERE raid_id=?",
@@ -982,9 +1008,9 @@ def sync_once(db_path, discord_names=None):
                     if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
                 ]
             else:
-                # The collecting roster is sourced only from the actual raid
-                # sign-ups. Sheet selection, Show on Discord and background
-                # raid assignments remain private until leadership confirms.
+                # The collecting roster shows visible sign-ups only, based on
+                # the latest Sheet visibility flags cached by _one(). Instance
+                # assignments and selection still stay private until publish.
                 published[raid_id] = read_signup_roster(db_path, raid_id)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         try:
