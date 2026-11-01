@@ -119,8 +119,23 @@ Below the fixed headings, registrations appear under five sections:
 | P | WoWSims character level, equipped-slot and reported-enchant summary | Ogre |
 | Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
 
-Every new player is **Signed** by default. Selection begins **Pending**;
-Show on Discord begins **No**. This prevents accidental public disclosure.
+Every new player is **Signed** by default. The raid poster's
+**Default sign-up visibility** controls whether new players' names
+appear on the public panel while sign-ups are being collected. The
+per-player **Show on Discord** choice in Sheets overrides that default
+after the next successful sync, even **before roster confirmation**.
+Changing this choice never changes registration, availability or
+leadership's selected teams. A player set to **No** remains recorded
+privately but disappears from the public sign-up list.
+
+The raid panel itself remains posted so members can still use Attend,
+Characters, WoWSims and Absent. Hiding the raid panel entirely is a
+separate action, not the Show on Discord choice.
+
+Selection and instance assignments are used only after leadership
+publishes the roster; **Show on Discord** continues to apply then.
+Existing players' manual visibility choices in Sheets are preserved
+when the poster's default is changed.
 
 For a player to appear in Hyjal, for example: choose **Selected** (J),
 **Yes** (K) and **Yes** (L). For Barrows, select the relevant team symbol in
