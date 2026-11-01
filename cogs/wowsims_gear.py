@@ -5,6 +5,7 @@ icons or item-level metadata. Don't invent these or score missing enchants.
 """
 import json
 import sqlite3
+from cogs import forever_item_data
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -16,10 +17,18 @@ SLOTS = (
 SHEET_NAME = "Forever Gear"
 HEADERS = (
     "Character", "Level", "Class / Spec", "Slot",
-    "Item", "Enchant", "Wowhead item link", "Exported (UK)",
+    "Item", "Enchant", "Wowhead item link", "iLvl", "Exported (UK)",
 )
 UK = ZoneInfo("Europe/London")
 MAX_CHARACTERS = 75  # 75 * 19 = 1425 detail rows; keep the sheet bounded.
+
+# Conservative classic baseline: excludes jewellery/trinkets, off-hand
+# frills, and ranged scopes. Head/shoulder enchants may depend on faction or
+# progression; this is a slot-check indicator, not proof an enchant is required.
+ENCHANT_SLOTS = frozenset((
+    "Head", "Shoulders", "Back", "Chest", "Wrists", "Hands",
+    "Legs", "Feet", "Main Hand",
+))
 
 
 def _positive_id(value):
@@ -91,14 +100,42 @@ def latest_profiles(db_path):
         """)]
 
 
-def summary(profile):
-    """Never call a character level 'item level' or assume enchants are mandatory."""
+def average_item_level(profile, item_catalog=None):
+    """Only average item levels actually resolved for equipped items."""
     if not profile:
-        return "WoWSims received"
-    level = f"Lv {profile['level']} · " if profile["level"] else ""
-    enchant_count = profile["enchanted"]
-    return (f"{level}{profile['equipped']}/17 equipped · "
-            f"{enchant_count} enchant{'s' if enchant_count != 1 else ''} reported")
+        return None, 0, 0
+    known = []
+    equipped = 0
+    for slot in profile["slots"]:
+        if slot["id"]:
+            equipped += 1
+            data = forever_item_data.lookup(item_catalog or {}, slot["id"])
+            level = data.get("level")
+            if isinstance(level, int) and level > 0:
+                known.append(level)
+    return (round(sum(known) / len(known), 1) if known else None,
+            len(known), equipped)
+
+
+def enchant_gaps(profile):
+    """Unenchanted equipment in commonly enchantable slots, not every slot."""
+    if not profile:
+        return 0
+    return sum(bool(slot["id"] and not slot["enchant"])
+               for slot in profile["slots"] if slot["slot"] in ENCHANT_SLOTS)
+
+
+def summary(profile, item_catalog=None):
+    """Gear-level estimate and conservative enchant gaps; never character Lv."""
+    if not profile:
+        return "WoWSims not submitted"
+    average, known, equipped = average_item_level(profile, item_catalog)
+    level = f"{average:.1f}" if average is not None else "?"
+    completeness = f" ({known}/{equipped} known)" if known != equipped else ""
+    if not equipped:
+        completeness = " (no gear)"
+    gaps = enchant_gaps(profile)
+    return f"iLvl {level}{completeness} · {gaps} enchant gap{'s' if gaps != 1 else ''}"
 
 
 def _exported_uk(value):
@@ -109,13 +146,14 @@ def _exported_uk(value):
         return ""
 
 
-def sheet_rows(profiles):
-    """One clean, bounded tab: character banners plus numbered equipment slots."""
+def sheet_rows(profiles, item_catalog=None):
+    """One clean, bounded tab with named Forever items and resolved iLvl."""
+    item_catalog = item_catalog or {}
     rows = [
         ["<Hyped> · WoWSims Equipment"],
-        ["Latest saved /wse export per character. Item IDs link to Wowhead; "
-         "the export does not contain item names, icons or item level. "
-         "An empty enchant field does not prove an enchant is required."],
+        ["Forever-only cached item data: item names and levels are estimates "
+         "from a beta snapshot. Blank iLvl = unresolved. Enchant gaps are "
+         "a conservative standard-slot check, not a full enchant audit."],
         list(HEADERS),
     ]
     headings = []
@@ -130,20 +168,21 @@ def sheet_rows(profiles):
         headings.append(len(rows))  # zero-indexed heading for styling
         rows.append([
             label, profile["level"] or "Unknown",
-            f"{klass} / {spec}", summary(profile),
+            f"{klass} / {spec}", summary(profile, item_catalog),
             ("Professions: " + ", ".join(profile["professions"]))
-            if profile["professions"] else "", "", "", exported,
+            if profile["professions"] else "", "", "", "", exported,
         ])
         for slot in profile["slots"]:
             item_id = slot["id"]
             enchant_id = slot["enchant"] if item_id else None
+            metadata = forever_item_data.lookup(item_catalog, item_id)
             rows.append([
                 label, "", "", slot["slot"],
-                f"Item #{item_id}" if item_id else "Empty",
+                metadata.get("name") or (f"Item #{item_id}" if item_id else "Empty"),
                 f"Enchant #{enchant_id}" if enchant_id else
                 ("Not reported" if item_id else "—"),
-                f"https://www.wowhead.com/classic/item={item_id}" if item_id else "",
-                "",
+                f"{forever_item_data.WOWHEAD_BASE}{item_id}" if item_id else "",
+                metadata.get("level") or "", "",
             ])
         rows.append([""] * len(HEADERS))
     return rows, headings
