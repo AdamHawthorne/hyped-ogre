@@ -19,6 +19,7 @@ from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
 from hyped_ogre.features.raids.signup_schema import ensure_signup_schema_on_connection
 from hyped_ogre.features.characters import queries as character_queries
+from hyped_ogre.features.characters import mutations as character_mutations
 from hyped_ogre.features.raids import signup_queries
 from hyped_ogre.features.raids.signup_reference import (
     SHEET_TABS, ATTENDANCE_OPTIONS, CLASS_SPECS,
@@ -116,34 +117,9 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
     if role not in CLASS_SPECS.get(class_name, {}).get(spec, ()):
         raise ValueError("Choose a valid class, spec and raid role.")
     with database(path) as con:
-        # Hold a write lock across lookup+insert to prevent competing clicks
-        # registering the same character twice.
-        con.execute("BEGIN IMMEDIATE")
-        previous = con.execute(
-            "SELECT character_id FROM characters "
-            "WHERE discord_id=? AND name=? COLLATE NOCASE "
-            "ORDER BY character_id LIMIT 1",
-            (discord_id, name),
-        ).fetchone()
-        if previous:
-            con.execute(
-                "UPDATE characters SET class_name=?, spec=?, role=? "
-                "WHERE character_id=? AND discord_id=?",
-                (class_name, spec, role, previous[0], discord_id),
-            )
-            return "updated"
-        has_main = con.execute(
-            "SELECT 1 FROM characters WHERE discord_id=? AND is_main=1 LIMIT 1",
-            (discord_id,),
-        ).fetchone()
-        con.execute(
-            "INSERT INTO characters "
-            "(discord_id, name, realm, class_name, spec, role, is_main) "
-            "VALUES (?, ?, '', ?, ?, ?, ?)",
-            (discord_id, name, class_name, spec, role, 0 if has_main else 1),
+        return character_mutations.register_character(
+            con, discord_id, name, class_name, spec, role
         )
-        return "created"
-
 
 def list_characters(discord_id, path=RAID_DB):
     with database(path) as con:
@@ -172,19 +148,9 @@ def character_race(discord_id, character_id, path=RAID_DB):
 
 def set_character_race(discord_id, character_id, race, path=RAID_DB):
     with database(path) as con:
-        row = con.execute(
-            "SELECT class_name FROM characters WHERE discord_id=? AND character_id=?",
-            (discord_id, character_id),
-        ).fetchone()
-        if not row:
-            raise ValueError("That character isn't yours.")
-        if row[0] not in RACE_CLASSES.get(race, ()):
-            raise ValueError("This race cannot play that class in Forever.")
-        con.execute(
-            "UPDATE characters SET race=? WHERE discord_id=? AND character_id=?",
-            (race, discord_id, character_id),
+        return character_mutations.set_character_race(
+            con, discord_id, character_id, race, RACE_CLASSES
         )
-
 
 async def refresh_lfg_for_member(interaction, owner_id):
     """Keep LFG entries current when the shared character profile changes."""
@@ -202,19 +168,9 @@ async def refresh_lfg_for_member(interaction, owner_id):
 def set_main_character(discord_id, character_id, path=RAID_DB):
     """Mark exactly one owned character Main; leave all raid/SimC records intact."""
     with database(path) as con:
-        row = con.execute(
-            "SELECT 1 FROM characters WHERE discord_id=? AND character_id=?",
-            (discord_id, character_id),
-        ).fetchone()
-        if not row:
-            raise ValueError("Ogre cannot edit someone else's character.")
-        con.execute("UPDATE characters SET is_main=0 WHERE discord_id=?", (discord_id,))
-        con.execute(
-            "UPDATE characters SET is_main=1 WHERE discord_id=? AND character_id=?",
-            (discord_id, character_id),
+        return character_mutations.set_main_character(
+            con, discord_id, character_id
         )
-
-
 
 def delete_character(discord_id, character_id, path=RAID_DB):
     """Delete an unused character without erasing raid/attendance history."""
@@ -399,22 +355,9 @@ def update_character_profile(discord_id, character_id, class_name, spec, role, p
     if role not in CLASS_SPECS.get(class_name, {}).get(spec, ()):
         raise ValueError("Choose a valid class, spec and raid role.")
     with database(path) as con:
-        row = con.execute(
-            "SELECT name,race FROM characters WHERE character_id=? AND discord_id=?",
-            (character_id, discord_id),
-        ).fetchone()
-        if not row:
-            raise ValueError("Ogre cannot edit someone else's character.")
-        # A class change may invalidate the old race; clear it so a player
-        # can choose a compatible race again from Characters.
-        race = row[1] if class_name in RACE_CLASSES.get(row[1], ()) else ""
-        con.execute(
-            "UPDATE characters SET class_name=?, spec=?, role=?, race=? "
-            "WHERE character_id=? AND discord_id=?",
-            (class_name, spec, role, race, character_id, discord_id),
+        return character_mutations.update_character_profile(
+            con, discord_id, character_id, class_name, spec, role, RACE_CLASSES
         )
-    return row[0]
-
 
 def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
     """Accept one signed-up character per member/night with optional note."""
