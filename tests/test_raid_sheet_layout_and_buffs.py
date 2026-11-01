@@ -124,6 +124,50 @@ class LayoutAndBuffTests(unittest.TestCase):
         # Class names alone must not indicate a spec-only aura.
         self.assertIn("Trueshot Aura", top[1][6])
 
+    def test_sheet_write_keeps_dashboard_g_and_h_not_roster_n(self):
+        """Regression: dashboard rows must bypass player-column DISPLAY_ORDER."""
+        body = sheets._rows(self.path, self.event, {})
+        for row in body:
+            if row[16] == "42":
+                row[12] = "🔸"
+            if row[16] == "43":
+                row[12] = "🔹"
+        top = sheets._header(self.event, body, sheets.tab_title(self.event))
+        top[3][1] = "https://classic.warcraftlogs.com/reports/abc123"
+        top[3][3] = "Keep these notes in D4"
+        with patch.object(sheets.raid_sheets, "_json") as api, \\
+             patch.object(sheets, "_paint_sections"):
+            sheets._write(Mock(), sheets.tab_title(self.event), 1234, [], top)
+        writes = [call for call in api.call_args_list
+                  if call.args[1] == "PUT"]
+        self.assertEqual(len(writes), 1)
+        physical = writes[0].kwargs["json"]["values"]
+        for index in range(1, 5):
+            self.assertEqual(physical[index][6], top[index][6])
+            self.assertEqual(physical[index][7], top[index][7])
+            self.assertEqual(physical[index][13], "")
+            self.assertEqual(physical[index][8], "")
+        self.assertEqual(physical[3][1], top[3][1])
+        self.assertEqual(physical[3][3], "Keep these notes in D4")
+        self.assertEqual(physical[6][6], "Selection")
+        self.assertEqual(physical[6][13], "Sign-up Notes")
+
+    def test_read_keeps_top_cells_at_absolute_coordinates(self):
+        body = sheets._rows(self.path, self.event, {})
+        full = sheets._header(self.event, body, sheets.tab_title(self.event))
+        raw = [list(row) if index < 6 else sheets._display(row)
+               for index, row in enumerate(full)]
+        raw[3][1] = "https://www.warcraftlogs.com/reports/abc123"
+        raw[3][3] = "Notes typed directly into D4"
+        with patch.object(sheets.raid_sheets, "_json",
+                          return_value={"values": raw}):
+            loaded = sheets._read(Mock(), sheets.tab_title(self.event))
+        self.assertEqual(loaded[3][1], raw[3][1])
+        self.assertEqual(loaded[3][3], raw[3][3])
+        self.assertEqual(loaded[1][6], full[1][6])
+        self.assertEqual(loaded[1][7], full[1][7])
+        self.assertEqual(loaded[6], full[6])
+
     def test_only_selected_signed_players_count_for_class_coverage(self):
         body = sheets._rows(self.path, self.event, {})
         members = [r for r in body if r[16]]
