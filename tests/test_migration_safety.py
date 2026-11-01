@@ -33,7 +33,7 @@ class MigrationSafetyTests(unittest.TestCase):
             self.assertIn(sql, self.source)
 
     def test_forever_button_id_and_messages_preserved(self):
-        source = (ROOT / "cogs/forever_role.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/forever/roles.py").read_text(encoding="utf-8")
         self.assertIn("hyped_ogre_forever_role", source)
         self.assertIn("**Forever** role added.", source)
         self.assertIn("**Forever** role removed.", source)
