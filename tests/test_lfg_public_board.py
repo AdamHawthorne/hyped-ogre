@@ -114,7 +114,7 @@ class PublicBoardRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 HTTPException=HTTPException, AllowedMentions=AllowedMentions,
             ),
             "os": SimpleNamespace(environ={"HYPED_GUILD_ID": "77"}),
-            "connect": lambda: self.db,
+            "database": lambda: self.db,
             "get_board": lambda channel_id: self.db.execute(
                 "SELECT * FROM lfg_boards WHERE channel_id=?", (channel_id,)
             ).fetchone(),
