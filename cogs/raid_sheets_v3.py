@@ -22,7 +22,7 @@ LOGGER = logging.getLogger(__name__)
 COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
-    "Hyjal", "Barrows", "Ony", "Leadership Notes", "Gear / SimC",
+    "Hyjal", "Barrows", "Ony", "Leadership Notes", "WoWSims gear",
     "Discord ID (internal)", "Character ID (internal)", "Absent At"
 )
 SECTIONS = ("Tanks", "Healers", "Melee", "Ranged", "Absent")
@@ -182,6 +182,10 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
     characters, _, signups, absences, gear = raid_sheets._raid_snapshot(db_path)
     chars = {str(item["character_id"]): item for item in characters}
     gear_by_char = {str(item["character_id"]): item for item in gear}
+    parsed_by_char = {
+        str(item["character_id"]): wowsims_gear.parse_export(item["raw_text"])
+        for item in wowsims_gear.latest_profiles(db_path)
+    }
     absent_by_member = {
         str(r["discord_id"]): r for r in absences
         if r["raid_id"] == event["raid_id"]
@@ -215,12 +219,12 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
                 sign_note += (" | " if sign_note else "") + "Signed off: " + absence["signed_off_at"]
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
         uploaded = gear_by_char.get(char_id, {})
-        gear_status = ("WoWSims + screenshot" if uploaded.get("wowsims_latest")
-                       and uploaded.get("image_latest") else
-                       "WoWSims received" if uploaded.get("wowsims_latest") else
-                       "Legacy SimC" if uploaded.get("simc_latest") else
-                       "Screenshot only" if uploaded.get("image_latest")
-                       else "Not submitted")
+        gear_status = (
+            wowsims_gear.summary(parsed_by_char.get(char_id))
+            if uploaded.get("wowsims_latest") else
+            "Legacy SimC" if uploaded.get("simc_latest") else
+            "Not submitted"
+        )
         row = [
             name, signup["character"], signup["class_name"], signup["spec"],
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
