@@ -109,6 +109,7 @@ def create_schema(path=RAID_DB):
             availability TEXT NOT NULL DEFAULT 'Available',
             note TEXT,
             submitted_at TEXT NOT NULL,
+            show_on_discord INTEGER,
             PRIMARY KEY(raid_id, discord_id)
         );
         CREATE TABLE IF NOT EXISTS raid_absences(
@@ -154,6 +155,16 @@ def create_schema(path=RAID_DB):
             PRIMARY KEY(raid_id, discord_id)
         );
         """)
+
+        # Visibility is per raid signup. NULL inherits the raid poster's
+        # default until the first successful Sheets sync. Existing data
+        # migrates without changing character registration or attendance.
+        if "show_on_discord" not in {
+            row[1] for row in con.execute("PRAGMA table_info(signups)")
+        }:
+            con.execute(
+                "ALTER TABLE signups ADD COLUMN show_on_discord INTEGER"
+            )
 
         # Race belongs to the shared character, not to a separate LFG copy.
         if "race" not in {row[1] for row in con.execute("PRAGMA table_info(characters)")}:
