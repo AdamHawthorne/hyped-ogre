@@ -27,19 +27,30 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         return event
 
     @staticmethod
-    def attend_disabled(event):
-        panel = schedule.RaidEventPanel(event, on_signup=AsyncMock())
+    def button_disabled(event, label):
+        panel = schedule.RaidEventPanel(
+            event, on_signup=AsyncMock(), on_gear=AsyncMock()
+        )
         button = next(
             child for child in panel.walk_children()
-            if isinstance(child, discord.ui.Button) and child.label == "Attend"
+            if isinstance(child, discord.ui.Button) and child.label == label
         )
         return button.disabled
+
+    @staticmethod
+    def attend_disabled(event):
+        return RaidSignupLifecycleTests.button_disabled(event, "Attend")
+
+    @staticmethod
+    def wowsims_disabled(event):
+        return RaidSignupLifecycleTests.button_disabled(event, "WoWSims")
 
     async def test_roster_publication_and_elapsed_dates_never_close_attend(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             event = self.make_raid(path)
             self.assertFalse(self.attend_disabled(event))
+            self.assertFalse(self.wowsims_disabled(event))
             confirmed = schedule.raid_status(
                 path, 1, "confirm",
                 confirmed_entries=[("42", "Snore", "Hyjal")]
@@ -47,6 +58,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(confirmed["roster_published"])
             self.assertEqual(confirmed["signup_open"], 1)
             self.assertFalse(self.attend_disabled(confirmed))
+            self.assertFalse(self.wowsims_disabled(confirmed))
             # A new person can register after the public roster is selected.
             raid.save_character(43, "LateMage", "Mage", "Frost", "DPS", path)
             new_char = raid.member_characters(43, path)[0][0]
@@ -65,6 +77,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
                                    ("43", "LateMage", "Barrows")]
             )
             self.assertFalse(self.attend_disabled(schedule.read_raid(path, 1)))
+            self.assertFalse(self.wowsims_disabled(schedule.read_raid(path, 1)))
 
     async def test_complete_raid_closes_attend_and_rejects_new_signups(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,6 +110,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(closed["archived_at"])
             self.assertEqual(closed["signup_open"], 0)
             self.assertTrue(self.attend_disabled(closed))
+            self.assertTrue(self.wowsims_disabled(closed))
             cog.refresh_saved_panel.assert_awaited_once_with(1)
             interaction.followup.send.assert_awaited_once()
             raid.save_character(43, "LateMage", "Mage", "Frost", "DPS", path)
@@ -133,6 +147,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await button.callback(interaction)
             self.assertIsNotNone(schedule.read_raid(path, 1)["archived_at"])
             self.assertTrue(self.attend_disabled(schedule.read_raid(path, 1)))
+            self.assertTrue(self.wowsims_disabled(schedule.read_raid(path, 1)))
             cog.refresh_saved_panel.assert_awaited_once_with(1)
             self.assertIn("Sheets offline", interaction.followup.send.await_args.args[0])
 
