@@ -515,11 +515,13 @@ def read_public_roster(path, raid_id, *, include_details=False):
 
 
 def read_signup_roster(path, raid_id):
-    """Read the live unconfirmed raider list directly from SQLite.
+    """Read live public sign-ups while respecting each player's visibility.
 
-    Leadership's Sheet selections, visibility flags and instance assignments
-    do not affect this list. An available signup appears immediately, and a
-    signed-off player disappears. One character per Discord member/night.
+    The Sheet's Show on Discord flag is cached per raid signup after sync.
+    Until then, a NULL flag inherits the raid poster's default. Leadership's
+    selection and instance assignments stay private before confirmation.
+    An available, visible sign-up appears immediately, without waiting for
+    roster confirmation. One character per Discord member/night.
     """
     with database(path) as con:
         return con.execute(
@@ -528,7 +530,9 @@ def read_signup_roster(path, raid_id):
             "COALESCE(c.spec, '') "
             "FROM signups AS s JOIN characters AS c "
             "ON c.character_id=s.character_id AND c.discord_id=s.discord_id "
+            "JOIN raids AS r ON r.raid_id=s.raid_id "
             "WHERE s.raid_id=? AND s.availability='Available' "
+            "AND COALESCE(s.show_on_discord, r.default_show_discord, 1)=1 "
             "AND NOT EXISTS (SELECT 1 FROM raid_absences AS a "
             "WHERE a.raid_id=s.raid_id AND a.discord_id=s.discord_id) "
             "ORDER BY s.submitted_at, LOWER(c.name)",
