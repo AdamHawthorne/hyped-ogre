@@ -695,14 +695,27 @@ class RaidPosterView(discord.ui.LayoutView):
                                         style=discord.ButtonStyle.secondary,
                                         disabled=not bool(self.draft.get("check_message_url")))
         publish = discord.ui.Button(label="Post / Update Raid", style=discord.ButtonStyle.success)
-        confirm_roster = discord.ui.Button(label="Preview / Confirm Roster",
-                                           style=discord.ButtonStyle.primary,
-                                           disabled=self.draft["number"] not in self.saved_raid_ids)
-        manage = discord.ui.Button(label="Manage Raid",
-                                   style=discord.ButtonStyle.primary,
-                                   disabled=self.draft["number"] not in self.saved_raid_ids)
-        delete = discord.ui.Button(label="Delete Raid", style=discord.ButtonStyle.danger,
-                                  disabled=self.draft["number"] not in self.saved_raid_ids)
+        closed = bool(self.saved_event and self.saved_event.get("archived_at"))
+        publish.disabled = closed
+        confirm_roster = discord.ui.Button(
+            label="Preview / Confirm Roster", style=discord.ButtonStyle.primary,
+            disabled=self.saved_event is None or closed
+        )
+        manage = discord.ui.Button(
+            label="Manage Raid", style=discord.ButtonStyle.primary,
+            disabled=not bool(self.saved_event and
+                              self.saved_event.get("roster_published")) or closed
+        )
+        delete = discord.ui.Button(
+            label="Delete Raid", style=discord.ButtonStyle.danger,
+            disabled=self.saved_event is None
+        )
+        advanced = discord.ui.Button(
+            label="Advanced settings", style=discord.ButtonStyle.secondary
+        )
+        back = discord.ui.Button(
+            label="Back to schedule", style=discord.ButtonStyle.secondary
+        )
 
         async def set_title(interaction):
             if not self.authorised(interaction):
@@ -860,6 +873,30 @@ class RaidPosterView(discord.ui.LayoutView):
                 f"Raid #{event['raid_id']} management", ephemeral=True,
                 view=RaidManageView(self.cog, event["raid_id"]))
 
+        async def open_advanced(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message(
+                    "Only owner.", ephemeral=True
+                )
+                return
+            await interaction.response.edit_message(
+                view=RaidPosterView(
+                    self.cog, self.owner_id, self.draft, page="advanced"
+                )
+            )
+
+        async def back_to_schedule(interaction):
+            if not self.authorised(interaction):
+                await interaction.response.send_message(
+                    "Only owner.", ephemeral=True
+                )
+                return
+            await interaction.response.edit_message(
+                view=RaidPosterView(
+                    self.cog, self.owner_id, self.draft, page="schedule"
+                )
+            )
+
         manage.callback = open_manage
         title.callback = set_title
         banner.callback = set_banner
@@ -869,10 +906,32 @@ class RaidPosterView(discord.ui.LayoutView):
         check_link.callback = set_check_link
         clear_check.callback = remove_check_link
         delete.callback = ask_delete
-        row.add_item(title)
-        row.add_item(banner)
-        row.add_item(softres)
-        row.add_item(clear)
-        self.add_item(row)
-        self.add_item(discord.ui.ActionRow(check_link, clear_check))
-        self.add_item(discord.ui.ActionRow(publish, confirm_roster, manage, delete))
+        advanced.callback = open_advanced
+        back.callback = back_to_schedule
+        if self.page == "schedule":
+            self.add_item(discord.ui.ActionRow(
+                publish, confirm_roster, manage
+            ))
+            self.add_item(discord.ui.ActionRow(advanced))
+        else:
+            row.add_item(title)
+            row.add_item(banner)
+            row.add_item(softres)
+            row.add_item(clear)
+            self.add_item(row)
+            self.add_item(discord.ui.ActionRow(check_link, clear_check))
+            self.add_item(discord.ui.ActionRow(publish, back, delete))
+
+    def add_command_footer(self):
+        """Visible command reference at the very bottom of either poster page."""
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                "**Raid commands**\n"
+                "`/raid poster` Open setup · `/raid sync` Update Sheets · "
+                "`/raid panel` Refresh panel\n"
+                "`/raid confirm` Publish silently · "
+                "`/raid reopen` Unpublish · `/raid archive` Complete/archive\n"
+                "-# Extras: `/raid setup` direct setup · "
+                "`/raid softres` link · `/raid gear-review` screenshot"
+            )
+        ))
