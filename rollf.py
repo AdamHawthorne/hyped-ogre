@@ -1329,7 +1329,7 @@ def coin_winner_message(day):
         day=weekday, roll=winner["winning_roll"], coin=ogre_coin_emoji(),
     )
     return (
-        f"**Coin winner!** {ogre_coin_emoji()}\n"
+        "**Coin winner!**\n"
         + line
         + (f"\n**{winner['coins_awarded']} coins awarded** for Sunday's double-coin win."
            if winner['coins_awarded'] == 2 else "")
