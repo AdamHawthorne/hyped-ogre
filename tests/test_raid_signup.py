@@ -1,6 +1,7 @@
 from wowsims_helper import signup_with_export, seed_export, example_export
 """Offline tests of isolated raid sign-up preview and attendance schema."""
 import json
+from datetime import date
 import discord
 import sqlite3
 import tempfile
