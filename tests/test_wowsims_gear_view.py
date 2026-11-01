@@ -123,6 +123,10 @@ class GearSheetSyncTests(unittest.TestCase):
             self.assertEqual(len(writes), 2)
             self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
             self.assertEqual(writes[1][2]["params"]["valueInputOption"], "USER_ENTERED")
+            self.assertEqual(writes[1][2]["json"]["values"][2][0],
+                             "Wowhead item link")
+            self.assertEqual(len(writes[0][2]["json"]["values"][3]), 9)
+            self.assertEqual(writes[0][2]["json"]["values"][4][7], 42)
             self.assertIn('=HYPERLINK("https://www.wowhead.com/forever/item=10638","View item")',
                           [cell[0] for cell in writes[1][2]["json"]["values"]])
             self.assertTrue(any(
@@ -138,6 +142,33 @@ class GearSheetSyncTests(unittest.TestCase):
             sheets._sync_gear_tab(fake, self.path, titles)
             self.assertEqual(len([call for call in api_replies
                                   if call[0] == "PUT"]), 4)
+
+    def test_existing_eight_column_gear_tab_is_migrated(self):
+        session = Mock()
+        calls = []
+        def endpoint(_session, method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            return {}
+        titles = {
+            "Forever Gear": {
+                "sheetId": 444,
+                "gridProperties": {"columnCount": 8},
+            },
+        }
+        with patch.object(sheets.raid_sheets, "_json", side_effect=endpoint), \
+             patch.object(sheets.forever_item_data, "catalog",
+                          return_value={"10638": {"name": "Helm", "level": 42}}), \
+             patch.dict(sheets._GEAR_TAB_SNAPSHOT, {}, clear=True):
+            sheets._sync_gear_tab(session, self.path, titles)
+        appended = [
+            req["appendDimension"] for _, _, opts in calls
+            for req in opts.get("json", {}).get("requests", [])
+            if "appendDimension" in req
+        ]
+        self.assertEqual(appended, [{
+            "sheetId": 444, "dimension": "COLUMNS", "length": 1,
+        }])
+        self.assertEqual(titles["Forever Gear"]["gridProperties"]["columnCount"], 9)
 
     def test_raid_tab_gear_column_has_level_equipment_enchants(self):
         event = schedule.save_raid(
