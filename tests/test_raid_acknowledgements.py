@@ -1,3 +1,4 @@
+from wowsims_helper import signup_with_export, seed_export, example_export
 """Regression tests: optional pings do not lock the live raid roster."""
 import tempfile
 import unittest
@@ -19,7 +20,7 @@ class RaidAcknowledgementTests(unittest.TestCase):
         event = schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
         raid.save_character(42, "Snore", "Warrior", "Protection", "Tank", path)
         character_id = raid.member_characters(42, path)[0][0]
-        raid.save_signup(1, 42, character_id, path)
+        signup_with_export(1, 42, character_id, path)
         return event
 
     def test_publishing_does_not_lock_signups_or_poster_edits(self):
@@ -34,7 +35,7 @@ class RaidAcknowledgementTests(unittest.TestCase):
             self.assertEqual(event["roster_published"], 1)
             raid.save_character(43, "New Mage", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(43, path)[0][0]
-            raid.save_signup(1, 43, char_id, path)
+            signup_with_export(1, 43, char_id, path)
             self.assertIn(("New Mage", "", "Mage", "DPS", "Frost"),
                           schedule.read_signup_roster(path, 1))
             changed = schedule.save_raid(path, 1, "2026-12-09 21:00",
@@ -112,7 +113,7 @@ class RaidAcknowledgementTests(unittest.TestCase):
                                  confirmed_entries=[("42", "Snore", "Hyjal")])
             raid.save_character(43, "New Mage", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(43, path)[0][0]
-            raid.save_signup(1, 43, char_id, path)
+            signup_with_export(1, 43, char_id, path)
             event = schedule.read_raid(path, 1)
             body = sheet._rows(path, event, {})
             names = {r[1]: r for r in body if r[16]}
