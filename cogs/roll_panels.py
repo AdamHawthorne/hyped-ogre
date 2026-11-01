@@ -30,9 +30,9 @@ class DailyRollPanel(discord.ui.LayoutView):
                 ),
             ),
             discord.ui.TextDisplay(
-                "\n\n\n## Coin count\n"
+                "\n\n\n## Ogre's Ledger\n"
                 + ("\n".join(
-                    f"**{row['rank']}.** <@{ogre_id if row['user_id'] == 0 and ogre_id else row['user_id']}> · **{row['coins']}** "
+                    f"<@{ogre_id if row['user_id'] == 0 and ogre_id else row['user_id']}> · **{row['coins']}** "
                     + coin_emoji
                     for row in list(top_five)[:5]
                 ) or "No gold coins awarded yet.")
