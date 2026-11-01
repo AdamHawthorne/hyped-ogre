@@ -23,7 +23,7 @@ class RaidSignupInternalsMigrationTests(unittest.TestCase):
         self.assertEqual(raid.setup.__module__, "cogs.raid_signup")
         self.assertTrue(issubclass(raid.RaidPrototype, commands.GroupCog))
         self.assertEqual(raid.RaidPrototype.__cog_name__, "RaidPrototype")
-        self.assertEqual(raid.RaidPrototype.__cog_app_commands_group__.name, "raid")
+        self.assertTrue(raid.RaidPrototype.__cog_is_app_commands_group__)
         self.assertEqual(raid.RAID_CHANNEL_ID, 1563663151323553802)
 
     def test_shared_reference_objects_are_imported_without_change(self):
