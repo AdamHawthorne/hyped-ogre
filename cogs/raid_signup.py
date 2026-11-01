@@ -638,7 +638,20 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
         if not event or not event[0] or event[1]:
             raise ValueError("Sign-ups aren't open for this raid.")
         if not has_wowsims_export(discord_id, character_id, path):
-            raise ValueError("Ogre need WoWSims export first. Click WoWSims on raid panel.")
+            # Grandfather the same already-signed character: previously saved
+            # registrations may update notes without losing their raid spot.
+            # A new registration or character switch still needs WoWSims.
+            prior = con.execute(
+                "SELECT character_id FROM signups WHERE raid_id=? AND discord_id=? "
+                "AND availability='Available' AND NOT EXISTS "
+                "(SELECT 1 FROM raid_absences a "
+                "WHERE a.raid_id=signups.raid_id AND a.discord_id=signups.discord_id)",
+                (raid_id, discord_id),
+            ).fetchone()
+            if not prior or prior[0] != character_id:
+                raise ValueError(
+                    "Ogre need WoWSims export first. Click WoWSims on raid panel."
+                )
         character = con.execute(
             "SELECT character_id FROM characters "
             "WHERE character_id=? AND discord_id=?",
