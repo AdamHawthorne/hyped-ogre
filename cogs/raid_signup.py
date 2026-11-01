@@ -1942,6 +1942,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         channel_id = event.get("panel_channel_id")
         message_id = event.get("panel_message_id")
         await interaction.response.defer(ephemeral=True)
+        # Verify Discord authorship before touching Sheets or raid records.
+        # Sheets deletion happens first; failed API calls leave the raid
+        # available for retry rather than orphaning a private tab.
+        panel_message = None
         if message_id and channel_id:
             try:
                 # Only remove the exact bot-authored panel recorded for this raid.
@@ -1950,17 +1954,43 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                     channel = await self.bot.fetch_channel(channel_id)
                 if not isinstance(channel, discord.TextChannel) or channel.guild.id != interaction.guild_id:
                     raise ValueError("The saved raid panel channel is not in this server.")
-                message = await channel.fetch_message(message_id)
-                if message.author.id != self.bot.user.id:
+                panel_message = await channel.fetch_message(message_id)
+                if panel_message.author.id != self.bot.user.id:
                     raise ValueError("The saved panel message is not authored by Ogre.")
-                await message.delete()
             except discord.NotFound:
                 # Already deleted from Discord; still allow database cleanup.
-                pass
+                panel_message = None
             except (discord.Forbidden, discord.HTTPException, ValueError) as exc:
                 await interaction.followup.send(
                     f"Ogre couldn't remove the saved Discord raid panel: {exc}. "
                     "Raid data was preserved; please retry.",
+                    ephemeral=True,
+                )
+                return
+        deleted_sheet = False
+        if raid_sheets.configured():
+            try:
+                deleted_sheet = await asyncio.to_thread(
+                    raid_sheets_v3.delete_raid_tab, raid_number
+                )
+            except (ValueError, RuntimeError, sqlite3.Error) as exc:
+                await interaction.followup.send(
+                    f"Ogre couldn't delete Raid #{raid_number} from Google Sheets: "
+                    f"{exc}. Raid and public panel preserved; retry deletion.",
+                    ephemeral=True,
+                )
+                return
+        if panel_message is not None:
+            try:
+                await panel_message.delete()
+            except discord.NotFound:
+                pass
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                await interaction.followup.send(
+                    f"Ogre removed the Sheets tab but couldn't remove the "
+                    f"Discord panel: {exc}. Raid database preserved. "
+                    "Fix channel permissions and retry; the Sheets tab may "
+                    "reappear during automatic sync.",
                     ephemeral=True,
                 )
                 return
@@ -1980,8 +2010,12 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
         await interaction.followup.send(
-            f"Ogre deleted Raid #{raid_number}, including its sign-ups "
-            "and attendance. Characters and gear remain saved.",
+            f"Ogre deleted Raid #{raid_number} from Discord and local raid "
+            "records. "
+            + ("Its Google Sheets raid tab was deleted. " if deleted_sheet else
+               "No corresponding Google Sheets raid tab was found or Sheets "
+               "is not connected. ")
+            + "Saved characters and WoWSims exports remain untouched.",
             ephemeral=True,
         )
 
