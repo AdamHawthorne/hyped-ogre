@@ -1,13 +1,12 @@
-# Attribution
+# Attribution and project status
 
-Hyped Diceman is a modified fork of RollF.
+**Hyped Ogre** is an independently maintained Discord bot for the Hyped World of Warcraft guild. The GitHub repository is no longer part of the RollF fork network.
 
-Original project: RollF  
-Original repository: https://github.com/hegernat/rollf-bot  
-Original author/copyright holder: hegernat / plutonium87
+The project began with code derived from **RollF**, originally by **hegernat / plutonium87**.
 
-The upstream project is distributed under the MIT License.
+- Original project: https://github.com/hegernat/rollf-bot
+- Original licence: MIT
+- Original copyright and permission notice: preserved in [LICENSE](LICENSE)
+- Hyped Ogre modifications: Copyright (c) 2026 AdamHawthorne, subject to the applicable MIT terms
 
-The original MIT copyright and permission notice is preserved in the repository's LICENSE file. Hyped-specific modifications are maintained under the same MIT terms.
-
-Hyped Diceman is a separate community bot and is not the official public RollF instance.
+Although Hyped Ogre now has distinct features and architecture, this notice recognises the provenance of code retained from RollF. Repository detachment is a GitHub relationship change, not a licence change.
