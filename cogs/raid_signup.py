@@ -1444,7 +1444,7 @@ class SpecPickerView(discord.ui.LayoutView):
             elif self.editing_character_id is not None:
                 await apply_profile_update(
                     interaction, self.owner_id, self.editing_character_id,
-                    self.class_name, spec, roles[0],
+                    self.class_name, spec, roles[0], return_to_editor=True,
                 )
             else:
                 await interaction.response.send_modal(
@@ -1484,6 +1484,7 @@ class RolePickerView(discord.ui.LayoutView):
                 await apply_profile_update(
                     interaction, self.owner_id, self.editing_character_id,
                     self.class_name, self.spec, select.values[0],
+                    return_to_editor=True,
                 )
             else:
                 await interaction.response.send_modal(
@@ -1509,7 +1510,7 @@ class ProfileUpdatedView(discord.ui.LayoutView):
 
 
 async def apply_profile_update(interaction, owner_id, character_id,
-                               class_name, spec, role):
+                               class_name, spec, role, *, return_to_editor=False):
     if not is_test_member(interaction) or interaction.user.id != owner_id:
         await interaction.response.send_message(
             "This character isn't yours.", ephemeral=True
@@ -1524,9 +1525,13 @@ async def apply_profile_update(interaction, owner_id, character_id,
             f"Ogre couldn't update character: {exc}", ephemeral=True
         )
         return
-    await interaction.response.edit_message(
-        view=ProfileUpdatedView(name, class_name, spec, role)
-    )
+    view = ProfileUpdatedView(name, class_name, spec, role)
+    if return_to_editor:
+        latest = next((row for row in member_characters(owner_id)
+                       if row[0] == character_id), None)
+        if latest is not None:
+            view = CharacterProfileEditView(owner_id, character_id, latest)
+    await interaction.response.edit_message(view=view)
     await refresh_character_signups(interaction, owner_id, character_id)
     await refresh_lfg_for_member(interaction, owner_id)
 
