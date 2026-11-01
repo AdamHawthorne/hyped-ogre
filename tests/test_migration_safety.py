@@ -39,7 +39,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("**Forever** role removed.", source)
 
     def test_flameboard_deduplicated_event_listeners(self):
-        source = (ROOT / "cogs/flameboard.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/flameboard/events.py").read_text(encoding="utf-8")
         self.assertIn("on_raw_reaction_add", source)
         self.assertIn("on_raw_reaction_remove", source)
         self.assertNotIn("async def on_raw_reaction_add", self.source)

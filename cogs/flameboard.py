@@ -1,29 +1,12 @@
-"""Hyped Flameboard Discord event listeners.
+"""Legacy listener module for Hyped Flameboard.
 
-The existing engine stays in rollf.py during the first phase, avoiding any
-migration of historical Flameboard rows or changes to reaction calculations.
+rollf.py imports FlameboardEvents here and registers the Cog itself.
+The canonical listener lives in hyped_ogre.features.flameboard.events.
+Both paths resolve to the same module and class.
 """
-import discord
-from discord.ext import commands
 
+import sys
 
-class FlameboardEvents(commands.Cog):
-    def __init__(self, bot, guild_id, sync_message):
-        self.bot = bot
-        self.guild_id = guild_id
-        self.sync_message = sync_message
+from hyped_ogre.features.flameboard import events as _canonical
 
-    async def handle(self, payload):
-        if payload.guild_id != self.guild_id:
-            return
-        if str(payload.emoji) not in ("🔥", "😂", "⭐"):
-            return
-        await self.sync_message(payload.channel_id, payload.message_id)
-
-    @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        await self.handle(payload)
-
-    @commands.Cog.listener()
-    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
-        await self.handle(payload)
+sys.modules[__name__] = _canonical
