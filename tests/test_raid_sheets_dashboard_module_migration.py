@@ -87,7 +87,12 @@ class RaidSheetDashboardMigrationTests(unittest.TestCase):
         self.assertEqual(read[1][6:8], top[1][6:8])
         self.assertEqual(read[3][1], "Custom Logs")
         self.assertEqual(read[3][3], "Notes from leader")
-        self.assertEqual(read[6], list(canonical.COLUMNS))
+        # The source header is kept verbatim; _header normalises it on write.
+        expected_headers = [
+            "Show on Discord" if name == "Show" else name
+            for name in canonical.COLUMNS
+        ]
+        self.assertEqual(read[6], expected_headers)
         self.assertEqual(read[7][1], "Snore")
         self.assertEqual(read[7][9], "Bench")
         self.assertEqual(read[7][10], "No")
@@ -132,7 +137,8 @@ class RaidSheetDashboardMigrationTests(unittest.TestCase):
         request.assert_called_once()
         paint.assert_called_once()
         physical = request.call_args.kwargs["json"]["values"]
-        self.assertEqual(physical[1][6], "Barrows 🔸 (9)")
+        # The signed Warrior supplies Battle Shout, so 8 buffs remain missing.
+        self.assertEqual(physical[1][6], "Barrows 🔸 (8)")
         self.assertEqual(physical[3][1], self.event["wcl_url"])
         self.assertEqual(physical[3][3], "Bring consumables")
         self.assertEqual(physical[7][1], "Snore")
