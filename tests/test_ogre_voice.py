@@ -1,9 +1,16 @@
 """Checks for the Warcraft-inspired voice bank."""
 import unittest
 from cogs.ogre_voice import PHRASES, pick, count_label
+from hyped_ogre.features.voice import messages as voice_package
 
 
 class OgreVoiceTests(unittest.TestCase):
+    def test_legacy_imports_are_exact_new_package_functions(self):
+        self.assertIs(PHRASES, voice_package.PHRASES)
+        self.assertIs(pick, voice_package.pick)
+        self.assertIs(count_label, voice_package.count_label)
+
+
     def test_large_original_phrase_library(self):
         self.assertGreaterEqual(len(PHRASES), 12)
         self.assertGreaterEqual(sum(map(len, PHRASES.values())), 150)

@@ -2,7 +2,9 @@
 
 ## Current state
 
-The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The current Dockerfile copies `rollf.py`, `cogs/`, `assets/` and `web/` and launches `python rollf.py`.
+The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
+
+**First migrated feature:** the Ogre voice bank now lives in `hyped_ogre/features/voice/messages.py`. The old `cogs/ogre_voice.py` remains as a compatibility wrapper exporting the same names, so existing commands and Discord views continue to work unchanged. The remaining folders below are targets for later changes, not yet migrated.
 
 ## Intended package layout
 

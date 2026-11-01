@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY rollf.py .
 COPY cogs ./cogs
+COPY hyped_ogre ./hyped_ogre
 COPY assets ./assets
 COPY web ./web
 
