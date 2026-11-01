@@ -18,8 +18,9 @@ The current application still imports the old `cogs/` paths. These thin compatib
 | Raid class and spec coverage | `hyped_ogre/features/raids/buffs.py` | `cogs/forever_raid_buffs.py` |
 | Raid attendance history | `hyped_ogre/features/raids/history.py` | `cogs/raid_history.py` |
 | Forever item metadata | `hyped_ogre/features/characters/items.py` | `cogs/forever_item_data.py` |
+| WoWSims equipment parser and sheet rows | `hyped_ogre/features/characters/equipment.py` | `cogs/wowsims_gear.py` |
 
-The Forever item metadata path is a full Python module alias rather than simple function re-exports, preserving the same in-memory cache, patchable download helper, offline cache behaviour and `.forever_items.json` files adjacent to the raid database. Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
+The Forever item metadata path is a full Python module alias rather than simple function re-exports, preserving the same in-memory cache, patchable download helper, offline cache behaviour and `.forever_items.json` files adjacent to the raid database. The WoWSims equipment module also uses a same-object alias, retaining its exact parsing, query and sheet-generation functions. Saved WoWSims exports remain in the existing raid database. Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
 
 ## Intended package layout
 
