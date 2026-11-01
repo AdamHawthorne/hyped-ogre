@@ -94,6 +94,18 @@ def _download():
     return result
 
 
+def cached_catalog(db_path):
+    """Read known metadata without performing network calls in roster rendering."""
+    path = _cache_path(db_path)
+    key = str(path)
+    memo = _MEMO.get(key)
+    if memo:
+        return memo[1]
+    records = _read_cached(path)
+    _MEMO[key] = (time.time(), records)
+    return records
+
+
 def catalog(db_path):
     """Use local cache for 7 days. Fetch failure never blocks raid Sheets."""
     path = _cache_path(db_path)
