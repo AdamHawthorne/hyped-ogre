@@ -912,7 +912,10 @@ def _sync_gear_tab(session, db_path, titles):
             }}}]},
         )
         sid = response["replies"][0]["addSheet"]["properties"]["sheetId"]
-        titles[title] = {"sheetId": sid, "title": title}
+        titles[title] = {
+            "sheetId": sid, "title": title,
+            "gridProperties": {"columnCount": 9},
+        }
     else:
         sid = titles[title]["sheetId"]
         count = titles[title].get("gridProperties", {}).get("columnCount", 8)
