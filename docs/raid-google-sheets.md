@@ -5,14 +5,28 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
 
 ## Workflow
 
-1. In private `#ogre`, configure and post the panel with `/raid poster`.
-   The bot automatically creates a private tab named e.g.
-   **Raid #1 - Wed 09 Dec 2026** (and syncs every ~60 seconds).
+1. In private `#ogre`, open `/raid poster`. The first **Schedule** page
+   defaults to the next Sunday after existing scheduled raids, 20:00-23:00
+   UK, Hyjal (20m) + Barrows (10m), the guild raid channel, a target roster
+   confirmation one day beforehand, and **WoWSims required if missing**.
+   No ping roles are preselected. Use **Post / Update Raid** to publish
+   (or silently edit) the actual raid panel. Ogre creates a private Sheet
+   tab such as **Raid #1 - Wed 09 Dec 2026**, synced about every 60 seconds.
+   The private poster updates after posting to unlock **Preview / Confirm
+   Roster**. The roster confirmation target is informational, not an
+   automatic publish event.
+   
+   Use **Advanced settings** for a non-standard end time, third instance,
+   destination channel, optional role pings (only when first posting),
+   visibility, WoWSims requirement, check link, SoftRes, title and banner.
+   **Back to schedule** keeps pending changes. **Post / Update Raid** saves
+   the selected settings. The bottom of both poster pages lists leadership
+   slash commands.
 2. Players use **Attend** and **Characters** to register their main or alt.
    The raid poster sets the requirement. New raids default to **WoWSims:
    Required if missing**, so a character must have a saved export before
-   its first signup. In private `/raid poster`, the **Show on Discord /
-   WoWSims requirement** picker also offers **Require fresh** (export
+   its first signup. The **Advanced settings → WoWSims requirement**
+   picker also offers **Require fresh** (export
    submitted after leadership enables that mode) and **Optional / off**
    (Attend without an export). Poster edits preserve existing policy
    settings and fresh-export cutoff. Current sign-ups are never discarded
