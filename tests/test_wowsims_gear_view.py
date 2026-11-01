@@ -118,8 +118,11 @@ class GearSheetSyncTests(unittest.TestCase):
             self.assertIn("Forever Gear", titles)
             self.assertEqual(titles["Forever Gear"]["sheetId"], 71234)
             writes = [call for call in api_replies if call[0] == "PUT"]
-            self.assertEqual(len(writes), 1)
+            self.assertEqual(len(writes), 2)
             self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
+            self.assertEqual(writes[1][2]["params"]["valueInputOption"], "USER_ENTERED")
+            self.assertIn('=HYPERLINK("https://www.wowhead.com/classic/item=10638","View item")',
+                          json.dumps(writes[1]))
             self.assertTrue(any(
                 "https://www.wowhead.com/classic/item=10638" in json.dumps(call)
                 for call in writes
@@ -132,7 +135,7 @@ class GearSheetSyncTests(unittest.TestCase):
             raid.save_wowsims_export(42, self.cid, json.dumps(changed), self.path)
             sheets._sync_gear_tab(fake, self.path, titles)
             self.assertEqual(len([call for call in api_replies
-                                  if call[0] == "PUT"]), 2)
+                                  if call[0] == "PUT"]), 4)
 
     def test_raid_tab_gear_column_has_level_equipment_enchants(self):
         event = schedule.save_raid(
