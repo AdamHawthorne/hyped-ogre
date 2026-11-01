@@ -61,7 +61,7 @@ class ForeverLeadershipPreviewTests(unittest.TestCase):
 
     def test_v2_preview_uses_same_images_and_copy(self):
         self.assertIn('FOREVER_THUMBNAIL = "https://i.vgy.me/asI88C.png"', SOURCE)
-        self.assertIn('FOREVER_IMAGE = "https://i.vgy.me/WGNGdr.png"', SOURCE)
+        self.assertIn('FOREVER_IMAGE = "https://i.vgy.me/CsHiRb.png"', SOURCE)
         self.assertIn("## <Hyped> for WoW: Forever.", SOURCE)
         self.assertIn("Interested in helping out with Hyped?", SOURCE)
         self.assertIn("Send us a short leadership application below.", SOURCE)
