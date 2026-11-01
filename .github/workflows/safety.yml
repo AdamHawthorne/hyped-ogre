@@ -169,3 +169,24 @@ jobs:
                   ).fetchone()[0] == 0
           print("Original raid extension and schema wrapper validated")
           '
+
+      - name: Verify read-only raid queries and shared LFG imports in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import tempfile
+          from pathlib import Path
+          from cogs import raid_signup, lfg_preview
+          from hyped_ogre.features.characters import queries
+          from hyped_ogre.features.raids import signup_queries
+          assert lfg_preview.raid_signup is raid_signup
+          assert raid_signup.RaidPrototype.__module__ == "cogs.raid_signup"
+          with tempfile.TemporaryDirectory() as tmp:
+              path = str(Path(tmp) / "raid_signup.db")
+              raid_signup.create_schema(path)
+              assert raid_signup.member_characters(42, path) == []
+              assert raid_signup.my_signup(1, 42, path) is None
+              with raid_signup.database(path) as con:
+                  assert queries.member_characters(con, 42) == []
+                  assert signup_queries.my_signup(con, 1, 42) is None
+          print("Read-only raid queries and LFG import path validated")
+          '

@@ -18,6 +18,8 @@ from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
 from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
 from hyped_ogre.features.raids.signup_schema import ensure_signup_schema_on_connection
+from hyped_ogre.features.characters import queries as character_queries
+from hyped_ogre.features.raids import signup_queries
 from hyped_ogre.features.raids.signup_reference import (
     SHEET_TABS, ATTENDANCE_OPTIONS, CLASS_SPECS,
 )
@@ -145,12 +147,7 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
 
 def list_characters(discord_id, path=RAID_DB):
     with database(path) as con:
-        return con.execute(
-            "SELECT name, class_name, spec, role FROM characters "
-            "WHERE discord_id=? ORDER BY is_main DESC, name",
-            (discord_id,),
-        ).fetchall()
-
+        return character_queries.list_characters(con, discord_id)
 
 def character_list_text(discord_id):
     rows = list_characters(discord_id)
@@ -167,21 +164,11 @@ def character_list_text(discord_id):
 
 def member_characters(discord_id, path=RAID_DB):
     with database(path) as con:
-        return con.execute(
-            "SELECT character_id, name, class_name, spec, role, last_simc_at "
-            "FROM characters WHERE discord_id=? ORDER BY is_main DESC, name",
-            (discord_id,),
-        ).fetchall()
-
+        return character_queries.member_characters(con, discord_id)
 
 def character_race(discord_id, character_id, path=RAID_DB):
     with database(path) as con:
-        row = con.execute(
-            "SELECT race FROM characters WHERE discord_id=? AND character_id=?",
-            (discord_id, character_id),
-        ).fetchone()
-    return row[0] if row else ""
-
+        return character_queries.character_race(con, discord_id, character_id)
 
 def set_character_race(discord_id, character_id, race, path=RAID_DB):
     with database(path) as con:
@@ -290,23 +277,13 @@ def delete_character(discord_id, character_id, path=RAID_DB):
 def main_character_ids(discord_id, path=RAID_DB):
     try:
         with database(path) as con:
-            return {row[0] for row in con.execute(
-                "SELECT character_id FROM characters WHERE discord_id=? AND is_main=1",
-                (discord_id,),
-            )}
+            return character_queries.main_character_ids(con, discord_id)
     except sqlite3.OperationalError:
         return set()
 
-
 def signup_note_details(raid_id, discord_id, path=RAID_DB):
     with database(path) as con:
-        return con.execute(
-            "SELECT c.name,s.availability,s.note FROM signups s "
-            "JOIN characters c ON c.character_id=s.character_id "
-            "WHERE s.raid_id=? AND s.discord_id=?",
-            (raid_id, discord_id),
-        ).fetchone()
-
+        return signup_queries.signup_note_details(con, raid_id, discord_id)
 
 def save_gear(discord_id, character_id, text, path=RAID_DB):
     """Store a reusable raw SimC export independent of any raid application."""
@@ -339,13 +316,7 @@ def save_gear(discord_id, character_id, text, path=RAID_DB):
 def has_wowsims_export(discord_id, character_id, path=RAID_DB):
     """A WoWSims export belongs to a character and can be reused for every raid."""
     with database(path) as con:
-        return con.execute(
-            "SELECT 1 FROM characters c JOIN gear_exports g "
-            "ON g.character_id=c.character_id "
-            "WHERE c.discord_id=? AND c.character_id=? AND g.format='wowsims_json' "
-            "LIMIT 1", (discord_id, character_id)
-        ).fetchone() is not None
-
+        return character_queries.has_wowsims_export(con, discord_id, character_id)
 
 def wowsims_requirement_for_signup(raid_id, discord_id, character_id, path=RAID_DB):
     """Return 'missing', 'fresh' or None for the selected raid and character.
@@ -512,13 +483,7 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
 
 def my_signup(raid_id, discord_id, path=RAID_DB):
     with database(path) as con:
-        return con.execute(
-            "SELECT c.name, s.availability FROM signups s "
-            "JOIN characters c ON c.character_id=s.character_id "
-            "WHERE s.raid_id=? AND s.discord_id=?",
-            (raid_id, discord_id),
-        ).fetchone()
-
+        return signup_queries.my_signup(con, raid_id, discord_id)
 
 def save_absence(raid_id, discord_id, note="", path=RAID_DB):
     """Record the time someone marked themselves absent, with an optional note.
@@ -555,12 +520,7 @@ def save_absence(raid_id, discord_id, note="", path=RAID_DB):
 
 def my_absence(raid_id, discord_id, path=RAID_DB):
     with database(path) as con:
-        return con.execute(
-            "SELECT note, signed_off_at FROM raid_absences "
-            "WHERE raid_id=? AND discord_id=?",
-            (raid_id, discord_id),
-        ).fetchone()
-
+        return signup_queries.my_absence(con, raid_id, discord_id)
 
 class AbsenceNoteModal(discord.ui.Modal):
     """Note optional; signed-off time comes from the server, not user input."""
