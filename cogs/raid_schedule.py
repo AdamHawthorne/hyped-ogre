@@ -687,13 +687,21 @@ def raid_panel_intro(event):
     softres_line = f"\n[SoftRes sign-up]({softres})" if softres else ""
     wcl = event.get("wcl_url")
     wcl_line = f"\n**Warcraft Logs:** [View report]({wcl})" if wcl else ""
+    wse_policy = event.get("wowsims_policy") or "missing"
+    wse_label = {
+        "missing": "Required if character has no export",
+        "fresh": "Fresh export required for this raid",
+        "optional": "Optional",
+    }.get(wse_policy, "Required if character has no export")
+    wse_line = (f"\n**WoWSims:** {wse_label} · "
+                "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)")
     return (
         f"## {title}\n"
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n"
         + "**Instances:** " + ", ".join(instances)
         + (f"\n**Check:** [View message]({event['check_message_url']})"
            if event.get("check_message_url") else "")
-        + softres_line + wcl_line
+        + softres_line + wse_line + wcl_line
     )
 
 
