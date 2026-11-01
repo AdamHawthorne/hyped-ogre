@@ -43,7 +43,7 @@ class RaidTabsTests(unittest.TestCase):
                              ["Selected", "Yes", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
             self.assertEqual(by_character["Snore Mon"][15],
-                             "0/17 equipped · 0 enchants reported")
+                             "iLvl ? (no gear) · 0 enchant gaps")
             self.assertTrue(by_character["Snore Mon"][7])
             self.assertTrue(by_character["Snore Mon"][16].isdigit())
             self.assertEqual(sheet._group(
@@ -125,21 +125,23 @@ class RaidTabsTests(unittest.TestCase):
 
     def test_display_order_and_absence_timestamp(self):
         """Date fields are readable, and manual IDs retain their stable positions."""
-        self.assertEqual(sheet.DISPLAY_ORDER[-2:], (18, 7))
+        self.assertEqual(sheet.DISPLAY_ORDER[-3:], (18, 7, 19))
         source = [""] * len(sheet.COLUMNS)
         source[7] = "2026-10-29T23:25:08+00:00"
         source[8] = "Absent"
         source[16] = "119863153411489793"
         source[17] = "1"
         source[18] = "2026-10-30T11:10:00+00:00"
+        source[19] = "— · — · Attend | Attend · Absent · Missing"
         displayed = sheet._display(source)
-        self.assertEqual(displayed[-1], "29 Oct 2026, 23:25")
-        self.assertEqual(displayed[-2], "30 Oct 2026, 11:10")
+        self.assertEqual(displayed[-2], "29 Oct 2026, 23:25")
+        self.assertEqual(displayed[-3], "30 Oct 2026, 11:10")
+        self.assertEqual(displayed[-1], source[19])
         self.assertEqual(displayed[15:17], ["119863153411489793", "1"])
         restored = sheet._internal(displayed)
         self.assertEqual(restored[16], source[16])
         self.assertEqual(restored[17], source[17])
-        self.assertEqual(restored[18], displayed[-2])
+        self.assertEqual(restored[18], displayed[-3])
         self.assertEqual(sheet._display(restored), displayed)
 
     def test_manual_selections_follow_id_after_sort_and_absence_moves_to_absent(self):
