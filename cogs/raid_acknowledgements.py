@@ -61,11 +61,11 @@ def acknowledge(path, channel_id, message_id, member_id):
     """Return raid_id when this is a NEW acknowledgement; otherwise None."""
     with database(path) as con:
         row = con.execute(
-            "SELECT raid_id FROM raid_ack_announcements "
+            "SELECT raid_id, retracted_at FROM raid_ack_announcements "
             "WHERE channel_id=? AND message_id=?",
             (channel_id, message_id),
         ).fetchone()
-        if not row:
+        if not row or row[1]:
             return None
         raid_id = row[0]
         changed = con.execute(
@@ -78,6 +78,39 @@ def acknowledge(path, channel_id, message_id, member_id):
         con.execute("UPDATE raid_ack_announcements SET needs_refresh=1 "
                     "WHERE raid_id=?", (raid_id,))
         return raid_id
+
+
+def retract(path, raid_id):
+    """Withdraw an earlier one-time announcement, without clearing its history."""
+    with database(path) as con:
+        result = con.execute(
+            "UPDATE raid_ack_announcements SET retracted_at=COALESCE(retracted_at, ?), "
+            "needs_refresh=1 WHERE raid_id=? AND retracted_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), raid_id),
+        )
+        return result.rowcount == 1
+
+
+def is_retracted(path, raid_id):
+    with database(path) as con:
+        row = con.execute(
+            "SELECT retracted_at FROM raid_ack_announcements WHERE raid_id=?",
+            (raid_id,),
+        ).fetchone()
+    return bool(row and row[0])
+
+
+def render_retracted(raid_id, panel_url=None):
+    """Never include player mentions when withdrawing a published roster."""
+    result = (
+        f"**<Hyped> Raid #{raid_id} | Roster withdrawn**\n"
+        "Ogre fixing raid team. Old roster not current. "
+        "Sign-ups stay open. Check raid panel for updates. "
+        "Ogre stop collecting nods on this message."
+    )
+    if panel_url:
+        result += f"\n\n[View raid panel]({panel_url})"
+    return result
 
 
 def dirty_announcements(path):
