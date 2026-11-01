@@ -1647,6 +1647,12 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
         self.cog, self.raid_id = cog, raid_id
         self.poster_owner_id, self.poster_message = poster_owner_id, poster_message
         self.poster_draft = poster_draft
+        current = read_raid(RAID_DB, raid_id)
+        if current:
+            # If leadership pasted the report or notes in Sheets, do not
+            # require a duplicate entry during completion.
+            self.wcl.default = current.get("wcl_url") or ""
+            self.notes.default = current.get("archive_notes") or ""
 
     async def on_submit(self, interaction):
         if not self.cog.allowed(interaction):
