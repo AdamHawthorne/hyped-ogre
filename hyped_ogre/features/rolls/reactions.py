@@ -64,7 +64,7 @@ class RollReactions:
             if user_id in scores:
                 # Convert bot-authored roll messages to the custom dice.
                 # Preserve message identity, score text and all reactions.
-                from .emojis import roll_dice_markup
+                from hyped_ogre.core.emojis import roll_dice_markup
                 try:
                     local_day = datetime.fromtimestamp(start, timezone.utc).astimezone(
                         ZoneInfo("Europe/London")
@@ -124,7 +124,7 @@ class RollReactions:
         guild = self.bot.get_guild(self.guild_id) if self.guild_id and hasattr(self.bot, 'get_guild') else None
         coin = next((e for e in guild.emojis if e.name == "ogrecoin"), None) if guild else None
         high_emoji = coin or "<:ogrecoin:1564336079430099035>"
-        from .emojis import markup
+        from hyped_ogre.core.emojis import markup
         poop_emoji = markup("ogrepoop")
         for user_id, message in messages:
             # Retire the old crown reaction without touching member reactions.
