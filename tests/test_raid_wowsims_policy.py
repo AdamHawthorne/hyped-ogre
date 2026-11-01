@@ -126,6 +126,47 @@ class WoWSimsPolicyTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(changed.await_args.kwargs,
                              {"wowsims_policy": "fresh"})
 
+    async def test_public_raid_panel_describes_current_requirement(self):
+        labels = {
+            "missing": "Required if character has no export",
+            "fresh": "Fresh export required for this raid",
+            "optional": "Optional",
+        }
+        for policy, label in labels.items():
+            with self.subTest(policy=policy):
+                event = self.save_policy(policy)
+                intro = schedule.raid_panel_intro(event)
+                self.assertIn("**WoWSims:** " + label, intro)
+                self.assertIn("curseforge.com/wow/addons/wowsims-exporter",
+                              intro)
+
+    async def test_first_time_registration_can_attend_when_optional(self):
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "save_character") as create, \
+             patch.object(raid, "member_characters", return_value=[
+                 (99, "NewMage", "Mage", "Frost", "DPS", None)
+             ]), \
+             patch.object(raid, "wowsims_requirement_for_signup", return_value=None), \
+             patch.object(raid, "save_signup") as sign, \
+             patch.object(raid, "refresh_player_signup_panel",
+                          new_callable=AsyncMock):
+            modal = raid.CharacterNameModal(
+                42, "Mage", "Frost", "DPS", signup_raid_id=1
+            )
+            modal.name._value = "NewMage"
+            modal.note._value = ""
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                response=SimpleNamespace(send_message=AsyncMock()),
+            )
+            await modal.on_submit(interaction)
+            create.assert_called_once()
+            sign.assert_called_once()
+            self.assertIn(
+                "registered and signed up",
+                interaction.response.send_message.await_args.args[0]
+            )
+
     async def test_signup_ui_respects_optional_and_fresh_modes(self):
         row = raid.member_characters(42, self.path)[0]
         with patch.object(raid, "GUILD_ID", 77), \
