@@ -45,8 +45,14 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    cannot be tagged and are excluded from acknowledgement tracking.
 6. Keep using the raid Sheet after publication. Later sign-ups flow into the
    raid tab, and leadership assignment changes update the public roster
-   automatically at the next successful sync (~60 seconds). Use `/raid reopen`
-   only to return the public panel to its unconfirmed state.
+   automatically at the next successful sync (~60 seconds). To unpublish,
+   choose **Manage Raid → Unpublish Roster → Confirm unpublish** in the private
+   raid poster, or use `/raid reopen number:1`. The original public panel
+   reverts to live sign-ups; attendance, selections and character data remain
+   intact. If a one-time ping announcement was posted, Ogre edits it to
+   **Roster withdrawn** without any further mentions. Re-publishing the
+   roster does **not** automatically send a second ping. The original
+   acknowledgement list stays retired to avoid misleading reactions.
 7. After the raid, use
    `/raid archive number:1 wcl_url:https://www.warcraftlogs.com/reports/... notes:...`.
    The date, WCL link and notes are stored on the raid tab. The tab is hidden
