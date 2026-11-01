@@ -99,7 +99,9 @@ create, restore or delete the persistent volume.
    It fails closed if the SHA, image, volume or completed snapshot checks fail.
 
 The workflow reruns Python regressions and Docker launcher smoke checks
-before calling `fly deploy -a hyped-diceman --remote-only --ha=false`.
+before calling `flyctl deploy -a hyped-diceman --remote-only --ha=false`.
+GitHub Actions installs the CLI executable as `flyctl`; the shorter `fly`
+command used in a local terminal may be an alias and is not available there.
 It is not triggered by a PR, a push or a merge. Do not run a second
 production bot with the same Discord token.
 
