@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import discord
 
-from cogs import raid_schedule as schedule, raid_signup as raid
+from cogs import raid_schedule as schedule, raid_signup as raid, raid_poster
 from wowsims_helper import signup_with_export
 
 
@@ -89,10 +89,18 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
+                raid_db_path=lambda: path,
                 sync_raid_sheets=AsyncMock(),
                 refresh_saved_panel=AsyncMock()
             )
-            view = raid.RaidCompletionConfirm(cog, 1, "", "Raid complete")
+            private_poster = SimpleNamespace(edit=AsyncMock())
+            view = raid.RaidCompletionConfirm(
+                cog, 1, "", "Raid complete",
+                poster_owner_id=42, poster_message=private_poster,
+                poster_draft=raid_poster.draft_from_event(
+                    schedule.read_raid(path, 1)
+                )
+            )
             button = next(
                 child for child in view.children
                 if isinstance(child, discord.ui.Button)
@@ -112,6 +120,11 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.attend_disabled(closed))
             self.assertTrue(self.wowsims_disabled(closed))
             cog.refresh_saved_panel.assert_awaited_once_with(1)
+            private_poster.edit.assert_awaited_once()
+            self.assertIn(
+                "Completed / archived",
+                private_poster.edit.await_args.kwargs["view"].description()
+            )
             interaction.followup.send.assert_awaited_once()
             raid.save_character(43, "LateMage", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(43, path)[0][0]
