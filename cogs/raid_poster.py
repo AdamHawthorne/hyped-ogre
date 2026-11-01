@@ -209,8 +209,10 @@ class RaidDeleteConfirmation(discord.ui.LayoutView):
             discord.ui.TextDisplay(
                 f"## Delete <Hyped> Raid #{raid_number}?\n\n"
                 "**This cannot be undone.**\n"
-                "Ogre will remove its raid card, sign-ups and attendance.\n"
-                "Saved characters, gear exports and other raids remain untouched."
+                "Ogre will remove its Discord raid card, raid-specific "
+                "Google Sheets tab, sign-ups and attendance.\n"
+                "Saved characters, WoWSims exports, permanent Sheets tabs "
+                "and other raids remain untouched."
             ), accent_color=0xBA4C40,
         ))
         confirm = discord.ui.Button(label=f"Yes, delete Raid #{raid_number}",
