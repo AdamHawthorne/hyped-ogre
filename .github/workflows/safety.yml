@@ -147,3 +147,25 @@ jobs:
           assert len(rows[6]) == 20
           print("Per-raid Sheets dashboard import and fixed cells validated")
           '
+
+      - name: Verify live raid signup extension identity and SQLite schema
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import tempfile
+          from pathlib import Path
+          from discord.ext import commands
+          from cogs import raid_signup as raid
+          from hyped_ogre.features.raids import signup_reference
+          assert raid.RaidPrototype.__module__ == "cogs.raid_signup"
+          assert raid.setup.__module__ == "cogs.raid_signup"
+          assert issubclass(raid.RaidPrototype, commands.GroupCog)
+          assert raid.CLASS_SPECS is signup_reference.CLASS_SPECS
+          with tempfile.TemporaryDirectory() as tmp:
+              db_path = str(Path(tmp) / "raid_signup.db")
+              raid.create_schema(db_path)
+              with raid.database(db_path) as db:
+                  assert db.execute(
+                      "SELECT COUNT(*) FROM characters"
+                  ).fetchone()[0] == 0
+          print("Original raid extension and schema wrapper validated")
+          '
