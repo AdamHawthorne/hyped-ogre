@@ -34,9 +34,12 @@ def _selected(body, flag, expected):
     return selected
 
 
-def missing_coverage(assigned):
-    if not assigned:
-        return "No team selected"
+def missing_entries(assigned):
+    """Missing items from the same class/spec checklist shown in the Sheet.
+
+    Calculate the count from structured entries, not comma-separated text
+    (nor the number of assigned players).
+    """
     result = []
     for label, klass, _ in CLASS_COVERAGE:
         if not any(k == klass.casefold() for k, _ in assigned):
@@ -46,7 +49,14 @@ def missing_coverage(assigned):
                    tuple(s.casefold() for s in specs)
                    for k, spec in assigned):
             result.append(label)
-    return ", ".join(result) if result else "Core class coverage present"
+    return result
+
+
+def missing_coverage(assigned):
+    if not assigned:
+        return "No team selected"
+    entries = missing_entries(assigned)
+    return ", ".join(entries) if entries else "Core class coverage present"
 
 
 def instance_summaries(body, event):
@@ -60,8 +70,8 @@ def instance_summaries(body, event):
         ("Ony", _selected(body, 13, "Yes")) if "ony" in names else None,
     ]
     return [
-        (f"{name} ({len(assigned)})", missing_coverage(assigned))
-        if entry else ("", "")
+        (f"{name} ({len(missing_entries(assigned))})",
+         missing_coverage(assigned)) if entry else ("", "")
         for entry in output
         for name, assigned in ([entry] if entry else [("", [])])
     ]
