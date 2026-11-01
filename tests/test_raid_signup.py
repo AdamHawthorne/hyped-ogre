@@ -348,7 +348,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             mock_cog = SimpleNamespace(
                 raid_db_path=lambda: path, allowed=lambda interaction: True,
             )
-            poster = raid_poster.RaidPosterView(mock_cog, 42, draft)
+            poster = raid_poster.RaidPosterView(mock_cog, 42, draft, page="advanced")
             self.assertIn("Optional Raid Title", json.dumps(poster.to_components()))
             self.assertIn("First Clear", poster.description())
             controls = [
@@ -358,8 +358,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(controls, [
                 "Optional Raid Title", "Bottom Banner", "Optional SoftRes",
                 "Remove SoftRes", "Check Message Link", "Remove Check Link",
-                "Post / Update Raid", "Preview / Confirm Roster",
-                "Manage Raid", "Delete Raid",
+                "Post / Update Raid", "Back to schedule", "Delete Raid",
             ])
             # Old /raid setup commands must preserve an existing subtitle.
             updated = raid_schedule.save_raid(
@@ -396,7 +395,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                           raid_poster.RaidPosterView(
                               SimpleNamespace(raid_db_path=lambda: path,
                                               allowed=lambda interaction: True),
-                              42, raid_poster.draft_from_event(event)
+                              42, raid_poster.draft_from_event(event),
+                              page="advanced"
                           ).description())
             self.assertNotIn("y6bCxy.png", json.dumps(
                 raid_schedule.RaidEventPanel(event).to_components()
@@ -422,6 +422,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             poster = raid_poster.RaidPosterView(
                 SimpleNamespace(raid_db_path=lambda: path,
                                 allowed=lambda interaction: True), 42, draft,
+                page="advanced",
             )
             self.assertIn("**Bottom banner:** Custom image", poster.description())
             modal = raid_poster.PosterTextModal(
@@ -686,23 +687,45 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Choose raid date", components)
             self.assertIn("Choose start time", components)
             self.assertIn("Other start time (HH:MM)", components)
-            self.assertIn("Choose end time", components)
-            self.assertIn("Other time (HH:MM)", components)
-            self.assertIn("Check Message Link", components)
-            self.assertIn("Remove Check Link", components)
-            self.assertNotIn("Choose Check channel", components)
-            self.assertIn("**Check message:** Not set (optional)", poster.description())
+            # Routine schedule first, optional selectors on the advanced page.
+            self.assertNotIn("Choose end time", components)
+            self.assertNotIn("Check Message Link", components)
             self.assertIn("Raid instance #1", components)
             self.assertIn("Raid instance #2", components)
-            self.assertIn("Raid instance #3", components)
-            self.assertIn("Optional Raid Title", components)
-            self.assertIn("Bottom Banner", components)
-            self.assertIn("Optional SoftRes", components)
+            self.assertNotIn("Raid instance #3", components)
+            self.assertIn("Advanced settings", components)
             self.assertIn("Post / Update Raid", components)
             self.assertIn("Choose exact announcement date & time", components)
             self.assertIn("When to announce the roster?", components)
             self.assertIn("New Raid #1", components)
+            self.assertIn("**Raid commands**", components)
+            self.assertIn("/raid archive", components)
             self.assertNotIn("Signed up:", components)
+            self.assertEqual(poster.draft["time"], "20:00")
+            self.assertEqual(poster.draft["instance_1"], "Hyjal (20m)")
+            self.assertEqual(poster.draft["instance_2"], "Barrows (10m)")
+            self.assertEqual(poster.draft["channel_id"],
+                             raid_poster.DEFAULT_RAID_CHANNEL_ID)
+            self.assertEqual(
+                date.fromisoformat(poster.draft["day"]).weekday(), 6
+            )
+            advanced = raid_poster.RaidPosterView(
+                dummy_cog, 42, poster.draft, page="advanced"
+            )
+            more = json.dumps(advanced.to_components())
+            self.assertIn("Choose end time", more)
+            self.assertIn("Other time (HH:MM)", more)
+            self.assertIn("Check Message Link", more)
+            self.assertIn("Remove Check Link", more)
+            self.assertIn("Raid instance #3", more)
+            self.assertIn("Optional Raid Title", more)
+            self.assertIn("Bottom Banner", more)
+            self.assertIn("Optional SoftRes", more)
+            self.assertIn("WoWSims requirement", more)
+            self.assertIn("Back to schedule", more)
+            self.assertIn("**Raid commands**", more)
+            self.assertIn("**Check message:** Not set (optional)",
+                          advanced.description())
             draft = raid_poster.draft_from_event(None)
             draft.update(number=1, day="2026-11-05", instance_1="Molten Core")
             at, announce = raid_poster.poster_schedule(draft)
@@ -899,9 +922,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn(name, payload)
             self.assertNotIn("Molten Core", payload)
             self.assertNotIn("Blackwing Lair", payload)
-            self.assertIn('"label": "Delete Raid"', payload)
+            self.assertNotIn('"label": "Delete Raid"', payload)
+            advanced = raid_poster.RaidPosterView(
+                cog, 42, panel.draft, page="advanced"
+            )
             delete_button = next(
-                item for item in panel.walk_children()
+                item for item in advanced.walk_children()
                 if isinstance(item, discord.ui.Button) and item.label == "Delete Raid"
             )
             self.assertTrue(delete_button.disabled)
@@ -911,12 +937,18 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                     raid_schedule.read_raid(path, 1)
                 )
             )
+            advanced = raid_poster.RaidPosterView(
+                cog, 42, raid_poster.draft_from_event(
+                    raid_schedule.read_raid(path, 1)
+                ), page="advanced"
+            )
             delete_button = next(
-                item for item in panel.walk_children()
+                item for item in advanced.walk_children()
                 if isinstance(item, discord.ui.Button) and item.label == "Delete Raid"
             )
             self.assertFalse(delete_button.disabled)
-            self.assertIn("Post destination", json.dumps(panel.to_components()))
+            self.assertIn("Choose destination channel",
+                          json.dumps(advanced.to_components()))
 
     async def test_delete_raid_only_deletes_that_raids_records(self):
         with tempfile.TemporaryDirectory() as tmp:
