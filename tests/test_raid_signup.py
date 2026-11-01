@@ -876,6 +876,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 1, "2026-11-05 20:00", "Molten Core",
                 softres_url="https://softres.it/raid/abc123",
             )
+            raid_schedule.record_panel(path, 1, 777, 888)
             cog = SimpleNamespace(raid_db_path=lambda: path, allowed=lambda i: True,
                                   post_panel=AsyncMock())
             draft = raid_poster.draft_from_event(raid_schedule.read_raid(path, 1))
