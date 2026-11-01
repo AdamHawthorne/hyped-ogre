@@ -41,6 +41,9 @@ RAID_COLUMNS = {
     "wcl_url": "TEXT",
     "wcl_sheet_synced": "TEXT",
     "default_show_discord": "INTEGER NOT NULL DEFAULT 1",
+    # 'missing' is the default for new and pre-existing raids.
+    "wowsims_policy": "TEXT NOT NULL DEFAULT 'missing'",
+    "wowsims_refresh_after": "TEXT",
 }
 
 
@@ -243,7 +246,10 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
               instance_3=None, roster_announce=None, softres_url=None,
               custom_title=None, banner_url=None,
               end_at=_UNCHANGED, check_channel_id=_UNCHANGED,
-              check_message_url=_UNCHANGED):
+              check_message_url=_UNCHANGED, wowsims_policy=_UNCHANGED):
+    if wowsims_policy is not _UNCHANGED and wowsims_policy not in (
+            "missing", "fresh", "optional"):
+        raise ValueError("Choose a valid WoWSims requirement.")
     softres = validate_softres_url(softres_url)
     if not 1 <= number <= 100000:
         raise ValueError("Raid number must be between 1 and 100000.")
@@ -353,6 +359,24 @@ def save_raid(path, number, raid_date, instance_1, instance_2=None,
               announce.isoformat() if announce else None,
               softres, custom_title, banner_url, end_at,
               check_channel_id, check_message_url))
+        if wowsims_policy is not _UNCHANGED:
+            # A fresh export is one submitted AFTER the policy was enabled.
+            # Re-saving the poster must not move this deadline.
+            current = con.execute(
+                "SELECT wowsims_policy, wowsims_refresh_after FROM raids "
+                "WHERE raid_id=?", (number,)
+            ).fetchone()
+            previous_policy, refresh_after = current
+            if wowsims_policy == "fresh":
+                if previous_policy != "fresh" or not refresh_after:
+                    refresh_after = datetime.now(timezone.utc).isoformat()
+            else:
+                refresh_after = None
+            con.execute(
+                "UPDATE raids SET wowsims_policy=?, wowsims_refresh_after=? "
+                "WHERE raid_id=?",
+                (wowsims_policy, refresh_after, number),
+            )
     return read_raid(path, number)
 
 
