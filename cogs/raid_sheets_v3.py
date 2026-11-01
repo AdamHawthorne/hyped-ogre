@@ -10,7 +10,7 @@ import os
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from cogs import raid_sheets, wowsims_gear, forever_item_data, raid_history
+from cogs import raid_sheets, wowsims_gear, forever_item_data, raid_history, forever_raid_buffs
 from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
@@ -393,15 +393,18 @@ def _header(event, body, tab):
     message = event.get("panel_message_id")
     panel_url = (f"https://discord.com/channels/{channel}/{message}"
                  if channel and message else "")
+    coverage = forever_raid_buffs.instance_summaries(body, event)
     lines = [
         [title],
         ["Date", when.strftime("%A, %d %B %Y"), "Status", state,
-         "Start (UK)", when.strftime("%H:%M")],
+         "Start (UK)", when.strftime("%H:%M"), *coverage[0]],
         ["Instances", instances, "Confirmed",
-         event.get("confirmed_at") or "", "Archived", event.get("archived_at") or ""],
+         event.get("confirmed_at") or "", "Archived", event.get("archived_at") or "",
+         *coverage[1]],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
-         event.get("archive_notes") or ""],
-        [f"{signed} signed · {absent} absent"],
+         event.get("archive_notes") or "", "", *coverage[2]],
+        [f"{signed} signed · {absent} absent", "", "", "", "", "",
+         *coverage[3]],
         ["", ""],
         list(COLUMNS),
     ]
@@ -444,6 +447,20 @@ def _make_tab(session, title):
         fill(0, 1, black, white, True, 18),
         fill(6, 7, black, white, True, 11),
         fill(7, 500, grey, ink),
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": 1, "endIndex": 5},
+            "properties": {"pixelSize": 60}, "fields": "pixelSize"}},
+        {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5,
+                      "startColumnIndex": 6, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {
+                "wrapStrategy": "WRAP", "verticalAlignment": "MIDDLE",
+                "textFormat": {"bold": True, "fontFamily": "Roboto",
+                               "foregroundColor": white}}},
+            "fields": "userEnteredFormat.wrapStrategy,"
+                      "userEnteredFormat.verticalAlignment,"
+                      "userEnteredFormat.textFormat"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": 15, "endIndex": 17},
@@ -492,7 +509,7 @@ def _make_tab(session, title):
                             "textFormat": {"foregroundColor": {
                                 "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 110), (7, 85),
+                       (4, 90), (5, 90), (6, 125), (7, 340),
                        (8, 130), (9, 85), (10, 75), (11, 220),
                        (12, 330), (13, 210), (14, 210),
                        (17, 195), (18, 195), (19, 95)):
@@ -553,6 +570,26 @@ def _paint_sections(session, sid, rows):
     requests = [paint(7, 500, grey, ink)]
     requests.extend(paint(index, index + 1, black, white, bold=True, size=11)
                     for index in _section_positions(rows))
+    # Keep the G/H coverage panel readable in existing tabs too.
+    requests.extend([
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "ROWS",
+                      "startIndex": 1, "endIndex": 5},
+            "properties": {"pixelSize": 60}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": 7, "endIndex": 8},
+            "properties": {"pixelSize": 340}, "fields": "pixelSize"}},
+        {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5,
+                      "startColumnIndex": 6, "endColumnIndex": 8},
+            "cell": {"userEnteredFormat": {
+                "wrapStrategy": "WRAP", "verticalAlignment": "MIDDLE",
+                "textFormat": {"bold": True}}},
+            "fields": "userEnteredFormat.wrapStrategy,"
+                      "userEnteredFormat.verticalAlignment,"
+                      "userEnteredFormat.textFormat.bold"}},
+    ])
     # Old dropdowns can linger after a layout migration. Clear the entire
     # management area and reapply only the actual selection controls.
     requests.append({"setDataValidation": {"range": {
