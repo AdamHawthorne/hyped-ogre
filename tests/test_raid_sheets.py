@@ -1,3 +1,4 @@
+from wowsims_helper import signup_with_export, seed_export, example_export
 """Offline tests for the optional Google Sheets raid synchronisation bridge."""
 import json
 import sqlite3
@@ -30,7 +31,7 @@ class RaidSheetsTests(unittest.TestCase):
         raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
         raid.save_character(42, "Second Character", "Warrior", "Fury", "DPS", path)
         char_id = raid.member_characters(42, path)[0][0]
-        raid.save_signup(1, 42, char_id, path)
+        signup_with_export(1, 42, char_id, path)
         raid.save_absence(1, 99, "Family plans", path)
 
     def test_snapshot_maps_to_expected_rm_tabs_and_signoff_time(self):
