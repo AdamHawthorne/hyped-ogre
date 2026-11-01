@@ -1874,6 +1874,14 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         # During testing, live raid panels are ONLY permitted in private #ogre.
         return is_test_owner(interaction)
 
+    def allowed_sync(self, interaction):
+        """Only the owner may sync; permit the public raid sign-up channel."""
+        return self.allowed(interaction) or (
+            interaction.user.id == OWNER_ID
+            and interaction.guild_id == GUILD_ID
+            and interaction.channel_id == RAID_CHANNEL_ID
+        )
+
     def raid_db_path(self):
         return RAID_DB
 
