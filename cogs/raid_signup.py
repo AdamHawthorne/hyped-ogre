@@ -1967,42 +1967,46 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                     ephemeral=True,
                 )
                 return
-        deleted_sheet = False
-        if raid_sheets.configured():
+        # Hold the same lock as automatic Sheets sync until BOTH the
+        # Sheets tab and raid database record are removed. Otherwise the
+        # background job can recreate the deleted tab mid-deletion.
+        async with self._sync_lock:
+            deleted_sheet = False
+            if raid_sheets.configured():
+                try:
+                    deleted_sheet = await asyncio.to_thread(
+                        raid_sheets_v3.delete_raid_tab, raid_number
+                    )
+                except (ValueError, RuntimeError, sqlite3.Error) as exc:
+                    await interaction.followup.send(
+                        f"Ogre couldn't delete Raid #{raid_number} from Google Sheets: "
+                        f"{exc}. Raid and public panel preserved; retry deletion.",
+                        ephemeral=True,
+                    )
+                    return
+            if panel_message is not None:
+                try:
+                    await panel_message.delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    await interaction.followup.send(
+                        f"Ogre removed the Sheets tab but couldn't remove the "
+                        f"Discord panel: {exc}. Raid database preserved. "
+                        "Fix channel permissions and retry; the Sheets tab may "
+                        "reappear during automatic sync.",
+                        ephemeral=True,
+                    )
+                    return
             try:
-                deleted_sheet = await asyncio.to_thread(
-                    raid_sheets_v3.delete_raid_tab, raid_number
-                )
-            except (ValueError, RuntimeError, sqlite3.Error) as exc:
+                delete_raid(RAID_DB, raid_number)
+            except (ValueError, sqlite3.Error):
                 await interaction.followup.send(
-                    f"Ogre couldn't delete Raid #{raid_number} from Google Sheets: "
-                    f"{exc}. Raid and public panel preserved; retry deletion.",
+                    "Ogre couldn't delete the saved raid records. "
+                    "No other raids or characters were touched.",
                     ephemeral=True,
                 )
                 return
-        if panel_message is not None:
-            try:
-                await panel_message.delete()
-            except discord.NotFound:
-                pass
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                await interaction.followup.send(
-                    f"Ogre removed the Sheets tab but couldn't remove the "
-                    f"Discord panel: {exc}. Raid database preserved. "
-                    "Fix channel permissions and retry; the Sheets tab may "
-                    "reappear during automatic sync.",
-                    ephemeral=True,
-                )
-                return
-        try:
-            delete_raid(RAID_DB, raid_number)
-        except (ValueError, sqlite3.Error):
-            await interaction.followup.send(
-                "Ogre couldn't delete the saved raid records. "
-                "No other raids or characters were touched.",
-                ephemeral=True,
-            )
-            return
         try:
             await interaction.message.edit(
                 view=RaidPosterView(self, interaction.user.id)
