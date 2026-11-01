@@ -135,8 +135,10 @@ class LayoutAndBuffTests(unittest.TestCase):
         top = sheets._header(self.event, body, sheets.tab_title(self.event))
         top[3][1] = "https://classic.warcraftlogs.com/reports/abc123"
         top[3][3] = "Keep these notes in D4"
-        with patch.object(sheets.raid_sheets, "_json") as api, \\
-             patch.object(sheets, "_paint_sections"):
+        with (
+            patch.object(sheets.raid_sheets, "_json") as api,
+            patch.object(sheets, "_paint_sections"),
+        ):
             sheets._write(Mock(), sheets.tab_title(self.event), 1234, [], top)
         writes = [call for call in api.call_args_list
                   if call.args[1] == "PUT"]
