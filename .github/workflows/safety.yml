@@ -68,3 +68,25 @@ jobs:
           print("V2 Forever production and preview panels built successfully")
           '
 
+
+      - name: Verify persistent raid roster V2 controls in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import discord
+          from cogs.raid_schedule import RaidEventPanel
+          event = {"raid_id": 7, "raid_at": "2026-12-09T21:00:00+00:00",
+                   "instance_1": "Hyjal (20m)", "instance_2": "Barrows (10m)",
+                   "instance_3": None, "signup_open": 1,
+                   "wowsims_policy": "optional", "roster_published": 0,
+                   "archived_at": None}
+          async def callback(interaction): pass
+          view = RaidEventPanel(event, on_signup=callback, on_update=callback,
+                                on_gear=callback, on_absent=callback,
+                                on_remind=callback)
+          ids = {x.custom_id for x in view.walk_children()
+                 if isinstance(x, discord.ui.Button)}
+          assert view.is_persistent()
+          assert ids == {f"hyped_raid_7_{key}" for key in
+                         ("signup", "reminder", "update", "gear", "absent")}
+          print("Persistent raid panel and button IDs built successfully")
+          '
