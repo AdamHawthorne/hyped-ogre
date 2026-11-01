@@ -896,7 +896,7 @@ def _sync_gear_tab(session, db_path, titles):
     # All character-supplied text remains RAW to prevent formula injection.
     hyperlinks = []
     for row in target:
-        link = str(row[6])
+        link = str(row[6]) if len(row) > 6 else ""
         if link.startswith("https://www.wowhead.com/classic/item="):
             item_id = link.rsplit("=", 1)[-1]
             if item_id.isascii() and item_id.isdecimal():
