@@ -1021,7 +1021,7 @@ def _sync_gear_tab(session, db_path, titles):
     # Only bot-generated numeric item IDs are interpolated into formula text.
     # All character-supplied text remains RAW to prevent formula injection.
     hyperlinks = []
-    for row in target:
+    for index, row in enumerate(target):
         link = str(row[6]) if len(row) > 6 else ""
         if link.startswith(forever_item_data.WOWHEAD_BASE):
             item_id = link.rsplit("=", 1)[-1]
@@ -1030,7 +1030,8 @@ def _sync_gear_tab(session, db_path, titles):
                     f'=HYPERLINK("{forever_item_data.WOWHEAD_BASE}{item_id}","View item")'
                 ])
                 continue
-        hyperlinks.append([""])
+        # Formula update must not accidentally erase G3 column heading.
+        hyperlinks.append([link if index == 2 else ""])
     raid_sheets._json(
         session, "PUT",
         f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
