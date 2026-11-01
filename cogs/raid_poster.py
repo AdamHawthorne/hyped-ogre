@@ -246,9 +246,12 @@ class RaidDeleteConfirmation(discord.ui.LayoutView):
 
 class RaidRosterPreview(discord.ui.View):
     """Owner-only preview: publish quietly, or publish and ping selected users."""
-    def __init__(self, cog, owner_id, raid_id, entries, already_announced=False):
+    def __init__(self, cog, owner_id, raid_id, entries, already_announced=False,
+                 poster_message=None, poster_draft=None):
         super().__init__(timeout=300)
         self.cog, self.owner_id, self.raid_id = cog, owner_id, raid_id
+        self.poster_message = poster_message
+        self.poster_draft = dict(poster_draft) if poster_draft else None
         self.snapshot = tuple(tuple(x) for x in entries)
         if already_announced:
             for child in self.children:
@@ -278,6 +281,15 @@ class RaidRosterPreview(discord.ui.View):
         except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
             await interaction.followup.send(f"Roster publish: {exc}", ephemeral=True)
             return
+        # The private schedule card should immediately reflect the published
+        # status and offer Manage Raid, without running /raid poster again.
+        if self.poster_message is not None and self.poster_draft is not None:
+            try:
+                await self.poster_message.edit(view=RaidPosterView(
+                    self.cog, self.owner_id, self.poster_draft, page="schedule"
+                ))
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                pass
         for child in self.children:
             child.disabled = True
         await interaction.edit_original_response(view=self)
@@ -863,8 +875,12 @@ class RaidPosterView(discord.ui.LayoutView):
             await interaction.followup.send(
                 preview + "\n\n" + note +
                 "\nSign-ups stay open and Sheet selections remain editable.",
-                view=RaidRosterPreview(self.cog, self.owner_id, event["raid_id"],
-                                       selected, already_announced=announced),
+                view=RaidRosterPreview(
+                    self.cog, self.owner_id, event["raid_id"], selected,
+                    already_announced=announced,
+                    poster_message=getattr(interaction, "message", None),
+                    poster_draft=self.draft,
+                ),
                 ephemeral=True)
 
         confirm_roster.callback = preview_roster
