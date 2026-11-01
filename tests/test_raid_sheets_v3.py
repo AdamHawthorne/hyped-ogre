@@ -42,7 +42,8 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(by_character["Snore Mon"][9:14],
                              ["Selected", "Yes", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
-            self.assertEqual(by_character["Snore Mon"][15], "WoWSims received")
+            self.assertEqual(by_character["Snore Mon"][15],
+                             "0/17 equipped · 0 enchants reported")
             self.assertTrue(by_character["Snore Mon"][7])
             self.assertTrue(by_character["Snore Mon"][16].isdigit())
             self.assertEqual(sheet._group(
