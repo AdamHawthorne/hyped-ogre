@@ -6,10 +6,11 @@ The old RM tabs are intentionally left intact as read-only migration backups.
 """
 from datetime import datetime
 import logging
+import os
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from cogs import raid_sheets, wowsims_gear
+from cogs import raid_sheets, wowsims_gear, forever_item_data, raid_history
 from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
@@ -23,7 +24,8 @@ COLUMNS = (
     "Discord Name", "Character", "Class", "Spec", "Role", "Main / Alt",
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show on Discord",
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "WoWSims gear",
-    "Discord ID (internal)", "Character ID (internal)", "Absent At"
+    "Discord ID (internal)", "Character ID (internal)", "Absent At",
+    "Past 3 | Next 3"
 )
 SECTIONS = ("Tanks", "Healers", "Melee", "Ranged", "Absent")
 MELEE = {
@@ -46,7 +48,7 @@ _FORMATTED_SECTION_LAYOUTS = {}
 
 
 # Absent At is displayed in R; Signed At remains the far-right column S.
-DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 10, 15, 14, 16, 17, 18, 7)
+DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 6, 8, 9, 11, 12, 13, 10, 15, 14, 16, 17, 18, 7, 19)
 
 
 def _uk_timestamp(value):
@@ -85,7 +87,7 @@ def tab_title(event):
 
 
 def _q(tab):
-    return quote(f"'{tab}'!A1:S500", safe="'!:")
+    return quote(f"'{tab}'!A1:T500", safe="'!:")
 
 
 def _read(session, tab):
@@ -229,6 +231,9 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         str(item["character_id"]): wowsims_gear.parse_export(item["raw_text"])
         for item in wowsims_gear.latest_profiles(db_path)
     }
+    history = raid_history.history_for_raid(db_path, event["raid_id"])
+    catalog = forever_item_data.cached_catalog(db_path)
+    owner_id = str(os.getenv("OWNER_ID", "0"))
     absent_by_member = {
         str(r["discord_id"]): r for r in absences
         if r["raid_id"] == event["raid_id"]
@@ -263,7 +268,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
         uploaded = gear_by_char.get(char_id, {})
         gear_status = (
-            wowsims_gear.summary(parsed_by_char.get(char_id))
+            wowsims_gear.summary(parsed_by_char.get(char_id), catalog)
             if uploaded.get("wowsims_latest") else
             "Legacy SimC" if uploaded.get("simc_latest") else
             "Not submitted"
@@ -280,6 +285,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             previous[14] or migrated.get("notes") or "",
             gear_status, member_id, char_id,
             (absence.get("signed_off_at") or "") if absence else "",
+            history.get(member_id, "— · — · — | — · — · —"),
         ]
         groups[_group(signup, absent)].append(row)
 
@@ -295,6 +301,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
             previous[7], "Absent", "Not selected", "No", "No", "No", "No",
             previous[14], previous[15], member_id, previous[17],
             absence.get("signed_off_at") or "",
+            history.get(member_id, "— · — · — | — · — · —"),
         ])
 
     for guest in guests:
@@ -307,7 +314,10 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
     for section in SECTIONS:
         section_rows.append([section] + [""] * (len(COLUMNS) - 1))
         ordered = sorted(
-            groups[section], key=lambda row: (row[2].casefold(), row[1].casefold())
+            groups[section], key=lambda row: (
+                0 if row[16] == owner_id and owner_id != "0" else 1,
+                row[2].casefold(), row[1].casefold()
+            )
         )
         section_rows.extend(ordered)
         if section != SECTIONS[-1]:
@@ -408,7 +418,7 @@ def _make_tab(session, title):
         return {"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": first,
                       "endRowIndex": last, "startColumnIndex": 0,
-                      "endColumnIndex": 19},
+                      "endColumnIndex": len(COLUMNS)},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": background,
                 "textFormat": {"foregroundColor": foreground, "bold": bold,
@@ -431,7 +441,7 @@ def _make_tab(session, title):
     requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
         "ranges": [{"sheetId": sid, "startRowIndex": 7,
                     "endRowIndex": 500, "startColumnIndex": 0,
-                    "endColumnIndex": 19}],
+                    "endColumnIndex": len(COLUMNS)}],
         "booleanRule": {"condition": {"type": "CUSTOM_FORMULA",
                        "values": [{"userEnteredValue":
                            '=REGEXMATCH($A8,"^(Tanks|Healers|Melee|Ranged|Absent)$")'}]},
@@ -471,7 +481,7 @@ def _make_tab(session, title):
                        (4, 90), (5, 90), (6, 200), (7, 95),
                        (8, 110), (9, 95), (10, 95), (11, 75),
                        (12, 135), (13, 145), (14, 205),
-                       (17, 195), (18, 195)):
+                       (17, 195), (18, 195), (19, 340)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": col, "endIndex": col + 1},
@@ -568,7 +578,7 @@ def _write(session, title, sid, existing, rows):
     if changed:
         raid_sheets._json(
             session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-            + quote(f"'{title}'!A1:S{len(needed)}", safe="'!:"),
+            + quote(f"'{title}'!A1:T{len(needed)}", safe="'!:"),
             params={"valueInputOption": "RAW"},
             json={"values": new_display},
         )
@@ -664,7 +674,7 @@ def _one(session, db_path, event, names, titles):
                 session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
                 json={"requests": [
                     {"appendDimension": {
-                        "sheetId": sid, "dimension": "COLUMNS", "length": 1}},
+                        "sheetId": sid, "dimension": "COLUMNS", "length": 2}},
                     {"moveDimension": {
                         "source": {"sheetId": sid, "dimension": "COLUMNS",
                                    "startIndex": 17, "endIndex": 18},
@@ -693,6 +703,19 @@ def _one(session, db_path, event, names, titles):
                         "fields": "userEnteredFormat.textFormat,"
                                   "userEnteredFormat.verticalAlignment,"
                                   "userEnteredFormat.horizontalAlignment"}},
+                ]},
+            )
+        elif count == 19:
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [
+                    {"appendDimension": {"sheetId": sid,
+                                         "dimension": "COLUMNS", "length": 1}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 19, "endIndex": 20},
+                        "properties": {"pixelSize": 340}, "fields": "pixelSize"}},
                 ]},
             )
         elif count < len(COLUMNS):
