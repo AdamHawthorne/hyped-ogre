@@ -18,7 +18,7 @@ from cogs.roll_coins import (
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard, COIN_IMAGE
 from cogs.ogre_voice import pick as ogre_say
 
-SOURCE = (Path(__file__).resolve().parents[1] / 'rollf.py').read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / 'hyped_ogre/bot.py').read_text()
 
 
 def load_functions(names, namespace):
@@ -27,7 +27,7 @@ def load_functions(names, namespace):
              and n.name in names]
     for node in nodes:
         node.decorator_list = []
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), 'rollf.py', 'exec'), namespace)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), 'hyped_ogre/bot.py', 'exec'), namespace)
 
 
 class PanelTests(unittest.IsolatedAsyncioTestCase):

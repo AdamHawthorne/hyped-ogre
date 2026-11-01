@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MigrationSafetyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "rollf.py").read_text(encoding="utf-8")
+        cls.source = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
         cls.tree = ast.parse(cls.source)
         cls.main_functions = {
             node.name for node in cls.tree.body
@@ -164,7 +164,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("DELETE FROM ROLLS", self.source.upper())
 
     def test_roll_history_is_append_only_across_runtime_sources(self):
-        runtime_sources = [ROOT / "rollf.py", *(ROOT / "cogs").glob("*.py")]
+        runtime_sources = [ROOT / "hyped_ogre/bot.py", *(ROOT / "cogs").glob("*.py"), *(ROOT / "hyped_ogre/features/rolls").glob("*.py")]
         forbidden = (
             "DELETE FROM ROLLS",
             "DROP TABLE ROLLS",

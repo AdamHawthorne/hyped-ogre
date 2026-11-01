@@ -2,7 +2,7 @@
 
 ## Current state
 
-The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
+The production Discord bot continues to start via the existing `python rollf.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
 
 ## Migrated modules
 
@@ -101,6 +101,23 @@ Sheets synchronisation or production database schema.
 ## Roll feature helpers
 
 The four roll helper modules are now canonical under `hyped_ogre/features/rolls/` with same-module `cogs` aliases. The existing `rollf.py` coordinator, midnight reset and database connection remain unchanged. The immutable history of daily rolls, coin-award migrations, once-a-day gamble writes, returned stakes, original free-roll tie priority, V2 button IDs and reaction recovery are preserved. The main `rollf.py` coordinator has **not** yet been moved or replaced.
+
+## Bot coordinator entrypoint migration
+
+The entire original `rollf.py` implementation was moved unchanged into
+`hyped_ogre/bot.py`. A tiny wrapper at the original path runs it as
+`__main__` with `runpy.run_module`. This preserves `python rollf.py`,
+the Dockerfile, `sys.argv`, existing Discord extension import strings,
+all command and handler registrations, bot startup tasks, RollF licence
+attribution and the current `bot.run(TOKEN)` behaviour. The coordinator
+has no `__file__`-relative resources or `sys.argv` parsing.
+
+**Do not import `hyped_ogre.bot` in offline tests:** its startup runs
+at module scope. Static source/AST regression tests now target the
+canonical module, and the compatibility wrapper is checked independently.
+
+The Fly.io bot has not been deployed or restarted as part of this
+repository migration.
 
 ## Intended package layout
 

@@ -8,7 +8,7 @@ import unittest
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "rollf.py").read_text(encoding="utf-8")
+SOURCE = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
 UK = ZoneInfo("Europe/London")
 FIXED_TS = int(datetime(2026, 10, 29, 12, 0, tzinfo=UK).timestamp())
 
@@ -19,7 +19,7 @@ def load_insert_roll(namespace):
         item for item in tree.body
         if isinstance(item, ast.FunctionDef) and item.name == "insert_roll"
     )
-    exec(compile(ast.Module(body=[node], type_ignores=[]), "rollf.py", "exec"), namespace)
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "hyped_ogre/bot.py", "exec"), namespace)
     return namespace["insert_roll"]
 
 
