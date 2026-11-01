@@ -9,8 +9,11 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    defaults to the next Sunday after existing scheduled raids, 20:00-23:00
    UK, Hyjal (20m) + Barrows (10m), the guild raid channel, a target roster
    confirmation one day beforehand, and **WoWSims required if missing**.
-   No ping roles are preselected. Use **Post / Update Raid** to publish
-   (or silently edit) the actual raid panel. Ogre creates a private Sheet
+   No ping roles are preselected. **Post / Update Raid** shows a private
+   confirmation of date, instance, destination and initial pings before
+   creating a *new* public raid panel. **Cancel** posts nothing and does
+   not save a draft. Updates to an existing posted raid are silent.
+   Ogre creates a private Sheet
    tab such as **Raid #1 - Wed 09 Dec 2026**, synced about every 60 seconds.
    The private poster updates after posting to unlock **Preview / Confirm
    Roster**. The roster confirmation target is informational, not an
@@ -21,7 +24,9 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    visibility, WoWSims requirement, check link, SoftRes, title and banner.
    **Back to schedule** keeps pending changes. **Post / Update Raid** saves
    the selected settings. The bottom of both poster pages lists leadership
-   slash commands.
+   slash commands. `/raid sync` is owner-only but available in both
+   private `#ogre` and raid sign-up channel `1563663151323553802`;
+   its response is private.
 2. Players use **Attend** and **Characters** to register their main or alt.
    The raid poster sets the requirement. New raids default to **WoWSims:
    Required if missing**, so a character must have a saved export before
@@ -72,6 +77,18 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    The date, WCL link and notes are stored on the raid tab. The tab is hidden
    to keep the active Sheet tidy, **not deleted**. Use Google Sheets' hidden
    sheets menu to view it later.
+
+## Deleting raids
+
+Use the **Delete Raid** option under the poster's advanced settings, then
+confirm. Ogre removes **only** the matching **Raid #N - ...** tab from
+Google Sheets, the bot's public Discord raid panel, and the raid's
+local sign-ups and attendance records. It never deletes other raid tabs,
+the permanent Forever Roster/Attendance/Gear tabs, or characters and
+WoWSims exports. The raid's tab is deleted rather than merely hidden.
+If Google Sheets deletion fails, Ogre does not delete the Discord panel
+or raid database, so deletion can be retried. Automatic Sheets sync is
+paused during the coordinated deletion to avoid recreating a tab.
 
 ## Single raid tab layout
 
