@@ -800,7 +800,7 @@ class RaidEventPanel(discord.ui.LayoutView):
             disabled=on_update is None,
         )
         gear = discord.ui.Button(
-            label="SimC", custom_id=f"hyped_raid_{event_id}_gear",
+            label="WoWSims", custom_id=f"hyped_raid_{event_id}_gear",
             style=discord.ButtonStyle.secondary,
             disabled=on_gear is None,
         )
