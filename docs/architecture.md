@@ -41,6 +41,21 @@ The `cogs/raid_signup.py` file is an active Discord extension loaded by `rollf.p
 
 Any further extraction must preserve import order and the existing extension module's ownership of its active Discord cog.
 
+## Read-only character and signup storage (second stage)
+
+The active `cogs.raid_signup` Discord extension keeps the original commands,
+database paths, transaction management, permission checks, write methods and
+registered Discord cog. Its original `list_characters`, `member_characters`,
+`character_race`, `main_character_ids` and `has_wowsims_export` APIs
+now call SQL-only helpers in `hyped_ogre/features/characters/queries.py`.
+The original `signup_note_details`, `my_signup` and `my_absence` APIs
+call `hyped_ogre/features/raids/signup_queries.py`.
+
+Each new helper accepts an existing SQLite connection. The original
+`cogs.raid_signup` wrapper still opens and closes the connection under
+the original `path=RAID_DB` default. No separate database or duplicated
+Discord cog is created. Character and raid signup writes are not moved.
+
 ## Intended package layout
 
 ```text
