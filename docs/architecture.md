@@ -4,7 +4,7 @@
 
 The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
 
-**Migrated foundations:** the Ogre voice bank lives in `hyped_ogre/features/voice/messages.py`, and shared Discord emoji/role helpers live in `hyped_ogre/core/emojis.py`. The old `cogs/ogre_voice.py` and `cogs/emojis.py` paths remain compatibility wrappers exporting the same functions and shared values. This preserves existing commands, posted Discord component identifiers, and import paths. Other folders below remain targets for later changes.
+**Migrated foundations:** the Ogre voice bank lives in `hyped_ogre/features/voice/messages.py`, and shared Discord emoji/role helpers live in `hyped_ogre/core/emojis.py`. The old `cogs/ogre_voice.py` and `cogs/emojis.py` paths remain compatibility wrappers exporting the same functions and shared values. This preserves existing commands, posted Discord component identifiers, and import paths. **LFG helper migration:** sorting and pagination implementations now live in `hyped_ogre/features/lfg/`. The legacy `cogs/lfg_sort.py` and `cogs/lfg_pagination.py` modules remain compatibility wrappers, so the live LFG board imports, component limits, saved group ordering and database behaviour remain unchanged. Other folders below remain targets for later changes.
 
 ## Intended package layout
 
