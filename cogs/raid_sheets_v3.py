@@ -791,10 +791,10 @@ def _sync_gear_tab(session, db_path, titles):
     generated only from numeric IDs found in the saved /wse exports.
     """
     profiles = wowsims_gear.latest_profiles(db_path)
-    if not profiles:
+    title = wowsims_gear.SHEET_NAME
+    if not profiles and title not in titles:
         return
     rows, headings = wowsims_gear.sheet_rows(profiles)
-    title = wowsims_gear.SHEET_NAME
     if len(rows) > 1500:
         raise RuntimeError("WoWSims gear overview exceeds its 1,500 row limit.")
     is_new = title not in titles
