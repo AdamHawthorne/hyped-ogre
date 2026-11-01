@@ -9,8 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BotEntrypointModuleMigrationTests(unittest.TestCase):
-    def test_legacy_boot_command_only_runs_canonical_bot_as_main(self):
-        wrapper = (ROOT / "rollf.py").read_text(encoding="utf-8")
+    def test_rollogre_launcher_only_runs_canonical_bot_as_main(self):
+        wrapper = (ROOT / "rollogre.py").read_text(encoding="utf-8")
+        self.assertFalse((ROOT / 'rollf.py').exists())
         tree = ast.parse(wrapper)
         self.assertIn('runpy.run_module("hyped_ogre.bot", run_name="__main__", alter_sys=False)', wrapper)
         self.assertNotIn("bot.run(", wrapper)
@@ -23,6 +24,20 @@ class BotEntrypointModuleMigrationTests(unittest.TestCase):
             and node.test.left.id == "__name__"
             for node in tree.body
         ))
+
+    def test_docker_launcher_and_persistent_fly_configuration(self):
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY rollogre.py .", dockerfile)
+        self.assertIn('CMD ["python", "rollogre.py"]', dockerfile)
+        self.assertNotIn("rollf.py", dockerfile)
+        fly = (ROOT / "fly.toml").read_text(encoding="utf-8")
+        self.assertIn('app = "hyped-diceman"', fly)
+        self.assertIn('source = "diceman_data"', fly)
+        self.assertIn('destination = "/data"', fly)
+        for path in ("/data/bot.db", "/data/raid_signup.db",
+                     "/data/lfg_board.db", "/data/countdown.db",
+                     "/data/streams.db"):
+            self.assertIn(path, fly)
 
     def test_canonical_bot_retains_existing_database_and_command_functions(self):
         source = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")

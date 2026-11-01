@@ -1,12 +1,12 @@
 # -----------------------------------------
-# Hyped Ogre – legacy executable entrypoint
+# Hyped Ogre – production executable entrypoint
 # Derived from RollF by hegernat/plutonium87.
 # Original source: https://github.com/hegernat/rollf-bot
 # Copyright (c) 2026 hegernat/plutonium87
 # Modifications Copyright (c) 2026 AdamHawthorne
 # Licensed under the MIT License. See LICENSE.
 # -----------------------------------------
-"""Preserve the existing `python rollf.py` Docker/Fly boot command.
+"""Use the `python rollogre.py` Docker/Fly boot command.
 
 The entire original bot coordinator (Discord commands, roll history and
 coin reconciliation, startup tasks, Flameboard, webhooks) now lives in

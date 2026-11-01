@@ -2,7 +2,7 @@
 
 ## Current state
 
-The production Discord bot continues to start via the existing `python rollf.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. The remaining Discord feature implementations now live in `hyped_ogre/features/`; only their identity-preserving extension entrypoints remain under `cogs/`. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
+The production Discord bot now starts via the renamed `python rollogre.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. The remaining Discord feature implementations now live in `hyped_ogre/features/`; only their identity-preserving extension entrypoints remain under `cogs/`. The Dockerfile copies `rollogre.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollogre.py`.
 
 ## Migrated modules
 
@@ -39,7 +39,7 @@ The Forever item metadata path is a full Python module alias rather than simple 
 
 ## Raid signup internals (first stage)
 
-The `cogs/raid_signup.py` file is an active Discord extension loaded by `rollf.py`. The LFG extension imports it **before** Discord calls `load_extension("cogs.raid_signup")`. It therefore remains a real `cogs.raid_signup` module, **not** a same-object import alias, so extension discovery, commands, listeners, and unload/reload ownership remain intact.
+The `cogs/raid_signup.py` file is an active Discord extension loaded by `rollogre.py`. The LFG extension imports it **before** Discord calls `load_extension("cogs.raid_signup")`. It therefore remains a real `cogs.raid_signup` module, **not** a same-object import alias, so extension discovery, commands, listeners, and unload/reload ownership remain intact.
 
 - `hyped_ogre/features/raids/signup_schema.py` now contains the unmodified SQL and legacy character migration operations. The original `create_schema(path=RAID_DB)` remains the entry point and supplies the original SQLite connection and path.
 - `hyped_ogre/features/raids/signup_reference.py` now owns the unchanged class/spec/role choices, attendance statuses and legacy sheet-column definitions, imported directly into the existing cog.
@@ -100,13 +100,13 @@ Sheets synchronisation or production database schema.
 
 ## Roll feature helpers
 
-The four roll helper modules are now canonical under `hyped_ogre/features/rolls/` with same-module `cogs` aliases. The existing `rollf.py` coordinator, midnight reset and database connection remain unchanged. The immutable history of daily rolls, coin-award migrations, once-a-day gamble writes, returned stakes, original free-roll tie priority, V2 button IDs and reaction recovery are preserved. The main `rollf.py` coordinator has **not** yet been moved or replaced.
+The four roll helper modules are now canonical under `hyped_ogre/features/rolls/` with same-module `cogs` aliases. The canonical `hyped_ogre/bot.py` coordinator, midnight reset and database connection remain unchanged. The immutable history of daily rolls, coin-award migrations, once-a-day gamble writes, returned stakes, original free-roll tie priority, V2 button IDs and reaction recovery are preserved. The coordinator now lives in `hyped_ogre/bot.py`; the `rollogre.py` entrypoint is a thin launcher.
 
 ## Bot coordinator entrypoint migration
 
-The entire original `rollf.py` implementation was moved unchanged into
-`hyped_ogre/bot.py`. A tiny wrapper at the original path runs it as
-`__main__` with `runpy.run_module`. This preserves `python rollf.py`,
+The original RollF-derived coordinator was moved unchanged into
+`hyped_ogre/bot.py`. The renamed `rollogre.py` wrapper runs it as
+`__main__` with `runpy.run_module`. This retains `python rollogre.py`,
 the Dockerfile, `sys.argv`, existing Discord extension import strings,
 all command and handler registrations, bot startup tasks, RollF licence
 attribution and the current `bot.run(TOKEN)` behaviour. The coordinator
@@ -116,8 +116,7 @@ has no `__file__`-relative resources or `sys.argv` parsing.
 at module scope. Static source/AST regression tests now target the
 canonical module, and the compatibility wrapper is checked independently.
 
-The Fly.io bot has not been deployed or restarted as part of this
-repository migration.
+Merging this repository change does not deploy or restart the Fly.io bot.
 
 ## Live Discord extension source relocation
 
@@ -194,8 +193,8 @@ This is a **target**, not a description of files already migrated. Keep stable a
 - **Foundation:** introduce package metadata and application abstractions without changing the Docker entry point.
 - **Small modules first:** move utilities with clear interfaces and test coverage.
 - **Complex features next:** move LFG, streams, raids, and finally the large roll coordinator incrementally.
-- **Entry-point cutover:** change Docker/startup only after end-to-end smoke tests and a verified backup, with rollback ready.
+- **Deployment cutover:** change to `rollogre.py` only after Docker smoke tests, a verified volume snapshot and a recorded rollback image.
 
 ## Tests and release controls
 
-Run `python -m compileall -q rollf.py cogs hyped_ogre tests` and `python -m unittest discover -s tests -v`. GitHub Actions also builds the current Docker image and exercises representative Discord views. A green status verifies the tested code path but does **not** establish that the production Fly service is online. Verify Fly machine health separately before and after any release.
+Run `python -m compileall -q rollogre.py cogs hyped_ogre tests` and `python -m unittest discover -s tests -v`. GitHub Actions also builds the current Docker image and exercises representative Discord views. A green status verifies the tested code path but does **not** establish that the production Fly service is online. Verify Fly machine health separately before and after any release.

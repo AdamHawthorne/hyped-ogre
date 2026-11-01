@@ -15,7 +15,7 @@ Feature behaviour is covered by regression tests in `tests/`.
 
 ## Runtime and persistence
 
-The **production boot command remains `python rollf.py`**. The original bot coordinator is now at `hyped_ogre/bot.py`, while `rollf.py` is a small backwards-compatible executable wrapper. Existing Discord extensions are still loaded under their original `cogs.*` module names, so command registration, extension unload/reload, permissions and persistent Discord button IDs are preserved.
+The **production boot command becomes `python rollogre.py`** after this release. The original bot coordinator is now at `hyped_ogre/bot.py`, while `rollogre.py` is the small executable launcher. Existing Discord extensions are still loaded under their original `cogs.*` module names, so command registration, extension unload/reload, permissions and persistent Discord button IDs are preserved.
 
 The implementation files are now grouped by feature under `hyped_ogre/features/`:
 
@@ -36,7 +36,7 @@ hyped_ogre/
     voice/                # Ogre dialogue
   integrations/           # Google Sheets API bridge
 cogs/                     # compatibility imports and live extension identities
-rollf.py                  # unchanged production executable command
+rollogre.py               # production executable launcher
 ```
 
 The active Discord extension source is loaded into its original `cogs.*` module via a checked-in allow-list and the standard-library `SourceFileLoader`. This deliberately retains Discord's correct Cog ownership during unload/reload. Do not directly import or register the private `extension_source.py` files as additional Cogs. See [architecture](docs/architecture.md) for the compatibility design.
@@ -61,7 +61,7 @@ Use Python 3.13. Create a local `.env` from `.env.example`, supply your own cred
 cd "C:\Users\Adam\hyped-ogre"
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe rollf.py
+.\.venv\Scripts\python.exe rollogre.py
 ```
 
 **Do not run a second local production bot using the same Discord token while Fly.io is serving the guild.** For ordinary development, run offline tests instead:

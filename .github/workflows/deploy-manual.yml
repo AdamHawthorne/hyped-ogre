@@ -1,0 +1,130 @@
+name: Deploy Hyped Ogre (manual only)
+
+# No push, pull_request, release or schedule trigger. Never auto-deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Reviewed 40-character main commit SHA"
+        required: true
+        type: string
+      volume_id:
+        description: "Existing diceman_data Fly volume ID (vol_...)"
+        required: true
+        type: string
+      snapshot_id:
+        description: "Completed Fly snapshot ID (vs_...)"
+        required: true
+        type: string
+      rollback_image:
+        description: "Previously working Fly release image reference"
+        required: true
+        type: string
+      confirmation:
+        description: "Type DEPLOY HYPED OGRE"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hyped-ogre-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require reviewed SHA, mounted volume and operator approval
+        env:
+          EXPECTED_SHA: ${{ inputs.commit_sha }}
+          VOLUME_ID: ${{ inputs.volume_id }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          ROLLBACK_IMAGE: ${{ inputs.rollback_image }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "DEPLOY HYPED OGRE"
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_SHA" = "$(git rev-parse HEAD)"
+          [[ "$VOLUME_ID" =~ ^vol_[A-Za-z0-9]+$ ]]
+          [[ "$SNAPSHOT_ID" =~ ^vs_[A-Za-z0-9]+$ ]]
+          [[ "$ROLLBACK_IMAGE" =~ ^registry[.]fly[.]io/hyped-diceman(@sha256:[0-9a-f]{64}|:[A-Za-z0-9_.-]+)$ ]]
+          grep -Fq 'app = "hyped-diceman"' fly.toml
+          grep -Fq 'source = "diceman_data"' fly.toml
+          grep -Fq 'destination = "/data"' fly.toml
+          grep -Fq 'CMD ["python", "rollogre.py"]' Dockerfile
+          echo "Reviewed commit and production mount configuration confirmed"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Run offline tests again on the exact release commit
+        run: |
+          python -m compileall -q rollogre.py cogs hyped_ogre tests
+          python -m pip install -r requirements.txt
+          python -m pip check
+          python -m unittest discover -s tests -v
+
+      - name: Verify Docker command and no-token startup
+        run: |
+          set -euo pipefail
+          docker build -t hyped-ogre-release-check .
+          test "$(docker image inspect --format '{{json .Config.Cmd}}' hyped-ogre-release-check)" = '["python","rollogre.py"]'
+          set +e
+          docker run --rm --entrypoint python \
+            -e DISCORD_TOKEN= -e HYPED_GUILD_ID=0 \
+            -e ROLL_CHANNEL_ID=0 -e HIGH_ROLLER_ROLE_ID=0 \
+            hyped-ogre-release-check rollogre.py > /tmp/rollogre-startup.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -q 'Missing required configuration:' /tmp/rollogre-startup.log
+          echo "Launcher exits safely without production credentials"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Check previously working image and completed volume snapshot
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          VOLUME_ID: ${{ inputs.volume_id }}
+          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
+          ROLLBACK_IMAGE: ${{ inputs.rollback_image }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$FLY_API_TOKEN" ]]; then
+            echo "FLY_API_TOKEN secret is missing; refusing deployment"
+            exit 1
+          fi
+          volume_row="$(fly volumes list -a hyped-diceman | grep -F "$VOLUME_ID" || true)"
+          if ! printf '%s\n' "$volume_row" | grep -Fq 'diceman_data'; then
+            echo "Expected diceman_data volume not found"
+            exit 1
+          fi
+          snapshot_row="$(fly volumes snapshots list "$VOLUME_ID" -a hyped-diceman | grep -F "$SNAPSHOT_ID" || true)"
+          if ! printf '%s\n' "$snapshot_row" | grep -Eq '[[:space:]]created([[:space:]]|$)'; then
+            echo "Verified completed Fly snapshot not found"
+            exit 1
+          fi
+          fly releases --image -a hyped-diceman | grep -Fq -- "$ROLLBACK_IMAGE"
+          fly status -a hyped-diceman
+          echo "Persistent volume, completed snapshot and rollback image verified"
+
+      - name: Deploy reviewed bot image without adding spare Machines
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: fly deploy -a hyped-diceman --remote-only --ha=false
+
+      - name: Record final Fly release and status
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          fly status -a hyped-diceman
+          fly releases --image -a hyped-diceman
+          echo "Manual Discord checks and next UK reset verification are still required"

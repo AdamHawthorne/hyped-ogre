@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Compile all Python modules
-        run: python -m compileall -q rollf.py cogs hyped_ogre tests
+        run: python -m compileall -q rollogre.py cogs hyped_ogre tests
       - name: Install runtime dependencies for interaction tests
         run: pip install -r requirements.txt
       - name: Verify installed dependencies
@@ -285,13 +285,13 @@ jobs:
           print("Legacy Discord extensions load relocated feature source successfully")
           '
 
-      - name: Verify legacy executable reaches configuration guard without Discord token
+      - name: Verify renamed executable reaches configuration guard without Discord token
         run: |
           set +e
           docker run --rm --entrypoint python \
             -e DISCORD_TOKEN= -e HYPED_GUILD_ID=0 \
             -e ROLL_CHANNEL_ID=0 -e HIGH_ROLLER_ROLE_ID=0 \
-            hyped-ogre-test rollf.py > /tmp/hyped-startup-smoke.log 2>&1
+            hyped-ogre-test rollogre.py > /tmp/hyped-startup-smoke.log 2>&1
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
@@ -303,4 +303,4 @@ jobs:
             echo "Entrypoint did not reach the original configuration guard"
             exit 1
           fi
-          echo "Original rollf.py command reached the canonical bot safely"
+          echo "Original rollogre.py command reached the canonical bot safely"

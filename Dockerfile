@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY rollf.py .
+COPY rollogre.py .
 COPY cogs ./cogs
 COPY hyped_ogre ./hyped_ogre
 COPY assets ./assets
@@ -16,4 +16,4 @@ RUN useradd --create-home --uid 1000 diceman \
 
 USER diceman
 
-CMD ["python", "rollf.py"]
+CMD ["python", "rollogre.py"]
