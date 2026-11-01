@@ -39,7 +39,7 @@ class GearParserTests(unittest.TestCase):
         self.assertEqual(data["slots"][15]["slot"], "Off Hand")
         self.assertEqual(data["professions"], ["Alchemy"])
         self.assertEqual(gear.summary(data),
-                         "Lv 15 · 9/17 equipped · 1 enchant reported")
+                         "iLvl ? (0/9 known) · 6 enchant gaps")
         self.assertIsNone(gear.parse_export('{"invalid":true}'))
         self.assertIsNone(gear.parse_export("not-json"))
 
@@ -56,13 +56,13 @@ class GearParserTests(unittest.TestCase):
         self.assertEqual(rows[4][4], "Item #10638")
         self.assertEqual(rows[4][5], "Enchant #15")
         self.assertEqual(rows[4][6],
-                         "https://www.wowhead.com/classic/item=10638")
+                         "https://www.wowhead.com/forever/item=10638")
         self.assertEqual(rows[5][3], "Neck")
         self.assertEqual(rows[5][4], "Empty")
         self.assertEqual(rows[5][5], "—")
         self.assertEqual(rows[6][3], "Shoulders")
         self.assertEqual(rows[6][5], "Not reported")
-        self.assertNotIn("item level", gear.summary(gear.parse_export(export())).lower())
+        self.assertIn("iLvl ?", gear.summary(gear.parse_export(export())))
         self.assertNotIn(export(), json.dumps(rows))
 
     def test_bad_ids_are_not_used_in_links_or_enchant_counts(self):
@@ -113,6 +113,8 @@ class GearSheetSyncTests(unittest.TestCase):
             return {}
         titles = {}
         with patch.object(sheets.raid_sheets, "_json", side_effect=endpoint), \
+             patch.object(sheets.forever_item_data, "catalog",
+                          return_value={"10638": {"name": "Test Helm", "level": 42}}), \
              patch.dict(sheets._GEAR_TAB_SNAPSHOT, {}, clear=True):
             sheets._sync_gear_tab(fake, self.path, titles)
             self.assertIn("Forever Gear", titles)
@@ -121,10 +123,10 @@ class GearSheetSyncTests(unittest.TestCase):
             self.assertEqual(len(writes), 2)
             self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
             self.assertEqual(writes[1][2]["params"]["valueInputOption"], "USER_ENTERED")
-            self.assertIn('=HYPERLINK("https://www.wowhead.com/classic/item=10638","View item")',
+            self.assertIn('=HYPERLINK("https://www.wowhead.com/forever/item=10638","View item")',
                           [cell[0] for cell in writes[1][2]["json"]["values"]])
             self.assertTrue(any(
-                "https://www.wowhead.com/classic/item=10638" in json.dumps(call)
+                "https://www.wowhead.com/forever/item=10638" in json.dumps(call)
                 for call in writes
             ))
             first = len(api_replies)
@@ -145,4 +147,4 @@ class GearSheetSyncTests(unittest.TestCase):
         body = sheets._rows(self.path, event, {})
         player = next(row for row in body if row[1] == "Horrible")
         self.assertEqual(player[15],
-                         "Lv 15 · 9/17 equipped · 1 enchant reported")
+                         "iLvl ? (0/9 known) · 6 enchant gaps")
