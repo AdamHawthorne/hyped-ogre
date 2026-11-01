@@ -236,13 +236,17 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 raid.delete_character(42, alt, path)
             self.assertEqual(len(raid.member_characters(42, path)), 1)
 
-    async def test_gear_modal_accepts_text_and_optional_uploads(self):
-        modal = raid.GearUploadModal(42, 15, "First Last")
-        self.assertFalse(modal.simc.required)
-        self.assertFalse(modal.uploads.required)
-        self.assertEqual(modal.uploads.max_values, 1)
-        self.assertEqual(modal.uploads.min_values, 0)
-        self.assertEqual(modal.simc.max_length, 4000)
+    async def test_wowsims_modal_requires_paste_and_no_upload(self):
+        modal = raid.WoWSimsExportModal(42, 15, "First Last")
+        self.assertTrue(modal.export_text.required)
+        self.assertEqual(modal.export_text.max_length, 4000)
+        self.assertFalse(any(isinstance(c, discord.ui.FileUpload)
+                             for c in modal.children))
+        view = raid.WoWSimsInstructionsView(42, 15, "First Last")
+        data = json.dumps(view.to_components())
+        self.assertIn("/wse export", data)
+        self.assertIn("curseforge.com/wow/addons/wowsims-exporter", data)
+
 
     async def test_signup_and_update_are_private_discord_views(self):
         with patch.object(raid, "member_characters", return_value=[
