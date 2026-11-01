@@ -108,19 +108,23 @@ class WoWSimsPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def test_poster_contains_policy_settings_but_fits_component_limit(self):
         cog = SimpleNamespace(raid_db_path=lambda: self.path,
                               allowed=lambda _interaction: True)
-        view = raid_poster.RaidPosterView(cog, 42,
-                                         raid_poster.draft_from_event(self.raid))
-        self.assertIn("WoWSims", view.description())
+        schedule_page = raid_poster.RaidPosterView(
+            cog, 42, raid_poster.draft_from_event(self.raid)
+        )
+        self.assertIn("WoWSims", schedule_page.description())
+        self.assertLessEqual(schedule_page.total_children_count, 40)
+        view = raid_poster.RaidPosterView(
+            cog, 42, schedule_page.draft, page="advanced"
+        )
         pickers = [item for item in view.walk_children()
                    if isinstance(item, discord.ui.Select)]
         policy_picker = next(item for item in pickers
                              if "WoWSims" in item.placeholder)
         choices = {option.value for option in policy_picker.options}
-        self.assertTrue({"wse:missing", "wse:fresh", "wse:optional",
-                         "show:yes", "show:no"}.issubset(choices))
+        self.assertEqual(choices, {"missing", "fresh", "optional"})
         self.assertLessEqual(view.total_children_count, 40)
         with patch.object(view, "changed", new_callable=AsyncMock) as changed:
-            policy_picker._values = ["wse:fresh"]
+            policy_picker._values = ["fresh"]
             await policy_picker.callback(SimpleNamespace())
             changed.assert_awaited_once()
             self.assertEqual(changed.await_args.kwargs,
