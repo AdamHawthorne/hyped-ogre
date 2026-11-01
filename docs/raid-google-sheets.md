@@ -8,9 +8,16 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
 1. In private `#ogre`, configure and post the panel with `/raid poster`.
    The bot automatically creates a private tab named e.g.
    **Raid #1 - Wed 09 Dec 2026** (and syncs every ~60 seconds).
-2. Players use **Sign**, optionally upload SimC/gear with **Gear**, and can
-   change character details with **Update**. One registered character per
-   player per raid night.
+2. Players use **Attend** and **Characters** to register their main or alt.
+   A character must have a saved **WoWSims** export before its first signup.
+   The **WoWSims** button links to the
+   [WoWSims Exporter addon](https://www.curseforge.com/wow/addons/wowsims-exporter).
+   In game, `/wse export` opens the exporter and highlights data ready for
+   Ctrl+C. Players select **Paste export** in Discord and paste with Ctrl+V.
+   The first-time registration flow saves the character, then prompts for
+   the export before signing them up. An export is saved per character and
+   reused for later raids. Players may update it via **WoWSims** before the
+   roster-confirmation date. One character per player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
    them with **Confirmation:** and the scheduled Discord relative
@@ -79,7 +86,7 @@ Below the fixed headings, registrations appear under five sections:
 | M | Barrows: No / 🔸 / 🔹 | Leadership |
 | N | Ony: No / Yes | Leadership |
 | O | Leadership notes | Leadership |
-| P | Gear / SimC: Not submitted, SimC received, Screenshot received or both | Ogre |
+| P | WoWSims received, screenshot, legacy SimC or Not submitted | Ogre |
 | Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
 
 Every new player is **Signed** by default. Selection begins **Pending**;
@@ -94,6 +101,12 @@ Names have no bullet prefixes. The bot uses server custom emoji named
 `Tank`, `Healer`, `DPS`, `Ranged` and class names such as `Warrior` and
 `Mage`, when present; readable Unicode icons are the fallback.
 Class/spec/role data travels with the private selected roster, including PUGs.
+
+The Discord paste field supports a maximum of 4,000 characters. Ogre
+validates WoWSims JSON and confirms its character name matches the
+registered character. Text-file uploads are no longer supported.
+Optional PNG/JPG/WEBP screenshots remain available using
+`/raid screenshot`, but do not replace the mandatory WoWSims export.
 
 In `/raid poster`, **Check Message Link** optionally accepts a copied
 Discord message URL. When supplied, the raid panel shows a short
