@@ -79,3 +79,26 @@ class WoWSimsTests(unittest.TestCase):
             self.assertTrue(modal.export_text.required)
             self.assertFalse(any(isinstance(c, discord.ui.FileUpload)
                                  for c in modal.children))
+
+    def test_existing_legacy_signup_keeps_spot_and_can_update_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+            raid.save_character(42, "Oldsign", "Mage", "Frost", "DPS", path)
+            char_id = raid.member_characters(42, path)[0][0]
+            with raid.database(path) as con:
+                con.execute(
+                    "INSERT INTO signups (raid_id,discord_id,character_id,availability,"
+                    "note,submitted_at) VALUES (1,42,?,'Available','Old','2026-10-31T12:00:00+00:00')",
+                    (char_id,),
+                )
+            raid.save_signup(1, 42, char_id, path, note="New note")
+            self.assertEqual(raid.signup_note_details(1, 42, path)[2], "New note")
+            self.assertFalse(raid.has_wowsims_export(42, char_id, path))
+            raid.save_character(42, "Newalt", "Rogue", "Combat", "DPS", path)
+            other = next(row[0] for row in raid.member_characters(42, path)
+                         if row[1] == "Newalt")
+            with self.assertRaisesRegex(ValueError, "WoWSims export first"):
+                raid.save_signup(1, 42, other, path)
