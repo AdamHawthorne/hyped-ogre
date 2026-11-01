@@ -519,6 +519,43 @@ def has_wowsims_export(discord_id, character_id, path=RAID_DB):
         ).fetchone() is not None
 
 
+def wowsims_requirement_for_signup(raid_id, discord_id, character_id, path=RAID_DB):
+    """Return 'missing', 'fresh' or None for the selected raid and character.
+
+    The raid's poster controls the requirement. The WoWSims collection button
+    itself remains available until the raid is completed.
+    """
+    event = read_raid(path, raid_id)
+    policy = (event or {}).get("wowsims_policy") or "missing"
+    if policy == "optional":
+        return None
+    if not has_wowsims_export(discord_id, character_id, path):
+        return "missing"
+    if policy != "fresh":
+        return None
+    cutoff = (event or {}).get("wowsims_refresh_after")
+    if not cutoff:
+        return "fresh"
+    with database(path) as con:
+        row = con.execute(
+            "SELECT MAX(g.submitted_at) FROM gear_exports g "
+            "JOIN characters c ON c.character_id=g.character_id "
+            "WHERE c.discord_id=? AND c.character_id=? "
+            "AND g.format='wowsims_json'",
+            (discord_id, character_id),
+        ).fetchone()
+    if not row or not row[0]:
+        return "missing"
+    try:
+        updated = datetime.fromisoformat(row[0])
+        enabled = datetime.fromisoformat(cutoff)
+        if updated.tzinfo is None or enabled.tzinfo is None:
+            return "fresh"
+    except (TypeError, ValueError):
+        return "fresh"
+    return None if updated > enabled else "fresh"
+
+
 def save_wowsims_export(discord_id, character_id, raw, path=RAID_DB):
     """Accept a copied /wse export, not arbitrary text or legacy SimC text."""
     raw = (raw or "").strip()
@@ -637,10 +674,12 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
         ).fetchone()
         if not event or not event[0] or event[1]:
             raise ValueError("Sign-ups aren't open for this raid.")
-        if not has_wowsims_export(discord_id, character_id, path):
-            # Grandfather the same already-signed character: previously saved
-            # registrations may update notes without losing their raid spot.
-            # A new registration or character switch still needs WoWSims.
+        needed = wowsims_requirement_for_signup(
+            raid_id, discord_id, character_id, path
+        )
+        if needed:
+            # Never erase a valid existing signup when leadership changes
+            # this policy or when someone merely edits their note.
             prior = con.execute(
                 "SELECT character_id FROM signups WHERE raid_id=? AND discord_id=? "
                 "AND availability='Available' AND NOT EXISTS "
@@ -649,6 +688,11 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
                 (raid_id, discord_id),
             ).fetchone()
             if not prior or prior[0] != character_id:
+                if needed == "fresh":
+                    raise ValueError(
+                        "Ogre need fresh WoWSims export for this raid. "
+                        "Click WoWSims on raid panel."
+                    )
                 raise ValueError(
                     "Ogre need WoWSims export first. Click WoWSims on raid panel."
                 )
@@ -1015,9 +1059,18 @@ class CharacterActionView(discord.ui.LayoutView):
                     view=CharacterManageView(self.owner_id, char_id, match)
                 )
             else:
-                if not has_wowsims_export(self.owner_id, char_id):
+                required = wowsims_requirement_for_signup(
+                    self.raid_id, self.owner_id, char_id
+                )
+                if required == "missing":
                     await interaction.response.edit_message(
                         view=WoWSimsInstructionsView(
+                            self.owner_id, char_id, match[1], raid_id=self.raid_id
+                        )
+                    )
+                elif required == "fresh":
+                    await interaction.response.send_modal(
+                        WoWSimsExportModal(
                             self.owner_id, char_id, match[1], raid_id=self.raid_id
                         )
                     )
@@ -1327,13 +1380,23 @@ class CharacterNameModal(discord.ui.Modal):
                     row for row in member_characters(interaction.user.id)
                     if row[1].casefold() == self.name.value.strip().casefold()
                 )
-                if not has_wowsims_export(interaction.user.id, character[0]):
-                    await interaction.response.send_message(
-                        view=WoWSimsInstructionsView(
-                            interaction.user.id, character[0], character[1],
-                            raid_id=self.signup_raid_id, note=self.note.value
-                        ), ephemeral=True
-                    )
+                required = wowsims_requirement_for_signup(
+                    self.signup_raid_id, interaction.user.id, character[0]
+                )
+                if required:
+                    if required == "missing":
+                        await interaction.response.send_message(
+                            view=WoWSimsInstructionsView(
+                                interaction.user.id, character[0], character[1],
+                                raid_id=self.signup_raid_id, note=self.note.value
+                            ), ephemeral=True
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            "Ogre need fresh WoWSims export for this raid. "
+                            "Click **WoWSims** to paste new one, then **Attend**.",
+                            ephemeral=True
+                        )
                     return
                 save_signup(
                     self.signup_raid_id, interaction.user.id, character[0],
