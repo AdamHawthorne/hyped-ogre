@@ -17,6 +17,10 @@ from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_
 from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
 from cogs.countdown import toggle_raid_dm
 from cogs.raid_poster import RaidPosterView
+from hyped_ogre.features.raids.signup_schema import ensure_signup_schema_on_connection
+from hyped_ogre.features.raids.signup_reference import (
+    SHEET_TABS, ATTENDANCE_OPTIONS, CLASS_SPECS,
+)
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, read_public_roster, read_signup_roster, record_panel, save_raid, set_softres_url, delete_raid,
@@ -32,41 +36,6 @@ ACCENT = 0xA87535
 LOGGER = logging.getLogger(__name__)
 WOWSIMS_ADDON_URL = "https://www.curseforge.com/wow/addons/wowsims-exporter"
 
-SHEET_TABS = {
-    "Characters": (
-        "Character ID", "Discord ID", "Discord Name", "Character", "Class",
-        "Spec", "Role", "Main / Alt", "Profile Updated", "SimC Updated",
-    ),
-    "Sign-ups": (
-        "Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
-        "Availability", "Sign-up Notes", "Sign-up Time", "Last Updated",
-        "Signed off at",
-    ),
-    "Gear Checks": (
-        "Character ID", "Discord ID", "Character", "Latest Gear Upload",
-        "Export Format", "Item Summary", "Gear Review", "Leadership Notes",
-        "Raw Export Reference",
-    ),
-    "Roster Builder": (
-        "Raid ID", "Raid Date", "Discord ID", "Character ID", "Character",
-        "Class", "Spec", "Assigned Role", "Selection", "Bench Notes",
-        "Show on Discord", "Ony (40m)", "Hyjal (20m)", "Barrows (10m)",
-        "Player Source",
-    ),
-    "Attendance": (
-        "Raid ID", "Raid Date", "Discord ID", "Discord Name", "Character ID",
-        "Character", "Roster Status", "Attendance", "Late Minutes",
-        "AFK Minutes", "Excused", "Leadership Notes", "Updated At",
-    ),
-    "Raid History": (
-        "Raid ID", "Raid Date", "Instance", "Start Time",
-        "Roster Published", "Raid Completed", "Leadership Notes",
-    ),
-}
-
-ATTENDANCE_OPTIONS = ("Pending", "Attended", "Late", "AFK", "No-show", "Excused")
-
-
 @contextmanager
 def database(path=RAID_DB):
     con = sqlite3.connect(path, timeout=20)
@@ -81,157 +50,7 @@ def database(path=RAID_DB):
 def create_schema(path=RAID_DB):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with database(path) as con:
-        con.executescript("""
-        CREATE TABLE IF NOT EXISTS characters(
-            character_id INTEGER PRIMARY KEY,
-            discord_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            realm TEXT, class_name TEXT, spec TEXT, role TEXT,
-            is_main INTEGER NOT NULL DEFAULT 1,
-            last_simc_at INTEGER,
-            UNIQUE(discord_id, name, realm)
-        );
-        CREATE TABLE IF NOT EXISTS raids(
-            raid_id INTEGER PRIMARY KEY,
-            title TEXT NOT NULL,
-            raid_at TEXT NOT NULL,
-            custom_title TEXT,
-            banner_url TEXT,
-            roster_posted_at TEXT,
-            roster_updated_at TEXT,
-            signup_open INTEGER NOT NULL DEFAULT 0,
-            roster_published INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS signups(
-            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
-            discord_id INTEGER NOT NULL,
-            character_id INTEGER NOT NULL REFERENCES characters(character_id),
-            availability TEXT NOT NULL DEFAULT 'Available',
-            note TEXT,
-            submitted_at TEXT NOT NULL,
-            show_on_discord INTEGER,
-            PRIMARY KEY(raid_id, discord_id)
-        );
-        CREATE TABLE IF NOT EXISTS raid_absences(
-            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
-            discord_id INTEGER NOT NULL,
-            note TEXT,
-            signed_off_at TEXT NOT NULL,
-            PRIMARY KEY(raid_id, discord_id)
-        );
-        CREATE TABLE IF NOT EXISTS raid_public_roster(
-            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
-            position INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            assignment TEXT NOT NULL DEFAULT '',
-            PRIMARY KEY (raid_id, position)
-        );
-        CREATE TABLE IF NOT EXISTS gear_exports(
-            export_id INTEGER PRIMARY KEY,
-            character_id INTEGER NOT NULL REFERENCES characters(character_id),
-            submitted_at TEXT NOT NULL,
-            format TEXT NOT NULL,
-            raw_text TEXT NOT NULL,
-            parsed_json TEXT
-        );
-        CREATE TABLE IF NOT EXISTS gear_images(
-            image_id INTEGER PRIMARY KEY,
-            character_id INTEGER NOT NULL REFERENCES characters(character_id),
-            submitted_at TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            mime_type TEXT NOT NULL,
-            image_data BLOB NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS attendance(
-            raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
-            discord_id INTEGER NOT NULL,
-            character_id INTEGER REFERENCES characters(character_id),
-            status TEXT NOT NULL DEFAULT 'Pending'
-                CHECK(status IN ('Pending', 'Attended', 'Late', 'AFK', 'No-show', 'Excused')),
-            late_minutes INTEGER,
-            afk_minutes INTEGER,
-            leadership_notes TEXT,
-            updated_at TEXT,
-            PRIMARY KEY(raid_id, discord_id)
-        );
-        """)
-
-        # Visibility is per raid signup. NULL inherits the raid poster's
-        # default until the first successful Sheets sync. Existing data
-        # migrates without changing character registration or attendance.
-        if "show_on_discord" not in {
-            row[1] for row in con.execute("PRAGMA table_info(signups)")
-        }:
-            con.execute(
-                "ALTER TABLE signups ADD COLUMN show_on_discord INTEGER"
-            )
-
-        # Race belongs to the shared character, not to a separate LFG copy.
-        if "race" not in {row[1] for row in con.execute("PRAGMA table_info(characters)")}:
-            con.execute("ALTER TABLE characters ADD COLUMN race TEXT NOT NULL DEFAULT ''")
-
-        # Historic registrations allowed separate realm/casing variants of
-        # one character. Consolidate those on startup without losing any
-        # sign-ups, attendance references or saved SimC snapshots.
-        con.execute("BEGIN IMMEDIATE")
-        rows = con.execute(
-            "SELECT character_id, discord_id, name, is_main, last_simc_at "
-            "FROM characters ORDER BY character_id"
-        ).fetchall()
-        grouped = {}
-        for character_id, member_id, character_name, is_main, simc_at in rows:
-            normalized = " ".join((character_name or "").split())
-            key = (member_id, normalized.casefold())
-            grouped.setdefault(key, []).append(
-                (character_id, normalized, is_main, simc_at)
-            )
-        for matches in grouped.values():
-            keep_id, clean_name, _, _ = matches[0]
-            for duplicate_id, _, _, _ in matches[1:]:
-                for table in ("signups", "attendance", "gear_exports", "gear_images"):
-                    con.execute(
-                        f"UPDATE {table} SET character_id=? WHERE character_id=?",
-                        (keep_id, duplicate_id),
-                    )
-                con.execute(
-                    "DELETE FROM characters WHERE character_id=?", (duplicate_id,)
-                )
-            con.execute(
-                "UPDATE characters SET name=?, is_main=?, last_simc_at=? "
-                "WHERE character_id=?",
-                (clean_name, max(row[2] for row in matches),
-                 max((row[3] or 0) for row in matches) or None, keep_id),
-            )
-        # One identity per Discord user and character name, ignoring case
-        # and the legacy realm column. Different characters remain separate.
-        con.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS "
-            "idx_raid_characters_member_name "
-            "ON characters(discord_id, name COLLATE NOCASE)"
-        )
-
-
-# Forever launches with nine classic classes. Each spec has one or more raid roles.
-# The guild shares the PvP ruleset; no realm or ruleset field is needed.
-CLASS_SPECS = {
-    "Druid": {"Balance": ("DPS",), "Feral": ("Tank", "DPS"),
-              "Restoration": ("Healer",)},
-    "Hunter": {"Beast Mastery": ("DPS",), "Marksmanship": ("DPS",),
-               "Survival": ("DPS",)},
-    "Mage": {"Arcane": ("DPS",), "Fire": ("DPS",), "Frost": ("DPS",)},
-    "Paladin": {"Holy": ("Healer",), "Protection": ("Tank",),
-                "Retribution": ("DPS",)},
-    "Priest": {"Discipline": ("Healer",), "Holy": ("Healer",),
-               "Shadow": ("DPS",)},
-    "Rogue": {"Assassination": ("DPS",), "Combat": ("DPS",),
-              "Subtlety": ("DPS",)},
-    "Shaman": {"Elemental": ("DPS",), "Enhancement": ("DPS",),
-               "Restoration": ("Healer",)},
-    "Warlock": {"Affliction": ("DPS",), "Demonology": ("DPS",),
-                "Destruction": ("DPS",)},
-    "Warrior": {"Arms": ("DPS",), "Fury": ("DPS",),
-                "Protection": ("Tank",)},
-}
+        ensure_signup_schema_on_connection(con)
 
 
 def is_test_owner(interaction):
