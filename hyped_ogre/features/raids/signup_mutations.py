@@ -89,4 +89,3 @@ def record_absence(con, raid_id, discord_id, note, timestamp):
         "WHERE raid_id=? AND discord_id=?",
         (raid_id, discord_id),
     )
-return timestamp
