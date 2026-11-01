@@ -821,7 +821,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(buttons[-1].style, discord.ButtonStyle.danger)
             raid.save_character(42, "Snore Mon", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            # Registration and signup must work before any SimC gear upload.
+            # WoWSims is mandatory before initial signup.
+            with self.assertRaisesRegex(ValueError, "WoWSims export first"):
+                raid.save_signup(1, 42, char_id, path)
+            seed_export(path, 42, char_id)
             signup_with_export(1, 42, char_id, path)
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with self.assertRaises(ValueError):
@@ -831,7 +834,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Available"))
             with raid.database(path) as con:
                 self.assertEqual(con.execute("SELECT COUNT(*) FROM signups").fetchone()[0], 1)
-                self.assertEqual(con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 1)
+                self.assertEqual(con.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0], 2)
             timestamp = raid.save_absence(1, 42, "Running late", path)
             self.assertTrue(timestamp.endswith("+00:00"))
             self.assertEqual(raid.my_signup(1, 42, path), ("Snore Mon", "Unavailable"))
@@ -1258,10 +1261,12 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             interaction.response.send_message.assert_awaited_once()
             interaction.response.defer.assert_not_awaited()
 
-    async def test_registration_modal_auto_signs_up_first_time(self):
+    async def test_registration_modal_prompts_wowsims_before_signup(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
              patch.object(raid, "save_character") as save_character_mock, \
              patch.object(raid, "save_signup") as save_signup_mock, \
+             patch.object(raid, "has_wowsims_export", return_value=False), \
+             patch.object(raid, "read_raid", return_value=None), \
              patch.object(raid, "member_characters", return_value=[
                  (12, "Firstname Lastname", "Mage", "Frost", "DPS", None),
              ]):
@@ -1277,12 +1282,13 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             save_character_mock.assert_called_once_with(
                 42, "Firstname Lastname", "Mage", "Frost", "DPS"
             )
-            save_signup_mock.assert_called_once_with(
-                9, 42, 12, note="Can stay for three hours"
-            )
-            self.assertIn("registered and signed up",
-                          interaction.response.send_message.await_args.args[0])
-            self.assertTrue(interaction.response.send_message.await_args.kwargs["ephemeral"])
+            save_signup_mock.assert_not_called()
+            sent = interaction.response.send_message.await_args
+            self.assertIsInstance(sent.kwargs["view"], raid.WoWSimsInstructionsView)
+            self.assertTrue(sent.kwargs["ephemeral"])
+            rendered = json.dumps(sent.kwargs["view"].to_components())
+            self.assertIn("/wse export", rendered)
+            self.assertIn("curseforge.com", rendered)
 
     async def test_character_lookup_is_ephemeral_in_any_guild_channel(self):
         with patch.object(raid, "OWNER_ID", 42), patch.object(raid, "GUILD_ID", 77), \
