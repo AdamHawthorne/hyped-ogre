@@ -19,7 +19,7 @@ CLASS_COVERAGE = (
 )
 SPEC_COVERAGE = (
     ("Trueshot Aura", "Hunter", ("Marksmanship",)),
-    ("Leader of the Pack", "Druid", ("Feral",)),
+    ("Leader of the Pack", "Druid", ("Feral", "Feral Combat")),
     ("Moonkin Aura", "Druid", ("Balance",)),
 )
 # Only assigned, selected, signed-up members contribute.
