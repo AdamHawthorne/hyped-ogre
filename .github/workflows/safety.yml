@@ -190,3 +190,27 @@ jobs:
                   assert signup_queries.my_signup(con, 1, 42) is None
           print("Read-only raid queries and LFG import path validated")
           '
+
+      - name: Verify character write helpers and original Discord module in runtime image
+        run: |
+          docker run --rm -e HYPED_GUILD_ID=77 --entrypoint python hyped-ogre-test -c '
+          import tempfile
+          from pathlib import Path
+          from cogs import raid_signup as raid, lfg_preview
+          from hyped_ogre.features.characters import mutations
+          assert lfg_preview.raid_signup is raid
+          assert raid.RaidPrototype.__module__ == "cogs.raid_signup"
+          with tempfile.TemporaryDirectory() as tmp:
+              path = str(Path(tmp) / "raid_signup.db")
+              raid.create_schema(path)
+              assert raid.save_character(
+                  42, "Snore Mon", "Warrior", "Protection", "Tank", path
+              ) == "created"
+              ident = raid.member_characters(42, path)[0][0]
+              raid.set_character_race(42, ident, "Orc", path)
+              assert raid.character_race(42, ident, path) == "Orc"
+              assert raid.update_character_profile(
+                  42, ident, "Warrior", "Fury", "DPS", path
+              ) == "Snore Mon"
+          print("Original Discord cog and character write helpers validated")
+          '

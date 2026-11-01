@@ -56,6 +56,22 @@ Each new helper accepts an existing SQLite connection. The original
 the original `path=RAID_DB` default. No separate database or duplicated
 Discord cog is created. Character and raid signup writes are not moved.
 
+## Character registration and profile mutations (third stage)
+
+The original `cogs.raid_signup` extension still handles public Discord
+commands, character forms and reactions, database paths, the SQLite
+connection/transaction lifecycle, runtime ownership and data validation.
+Its existing `save_character`, `set_character_race`, `set_main_character`
+and `update_character_profile` functions remain importable with the same
+signatures. They now delegate SQL changes to connection-taking helpers in
+`hyped_ogre/features/characters/mutations.py`.
+
+The immediate write lock around name lookup and insert, existing character
+IDs, Main/Alt controls, class/race compatibility, return strings, and all
+gear, raid signup and attendance references are preserved. The destructive
+`delete_character` path remains unchanged in the original extension: it
+must continue safeguarding both raid history and LFG requests.
+
 ## Intended package layout
 
 ```text
