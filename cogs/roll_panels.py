@@ -5,7 +5,8 @@ from datetime import date
 from .emojis import option_emoji, roll_dice_emoji
 
 COIN_IMAGE = "https://i.vgy.me/agW53e.png"
-OGRE_IMAGE = "https://imagizer.imageshack.com/img924/9212/xkmy2Y.png"
+SUNDAY_DICE_IMAGE = "https://imagizer.imageshack.com/img924/9212/xkmy2Y.png"
+WEEKDAY_DICE_IMAGE = "https://imagizer.imageshack.com/img923/9120/KmjqUP.png"
 LEDGER_IMAGE = "https://i.vgy.me/n5T2kU.png"
 GOLD = 0xD19A3B
 PAGE_SIZE = 15
@@ -21,9 +22,12 @@ class DailyRollPanel(discord.ui.LayoutView):
                 discord.ui.TextDisplay(
                     "## Hyped Rolls · Daily Reset\n"
                     f"**{tagline}**\n\n"
-                    f"One roll per day. Ogre give coin to highest {coin_emoji}"
+                    "One roll per day. Ogre give coin to highest."
                 ),
-                accessory=discord.ui.Thumbnail(OGRE_IMAGE, description="Hyped Ogre"),
+                accessory=discord.ui.Thumbnail(
+                    SUNDAY_DICE_IMAGE if date.fromisoformat(day).weekday() == 6 else WEEKDAY_DICE_IMAGE,
+                    description="Hyped dice",
+                ),
             ),
             discord.ui.TextDisplay(
                 "\n\n\n## Coin count\n"
