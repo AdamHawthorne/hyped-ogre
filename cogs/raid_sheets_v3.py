@@ -394,17 +394,22 @@ def _header(event, body, tab):
     panel_url = (f"https://discord.com/channels/{channel}/{message}"
                  if channel and message else "")
     coverage = forever_raid_buffs.instance_summaries(body, event)
+    # G2:G5 contains the missing-buff/debuff summary itself. Keep the
+    # associated instance label in H2:H5 so G can be scanned directly.
+    # Always use six preceding cells so a missing prefix never shifts
+    # one of the summaries into I or an unrelated notes column.
+    coverage_cells = [(missing, instance) for instance, missing in coverage]
     lines = [
         [title],
         ["Date", when.strftime("%A, %d %B %Y"), "Status", state,
-         "Start (UK)", when.strftime("%H:%M"), *coverage[0]],
+         "Start (UK)", when.strftime("%H:%M"), *coverage_cells[0]],
         ["Instances", instances, "Confirmed",
          event.get("confirmed_at") or "", "Archived", event.get("archived_at") or "",
-         *coverage[1]],
+         *coverage_cells[1]],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
-         event.get("archive_notes") or "", "", "", *coverage[2]],
+         event.get("archive_notes") or "", "", "", *coverage_cells[2]],
         [f"{signed} signed · {absent} absent", "", "", "", "", "",
-         *coverage[3]],
+         *coverage_cells[3]],
         ["", ""],
         list(COLUMNS),
     ]
@@ -509,7 +514,7 @@ def _make_tab(session, title):
                             "textFormat": {"foregroundColor": {
                                 "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 125), (7, 340),
+                       (4, 90), (5, 90), (6, 340), (7, 150),
                        (8, 130), (9, 85), (10, 75), (11, 220),
                        (12, 330), (13, 210), (14, 210),
                        (17, 195), (18, 195), (19, 95)):
@@ -585,7 +590,7 @@ def _paint_sections(session, sid, rows):
         },
     } for index, row in enumerate(rows[7:], start=7)
       if row[9] == "Selected" and row[8] == "Signed")
-    # Keep the G/H coverage panel readable in existing tabs too.
+    # Keep the G (missing buffs) / H (instance) panel readable on existing tabs.
     requests.extend([
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "ROWS",
@@ -593,7 +598,7 @@ def _paint_sections(session, sid, rows):
             "properties": {"pixelSize": 60}, "fields": "pixelSize"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 7, "endIndex": 8},
+                      "startIndex": 6, "endIndex": 7},
             "properties": {"pixelSize": 340}, "fields": "pixelSize"}},
         {"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5,
