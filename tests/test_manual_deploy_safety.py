@@ -36,11 +36,11 @@ class ManualFlyDeploymentSafetyTests(unittest.TestCase):
     def test_volume_and_rollback_guards_precede_deployment(self):
         text = self.workflow
         checks = (
-            "fly volumes list -a hyped-diceman",
-            'fly volumes snapshots list "$VOLUME_ID"',
+            "flyctl volumes list -a hyped-diceman",
+            'flyctl volumes snapshots list "$VOLUME_ID"',
             'created([[:space:]]|$)',
-            "fly releases --image -a hyped-diceman",
-            "fly deploy -a hyped-diceman --remote-only --ha=false",
+            "flyctl releases --image -a hyped-diceman",
+            "flyctl deploy -a hyped-diceman --remote-only --ha=false",
         )
         positions = []
         for part in checks:
@@ -49,8 +49,11 @@ class ManualFlyDeploymentSafetyTests(unittest.TestCase):
                 positions.append(text.index(part))
         self.assertEqual(positions, sorted(positions))
         self.assertIn("secrets.FLY_API_TOKEN", text)
-        self.assertNotIn("fly volumes delete", text)
-        self.assertNotIn("fly volumes create", text)
+        self.assertIn("command -v flyctl", text)
+        self.assertIn("flyctl version", text)
+        self.assertNotRegex(text, r"\bfly (?:volumes|releases|status|deploy)\b")
+        self.assertNotIn("flyctl volumes delete", text)
+        self.assertNotIn("flyctl volumes create", text)
         self.assertNotIn("fly scale count", text)
         self.assertNotIn("fly secrets set", text)
 
@@ -66,8 +69,8 @@ class ManualFlyDeploymentSafetyTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertIn(path, fly)
-        self.assertIn("fly volumes snapshots create", self.operations)
-        self.assertIn("fly releases --image", self.operations)
+        self.assertIn("flyctl volumes snapshots create", self.operations)
+        self.assertIn("flyctl releases --image", self.operations)
         self.assertIn("previous-working-image", self.operations)
 
 
