@@ -22,6 +22,7 @@ WOWHEAD_BASE = "https://www.wowhead.com/forever/item="
 MAX_DOWNLOAD = 24 * 1024 * 1024
 MAX_AGE_SECONDS = 7 * 86400
 _MEMO = {}
+_FETCH_ATTEMPTED = set()
 _LEVEL_PATTERN = re.compile(
     r"(?:I\s*t\s*e\s*m\s*\s*L\s*e\s*v\s*e\s*l|Item\s*Level)"
     r"\s*[:\s]*(\d{1,3})", re.IGNORECASE
@@ -112,7 +113,8 @@ def catalog(db_path):
     key = str(path)
     now = time.time()
     memo = _MEMO.get(key)
-    if memo and now - memo[0] < 300:
+    if memo and now - memo[0] < 300 and (
+            memo[1] or key in _FETCH_ATTEMPTED):
         return memo[1]
     old = _read_cached(path)
     try:
@@ -123,6 +125,7 @@ def catalog(db_path):
         _MEMO[key] = (now, old)
         return old
     try:
+        _FETCH_ATTEMPTED.add(key)
         new = _download()
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, filename = tempfile.mkstemp(prefix=".forever_items_", dir=path.parent)
