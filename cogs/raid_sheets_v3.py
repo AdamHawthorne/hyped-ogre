@@ -576,8 +576,11 @@ def _paint_sections(session, sid, rows):
             "range": {"sheetId": sid, "startRowIndex": index,
                       "endRowIndex": index + 1, "startColumnIndex": 6,
                       "endColumnIndex": 7},
-            "cell": {"userEnteredFormat": {"backgroundColor": {
-                "red": .84313726, "green": .9372549, "blue": .84313726}}},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": {
+                    "red": .84313726, "green": .9372549,
+                    "blue": .84313726,
+                }, "textFormat": {"bold": False}}},
             "fields": "userEnteredFormat.backgroundColor",
         },
     } for index, row in enumerate(rows[7:], start=7)
