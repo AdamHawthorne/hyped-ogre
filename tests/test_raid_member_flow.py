@@ -350,6 +350,85 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             saving.assert_called_once()
             self.assertIn("isn't yours", response.send_message.await_args.args[0])
 
+    async def test_character_manage_combines_profile_and_update_wowsims(self):
+        character = (7, "Snore Mon", "Warrior", "Protection", "Tank", None)
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42), guild_id=77,
+            response=SimpleNamespace(
+                edit_message=AsyncMock(), send_modal=AsyncMock(),
+                send_message=AsyncMock(),
+            ),
+        )
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "character_race", return_value="Orc"), \
+             patch.object(raid, "main_character_ids", return_value={7}), \
+             patch.object(raid, "member_characters", return_value=[character]), \
+             patch.object(raid, "has_wowsims_export", return_value=False) as has_export:
+            view = raid.CharacterManageView(42, 7, character)
+            buttons = {b.label: b for b in view.walk_children()
+                       if isinstance(b, discord.ui.Button)}
+            self.assertEqual(list(buttons), [
+                "Class / Spec / Race", "Update WoWSims",
+                "Set Main", "Delete", "Back",
+            ])
+            self.assertNotIn("Race", buttons)
+            await buttons["Update WoWSims"].callback(interaction)
+            self.assertIsInstance(
+                interaction.response.edit_message.await_args.kwargs["view"],
+                raid.WoWSimsInstructionsView,
+            )
+            has_export.return_value = True
+            interaction.response.edit_message.reset_mock()
+            await buttons["Update WoWSims"].callback(interaction)
+            self.assertIsInstance(
+                interaction.response.send_modal.await_args.args[0],
+                raid.WoWSimsExportModal,
+            )
+            interaction.response.edit_message.assert_not_awaited()
+            await buttons["Class / Spec / Race"].callback(interaction)
+            screen = interaction.response.edit_message.await_args.kwargs["view"]
+            self.assertIsInstance(screen, raid.CharacterProfileEditView)
+            nested = {b.label: b for b in screen.walk_children()
+                      if isinstance(b, discord.ui.Button)}
+            self.assertEqual(list(nested), [
+                "Change class / spec", "Change race", "Back",
+            ])
+            await nested["Change class / spec"].callback(interaction)
+            self.assertIsInstance(
+                interaction.response.edit_message.await_args.kwargs["view"],
+                raid.ClassPickerView,
+            )
+            await nested["Change race"].callback(interaction)
+            self.assertIsInstance(
+                interaction.response.edit_message.await_args.kwargs["view"],
+                raid.CharacterRaceView,
+            )
+
+    async def test_class_spec_change_returns_to_combined_race_editor(self):
+        character = (7, "Snore Mon", "Warrior", "Fury", "DPS", None)
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "update_character_profile", return_value="Snore Mon"), \
+             patch.object(raid, "member_characters", return_value=[character]), \
+             patch.object(raid, "character_race", return_value="Orc"), \
+             patch.object(raid, "refresh_character_signups", new_callable=AsyncMock), \
+             patch.object(raid, "refresh_lfg_for_member", new_callable=AsyncMock):
+            interaction = SimpleNamespace(
+                user=SimpleNamespace(id=42), guild_id=77,
+                response=SimpleNamespace(
+                    edit_message=AsyncMock(), send_message=AsyncMock(),
+                ),
+            )
+            await raid.apply_profile_update(
+                interaction, 42, 7, "Warrior", "Fury", "DPS",
+                return_to_editor=True,
+            )
+            screen = interaction.response.edit_message.await_args.kwargs["view"]
+            self.assertIsInstance(screen, raid.CharacterProfileEditView)
+            self.assertIn("Change race", [
+                b.label for b in screen.walk_children()
+                if isinstance(b, discord.ui.Button)
+            ])
+
     async def test_update_wizard_saves_profile_in_place(self):
         with patch.object(raid, "GUILD_ID", 77), \
              patch.object(raid, "update_character_profile",
