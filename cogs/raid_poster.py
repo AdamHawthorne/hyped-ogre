@@ -192,7 +192,8 @@ class PosterTextModal(discord.ui.Modal):
         try:
             message = await interaction.channel.fetch_message(self.message_id)
             await message.edit(view=RaidPosterView(
-                self.poster.cog, self.owner_id, new_draft
+                self.poster.cog, self.owner_id, new_draft,
+                page=self.poster.page,
             ))
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             await interaction.followup.send("Ogre couldn't update raid poster.", ephemeral=True)
@@ -309,79 +310,118 @@ class RaidRosterPreview(discord.ui.View):
 
 class RaidPosterView(discord.ui.LayoutView):
     """Owner-controlled non-ephemeral setup card; published raid is a separate message."""
-    def __init__(self, cog, owner_id, draft=None):
+    def __init__(self, cog, owner_id, draft=None, *, page="schedule"):
         super().__init__(timeout=900)
         self.cog = cog
         self.owner_id = owner_id
-        self.draft = dict(draft or draft_from_event(None))
+        self.page = page if page in ("schedule", "advanced") else "schedule"
         raids = list_raids(cog.raid_db_path())
+        self.draft = dict(draft) if draft is not None else draft_from_event(None, raids)
         if self.draft["number"] is None:
             self.draft["number"] = (raids[0]["raid_id"] + 1) if raids else 1
+        self.saved_raid_ids = {raid["raid_id"] for raid in raids}
+        self.saved_event = (
+            read_raid(cog.raid_db_path(), self.draft["number"])
+            if self.draft["number"] in self.saved_raid_ids else None
+        )
         self.add_item(discord.ui.Container(
             discord.ui.Section(
                 discord.ui.TextDisplay(self.description()),
                 accessory=discord.ui.Thumbnail(RAID_IMAGE),
             ), accent_color=ACCENT,
         ))
-        self.saved_raid_ids = {r["raid_id"] for r in raids}
-        self.add_raid_picker(raids)
-        self.add_destination_picker()
-        self.add_ping_role_picker()
-        self.add_visibility_picker()
-        self.add_date_picker()
-        self.add_time_picker()
-        self.add_end_time_picker()
-        for i in (1, 2, 3):
-            self.add_instance_picker(i)
-        self.add_announcement_picker()
+        if self.page == "schedule":
+            # The common path: schedule, post, pick roster, manage, complete.
+            self.add_raid_picker(raids)
+            self.add_date_picker()
+            self.add_time_picker()
+            self.add_instance_picker(1)
+            self.add_instance_picker(2)
+            self.add_announcement_picker()
+        else:
+            # Rare configuration should not crowd routine raid scheduling.
+            self.add_end_time_picker()
+            self.add_instance_picker(3)
+            self.add_destination_picker()
+            self.add_ping_role_picker()
+            self.add_visibility_picker()
+            self.add_wowsims_picker()
         self.add_controls()
+        self.add_command_footer()
 
     def authorised(self, interaction):
         return self.cog.allowed(interaction) and interaction.user.id == self.owner_id
 
     def description(self):
         d = self.draft
-        instances = "\n".join(
-            f"- Instance #{n}: **{discord.utils.escape_markdown(d[f'instance_{n}'] or 'Not selected')}**"
-            for n in (1, 2, 3)
-        )
+        event = self.saved_event
+        if event and event.get("archived_at"):
+            state = "Completed / archived"
+        elif event and event.get("roster_published"):
+            state = "Roster published (sign-ups open)"
+        elif event and event.get("panel_message_id"):
+            state = "Collecting sign-ups"
+        else:
+            state = "Not posted"
         try:
             raid_at, announce = poster_schedule(d)
-            raid_date = raid_panel_when(parse_uk_datetime(raid_at).isoformat(), poster_end_at(d))
-            announce_date = (
-                format_discord_date(parse_uk_datetime(announce).isoformat(),
-                                    style="R", with_relative=False)
-                if announce else "To be confirmed"
+            raid_date = raid_panel_when(
+                parse_uk_datetime(raid_at).isoformat(), poster_end_at(d)
+            )
+            confirm_date = (
+                format_discord_date(
+                    parse_uk_datetime(announce).isoformat(), style="R",
+                    with_relative=False,
+                ) if announce else "Not scheduled"
             )
         except ValueError:
-            raid_date = f'{d["day"] or "Choose date"} · {d["time"]} UK'
-            announce_date = ANNOUNCEMENTS[d["announce"]]
-        softres = "Set" if d["softres_url"] else "Not set (optional)"
-        banner = "Custom image" if d.get("banner_url") else "None (optional)"
-        custom_title = " ".join((d.get("custom_title") or "").split())
-        display_title = f"<Hyped> Raid #{d['number']}"
-        if custom_title:
-            display_title += " - " + discord.utils.escape_mentions(
-                discord.utils.escape_markdown(custom_title)
+            raid_date = f'{d.get("day") or "Choose date"} · {d["time"]} UK'
+            confirm_date = ANNOUNCEMENTS.get(d["announce"], "Choose date")
+        name = f"<Hyped> Raid #{d['number']}"
+        title = " ".join((d.get("custom_title") or "").split())
+        if title:
+            name += " - " + discord.utils.escape_mentions(
+                discord.utils.escape_markdown(title)
+            )
+        channel = (
+            f"<#{d['channel_id']}>" if d.get("channel_id")
+            else "Choose destination"
+        )
+        common = (
+            f"## Raid Poster · {name}\n"
+            f"**Status:** {state}\n"
+            f"**Raid:** {raid_date}\n"
+            f"**Instances:** {discord.utils.escape_markdown(d['instance_1'] or 'Choose instance')}"
+            + (f" · {discord.utils.escape_markdown(d['instance_2'])}"
+               if d.get("instance_2") else "")
+            + (f" · {discord.utils.escape_markdown(d['instance_3'])}"
+               if d.get("instance_3") else "")
+            + f"\n**Roster confirmation:** {confirm_date}\n"
+            f"**Destination:** {channel}\n"
+        )
+        if self.page == "schedule":
+            return (
+                common
+                + f"**WoWSims:** {WOWSIMS_POLICIES[d.get('wowsims_policy', 'missing')]}\n\n"
+                "**Workflow:** Post raid → Collect sign-ups → Build teams in Sheets "
+                "→ Publish roster → Manage attendance → Complete raid.\n"
+                "-# Roster confirmation never closes Attend or WoWSims. "
+                "Only completion closes the raid. No automatic roster pings.\n"
+                "-# Select **Advanced settings** for links, visibility, pings, "
+                "extra instances and WoWSims rules."
             )
         return (
-            f"## Raid Poster · {display_title}\n"
-            "-# Leadership setup only. Choose options, then publish the real raid panel.\n\n"
-            f"**Raid date:** {raid_date}\n"
+            common + "\n**Advanced settings**\n"
+            f"**End time:** {d.get('end_time') or 'Default: 3 hours'}\n"
             f"**Check message:** {'[View message](' + d['check_message_url'] + ')' if d.get('check_message_url') else 'Not set (optional)'}\n"
-            f"{instances}\n"
-            f"**Confirmation:** {announce_date}\n"
-            f"**SoftRes:** {softres}\n"
-            f"**Bottom banner:** {banner}\n"
-            f"**Post destination:** {'<#' + str(d['channel_id']) + '>' if d.get('channel_id') else 'Current channel (private #ogre)'}\n\n"
-            f"**Ping roles on new post:** {', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
-            f"**Default Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n"
+            f"**SoftRes:** {'Set' if d.get('softres_url') else 'Not set (optional)'}\n"
+            f"**Bottom banner:** {'Custom image' if d.get('banner_url') else 'None (optional)'}\n"
+            f"**Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n"
             f"**WoWSims:** {WOWSIMS_POLICIES[d.get('wowsims_policy', 'missing')]}\n"
-            "-# Missing: Ogre collect export once per character before Attend. "
-            "Fresh: Ogre require new export after you enable fresh mode. "
-            "Optional: Attend without export. Existing sign-ups stay.\n\n"
-            "Sign-ups appear by class and role immediately. Team assignments stay private until roster confirmation.\n"
-            "-# Show on Discord controls the confirmed team roster, not the live sign-up list."
+            f"**Ping roles (new panel only):** "
+            f"{', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
+            "-# Save using **Post / Update Raid**. Edits to an existing "
+            "panel are silent; role pings only occur on a new post."
         )
 
     def _select(self, label, options, callback):
@@ -400,7 +440,7 @@ class RaidPosterView(discord.ui.LayoutView):
             return
         draft = {**self.draft, **updates}
         await interaction.response.edit_message(
-            view=RaidPosterView(self.cog, self.owner_id, draft)
+            view=RaidPosterView(self.cog, self.owner_id, draft, page=self.page)
         )
 
     def add_raid_picker(self, raids):
@@ -417,11 +457,13 @@ class RaidPosterView(discord.ui.LayoutView):
                 await interaction.response.send_message("Only owner.", ephemeral=True)
                 return
             selection = picker.values[0]
-            d = draft_from_event(None if selection == "new" else read_raid(
-                self.cog.raid_db_path(), int(selection)
-            ))
+            d = draft_from_event(
+                None if selection == "new" else read_raid(
+                    self.cog.raid_db_path(), int(selection)
+                ), raids,
+            )
             await interaction.response.edit_message(
-                view=RaidPosterView(self.cog, self.owner_id, d)
+                view=RaidPosterView(self.cog, self.owner_id, d, page="schedule")
             )
         picker = self._select("Choose new or existing raid", options, choose)
 
