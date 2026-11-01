@@ -402,7 +402,7 @@ def _header(event, body, tab):
          event.get("confirmed_at") or "", "Archived", event.get("archived_at") or "",
          *coverage[1]],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
-         event.get("archive_notes") or "", "", *coverage[2]],
+         event.get("archive_notes") or "", "", "", *coverage[2]],
         [f"{signed} signed · {absent} absent", "", "", "", "", "",
          *coverage[3]],
         ["", ""],
