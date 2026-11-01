@@ -101,22 +101,28 @@ class LayoutAndBuffTests(unittest.TestCase):
             if row[16] == "45":
                 row[12] = "🔸"
         top = sheets._header(self.event, body, sheets.tab_title(self.event))
-        self.assertEqual(top[1][6], "Barrows 🔸 (2)")
-        self.assertIn("Intellect", top[1][7])
-        self.assertNotIn("Battle Shout", top[1][7])
-        self.assertNotIn("Shaman Totems", top[1][7])
-        self.assertEqual(top[2][6], "Barrows 🔹 (1)")
-        self.assertNotIn("Intellect", top[2][7])
-        self.assertIn("Fortitude", top[2][7])
-        self.assertEqual(top[3][6], "Hyjal (2)")
+        # The *missing coverage* goes in G2:G5, not H or N.
+        # Instance labels remain visible in H2:H5.
+        self.assertEqual(top[1][7], "Barrows 🔸 (2)")
+        self.assertIn("Intellect", top[1][6])
+        self.assertNotIn("Battle Shout", top[1][6])
+        self.assertNotIn("Shaman Totems", top[1][6])
+        self.assertEqual(top[2][7], "Barrows 🔹 (1)")
+        self.assertNotIn("Intellect", top[2][6])
+        self.assertIn("Fortitude", top[2][6])
+        self.assertEqual(top[3][7], "Hyjal (2)")
         self.assertEqual(top[3][2], "Raid Notes")
-        self.assertIn("Intellect", top[3][7])
-        self.assertNotIn("Fortitude", top[3][7])
-        self.assertEqual(top[4][6], "Ony (0)")
-        self.assertEqual(top[4][7], "No team selected")
+        self.assertIn("Intellect", top[3][6])
+        self.assertNotIn("Fortitude", top[3][6])
+        self.assertEqual(top[4][7], "Ony (0)")
+        self.assertEqual(top[4][6], "No team selected")
+        # No accidental spill into I or into sign-up notes at N.
+        for sheet_row in top[1:5]:
+            self.assertEqual(sheet_row[8], "")
+            self.assertEqual(sheet_row[13], "")
         self.assertIn("WoWSims", top[6][15])
         # Class names alone must not indicate a spec-only aura.
-        self.assertIn("Trueshot Aura", top[1][7])
+        self.assertIn("Trueshot Aura", top[1][6])
 
     def test_only_selected_signed_players_count_for_class_coverage(self):
         body = sheets._rows(self.path, self.event, {})
