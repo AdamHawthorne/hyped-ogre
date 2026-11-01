@@ -115,10 +115,12 @@ Raid** modal continues requesting Warcraft Logs and raid notes,
 prefilled from the last synchronised values where available. Leaving
 them unchanged will not clear existing entries.
 
-**G2:H5: Buff coverage** updates on each successful sync, using only
-**Selected** and **Signed** character assignments, even if **Show = No**.
-G2 and G3 show the Barrows 🔸 and 🔹 teams; G4 shows Hyjal; G5 shows
-Onyxia when configured. H2-H5 show potential missing class/spec buffs.
+**G2:G5: Missing buffs/debuffs** updates on each successful sync,
+using only **Selected** and **Signed** character assignments, even if
+**Show = No**. **G2:G5 contain the actual missing-coverage text**;
+the corresponding instance labels are in H2:H5: Barrows 🔸, Barrows 🔹,
+Hyjal and Ony (when configured). The rest of the top section, including
+B4 Warcraft Logs and D4 Raid Notes, is unchanged.
 This is a roster planning checklist based on WoW: Forever's October
 2026 class changes, not proof that buffs are talented, cast or active.
 Key Forever changes include raid-wide Warrior Battle Shout, Hunter
