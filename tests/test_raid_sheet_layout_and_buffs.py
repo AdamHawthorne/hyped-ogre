@@ -101,28 +101,51 @@ class LayoutAndBuffTests(unittest.TestCase):
             if row[16] == "45":
                 row[12] = "🔸"
         top = sheets._header(self.event, body, sheets.tab_title(self.event))
-        # The *missing coverage* goes in G2:G5, not H or N.
-        # Instance labels remain visible in H2:H5.
-        self.assertEqual(top[1][7], "Barrows 🔸 (2)")
-        self.assertIn("Intellect", top[1][6])
-        self.assertNotIn("Battle Shout", top[1][6])
-        self.assertNotIn("Shaman Totems", top[1][6])
-        self.assertEqual(top[2][7], "Barrows 🔹 (1)")
-        self.assertNotIn("Intellect", top[2][6])
-        self.assertIn("Fortitude", top[2][6])
-        self.assertEqual(top[3][7], "Hyjal (2)")
+        # G2:G5 holds the instance and number of MISSING buffs, never
+        # the player count. H2:H5 holds the missing coverage descriptions.
+        self.assertEqual(top[1][6], "Barrows 🔸 (7)")
+        self.assertIn("Intellect", top[1][7])
+        self.assertNotIn("Battle Shout", top[1][7])
+        self.assertNotIn("Shaman Totems", top[1][7])
+        self.assertEqual(top[2][6], "Barrows 🔹 (8)")
+        self.assertNotIn("Intellect", top[2][7])
+        self.assertIn("Fortitude", top[2][7])
+        self.assertEqual(top[3][6], "Hyjal (7)")
         self.assertEqual(top[3][2], "Raid Notes")
-        self.assertIn("Intellect", top[3][6])
-        self.assertNotIn("Fortitude", top[3][6])
-        self.assertEqual(top[4][7], "Ony (0)")
-        self.assertEqual(top[4][6], "No team selected")
+        self.assertIn("Intellect", top[3][7])
+        self.assertNotIn("Fortitude", top[3][7])
+        self.assertEqual(top[4][6], "Ony (9)")
+        self.assertEqual(top[4][7], "No team selected")
         # No accidental spill into I or into sign-up notes at N.
         for sheet_row in top[1:5]:
             self.assertEqual(sheet_row[8], "")
             self.assertEqual(sheet_row[13], "")
         self.assertIn("WoWSims", top[6][15])
         # Class names alone must not indicate a spec-only aura.
-        self.assertIn("Trueshot Aura", top[1][6])
+        self.assertIn("Trueshot Aura", top[1][7])
+
+    def test_instance_count_is_missing_buffs_not_player_total(self):
+        assigned = [
+            ("mage", "arcane"),
+            ("priest", "holy"),
+            ("druid", "feral"),
+            ("druid", "balance"),
+            ("paladin", "holy"),
+            ("warrior", "protection"),
+            ("shaman", "enhancement"),
+            ("hunter", "marksmanship"),
+        ]
+        self.assertEqual(buffs.missing_entries(assigned), [])
+        self.assertEqual(buffs.missing_coverage(assigned),
+                         "Core class coverage present")
+        # A single Warrior cannot satisfy other classes' buffs.
+        self.assertEqual(len(buffs.missing_entries([
+            ("warrior", "protection"),
+        ])), 8)
+        # With no selected team all nine checklist entries are still missing,
+        # while the detail text makes clear that no team has been assigned.
+        self.assertEqual(len(buffs.missing_entries([])), 9)
+        self.assertEqual(buffs.missing_coverage([]), "No team selected")
 
     def test_sheet_write_keeps_dashboard_g_and_h_not_roster_n(self):
         """Regression: dashboard rows must bypass player-column DISPLAY_ORDER."""
