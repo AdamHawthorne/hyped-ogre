@@ -97,7 +97,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             event["archived_at"] = "2026-12-10T01:00:00+00:00"
             archived = status(event)
             self.assertFalse(archived["Characters"])
-            self.assertFalse(archived["WoWSims"])
+            self.assertTrue(archived["WoWSims"])
             self.assertTrue(archived["Absent"])
             self.assertTrue(archived["Remind"])
 
