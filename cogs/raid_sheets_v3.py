@@ -891,6 +891,27 @@ def _sync_gear_tab(session, db_path, titles):
         params={"valueInputOption": "RAW"},
         json={"values": target},
     )
+    # Item URLs are rendered as clickable, clean "View item" cells.
+    # Only bot-generated numeric item IDs are interpolated into formula text.
+    # All character-supplied text remains RAW to prevent formula injection.
+    hyperlinks = []
+    for row in target:
+        link = str(row[6])
+        if link.startswith("https://www.wowhead.com/classic/item="):
+            item_id = link.rsplit("=", 1)[-1]
+            if item_id.isascii() and item_id.isdecimal():
+                hyperlinks.append([
+                    f'=HYPERLINK("https://www.wowhead.com/classic/item={item_id}","View item")'
+                ])
+                continue
+        hyperlinks.append([""])
+    raid_sheets._json(
+        session, "PUT",
+        f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
+        + quote(f"'{title}'!G1:G{len(target)}", safe="'!:"),
+        params={"valueInputOption": "USER_ENTERED"},
+        json={"values": hyperlinks},
+    )
     black = {"red": 0, "green": 0, "blue": 0}
     white = {"red": 1, "green": 1, "blue": 1}
     grey = {"red": .89, "green": .89, "blue": .89}
