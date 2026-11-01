@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import discord
 
 from cogs import raid_acknowledgements as ack
+from cogs import raid_poster
 from cogs import raid_schedule as schedule
 from cogs import raid_signup as raid
 from wowsims_helper import signup_with_export
@@ -59,7 +60,13 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
             edit_original_response=AsyncMock(),
         )
         with patch.object(raid, "RAID_DB", self.db):
-            manage = raid.RaidManageView(cog, 1)
+            private_poster = SimpleNamespace(edit=AsyncMock())
+            manage = raid.RaidManageView(
+                cog, 1, poster_owner_id=42, poster_message=private_poster,
+                poster_draft=raid_poster.draft_from_event(
+                    schedule.read_raid(self.db, 1)
+                ),
+            )
             button = next(
                 b for b in manage.children
                 if isinstance(b, discord.ui.Button) and b.label == "Unpublish Roster"
@@ -91,6 +98,11 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(mentions.users)
         cog.sync_raid_sheets.assert_awaited_once()
         cog.refresh_saved_panel.assert_awaited_once_with(1)
+        private_poster.edit.assert_awaited_once()
+        self.assertIn(
+            "Collecting sign-ups",
+            private_poster.edit.await_args.kwargs["view"].description(),
+        )
         # Republish can still happen later, but the old ping stays retracted.
         schedule.raid_status(self.db, 1, "confirm",
                              confirmed_entries=[("42", "Snore", "Hyjal")])
