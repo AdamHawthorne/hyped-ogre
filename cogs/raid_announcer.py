@@ -74,7 +74,11 @@ async def refresh(bot, path, raid_id, guild_id):
         if event and event.get("panel_channel_id") and event.get("panel_message_id")
         else None
     )
-    content = store.render(raid_id, waiting, len(entries), panel_url)
+    content = (
+        store.render_retracted(raid_id, panel_url)
+        if store.is_retracted(path, raid_id)
+        else store.render(raid_id, waiting, len(entries), panel_url)
+    )
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
     message = await channel.fetch_message(message_id)
     if message.content != content:
