@@ -971,6 +971,6 @@ class RaidPosterView(discord.ui.LayoutView):
                 "`/raid confirm` Publish silently · "
                 "`/raid reopen` Unpublish · `/raid archive` Complete/archive\n"
                 "-# Extras: `/raid setup` direct setup · "
-                "`/raid softres` link · `/raid gear-review` screenshot"
+                "`/raid softres` link · `/raid characters` character editor"
             )
         ))
