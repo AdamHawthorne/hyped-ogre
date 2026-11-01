@@ -77,7 +77,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("discord.ui.Section", source)
         self.assertIn("https://i.vgy.me/2Jt4oi.png", source)
         self.assertIn("Skyborne (Windshaper)",
-                      (ROOT / "cogs/forever_races.py").read_text(encoding="utf-8"))
+                      (ROOT / "hyped_ogre/features/characters/races.py").read_text(encoding="utf-8"))
         self.assertIn("STARTING_ZONES", source)
         self.assertIn("CLASS_ROLES", source)
         self.assertIn("class StartTimeView", source)
