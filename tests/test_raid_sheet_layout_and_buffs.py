@@ -50,6 +50,9 @@ class LayoutAndBuffTests(unittest.TestCase):
         ])
 
     def test_reads_old_sheet_by_column_names_and_retains_editable_notes(self):
+        with schedule.database(self.path) as con:
+            con.execute("UPDATE signups SET note=? WHERE raid_id=1 AND discord_id=42",
+                        ("Sign-up note",))
         body = sheets._rows(self.path, self.event, {})
         member = next(row for row in body if row[16] == "42")
         member[6] = "Sign-up note"
@@ -119,6 +122,8 @@ class LayoutAndBuffTests(unittest.TestCase):
         body = sheets._rows(self.path, self.event, {})
         members = [r for r in body if r[16]]
         mage = next(r for r in members if r[2] == "Mage")
+        warrior = next(r for r in members if r[2] == "Warrior")
+        warrior[12] = "🔸"
         mage[12] = "🔸"
         mage[9] = "Bench"
         self.assertIn("Intellect", buffs.instance_summaries(
