@@ -102,6 +102,10 @@ The workflow reruns Python regressions and Docker launcher smoke checks
 before calling `flyctl deploy -a hyped-diceman --remote-only --ha=false`.
 GitHub Actions installs the CLI executable as `flyctl`; the shorter `fly`
 command used in a local terminal may be an alias and is not available there.
+Volume, snapshot and release listings are saved to temporary files before
+matching. This prevents `grep -q` from closing a streaming Fly command early
+under `pipefail` (exit 141), while preserving CLI failures. Missing backup
+evidence or a failed Fly command still stops the workflow before deployment.
 It is not triggered by a PR, a push or a merge. Do not run a second
 production bot with the same Discord token.
 

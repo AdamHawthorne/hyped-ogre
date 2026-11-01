@@ -104,17 +104,27 @@ jobs:
           fi
           command -v flyctl >/dev/null || { echo "flyctl CLI missing from runner PATH"; exit 1; }
           flyctl version
-          volume_row="$(flyctl volumes list -a hyped-diceman | grep -F "$VOLUME_ID" || true)"
-          if ! printf '%s\n' "$volume_row" | grep -Fq 'diceman_data'; then
+          # Read each listing fully before matching: grep -q can otherwise
+          # close a Fly output pipe early and cause SIGPIPE (exit 141).
+          checks_dir="$(mktemp -d)"
+          trap 'rm -rf "$checks_dir"' EXIT
+          flyctl volumes list -a hyped-diceman > "$checks_dir/volumes.txt"
+          volume_row="$(grep -F -- "$VOLUME_ID" "$checks_dir/volumes.txt" || true)"
+          if ! grep -Fq 'diceman_data' <<< "$volume_row"; then
             echo "Expected diceman_data volume not found"
             exit 1
           fi
-          snapshot_row="$(flyctl volumes snapshots list "$VOLUME_ID" -a hyped-diceman | grep -F "$SNAPSHOT_ID" || true)"
-          if ! printf '%s\n' "$snapshot_row" | grep -Eq '[[:space:]]created([[:space:]]|$)'; then
+          flyctl volumes snapshots list "$VOLUME_ID" -a hyped-diceman > "$checks_dir/snapshots.txt"
+          snapshot_row="$(grep -F -- "$SNAPSHOT_ID" "$checks_dir/snapshots.txt" || true)"
+          if ! grep -Eq '[[:space:]]created([[:space:]]|$)' <<< "$snapshot_row"; then
             echo "Verified completed Fly snapshot not found"
             exit 1
           fi
-          flyctl releases --image -a hyped-diceman | grep -Fq -- "$ROLLBACK_IMAGE"
+          flyctl releases --image -a hyped-diceman > "$checks_dir/releases.txt"
+          if ! grep -Fq -- "$ROLLBACK_IMAGE" "$checks_dir/releases.txt"; then
+            echo "Previously working rollback image not found"
+            exit 1
+          fi
           flyctl status -a hyped-diceman
           echo "Persistent volume, completed snapshot and rollback image verified"
 
