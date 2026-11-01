@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "cogs" / "suggestions.py").read_text(encoding="utf-8")
+SOURCE = (ROOT / "hyped_ogre/features/suggestions/extension_source.py").read_text(encoding="utf-8")
 
 
 class SuggestionsSafetyTests(unittest.TestCase):

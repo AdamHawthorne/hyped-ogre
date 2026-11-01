@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 
 
-SRC = Path(__file__).resolve().parents[1] / "cogs" / "lfg_preview.py"
+SRC = Path(__file__).resolve().parents[1] / "hyped_ogre/features/lfg/extension_source.py"
 TREE = ast.parse(SRC.read_text(encoding="utf-8"))
 FUNCTIONS = {"next_step", "previous_step", "planned_options"}
 NODES = [node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name in FUNCTIONS]

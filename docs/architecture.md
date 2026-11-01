@@ -2,7 +2,7 @@
 
 ## Current state
 
-The production Discord bot continues to start via the existing `python rollf.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
+The production Discord bot continues to start via the existing `python rollf.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. The remaining Discord feature implementations now live in `hyped_ogre/features/`; only their identity-preserving extension entrypoints remain under `cogs/`. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
 
 ## Migrated modules
 
@@ -118,6 +118,35 @@ canonical module, and the compatibility wrapper is checked independently.
 
 The Fly.io bot has not been deployed or restarted as part of this
 repository migration.
+
+## Live Discord extension source relocation
+
+The active `cogs.countdown`, `cogs.lfg_preview`, `cogs.raid_signup`,
+`cogs.streams` and `cogs.suggestions` implementations have been physically
+moved unchanged into their corresponding feature folders as
+`extension_source.py` (or `signup_extension_source.py` for raids).
+
+**Discord registration still uses the original module names.**
+`hyped_ogre/core/legacy_source.py` uses an explicit allow-list and
+Python's standard-library `SourceFileLoader.exec_module` to execute the
+trusted package source in its original `cogs.*` module namespace.
+This is intentional: Discord's extension unload/reload mechanism identifies
+registered Cogs, commands and listeners by the original `__module__`.
+It also preserves relative imports inside LFG/countdown and shared mutable
+module globals used by other cogs and existing tests. The feature source
+files are private runtime implementation files; do not directly import them
+as an additional Cog or instantiate a second bot.
+
+Unlike simple aliases, this loading pattern supports Discord
+`load_extension("cogs.suggestions")` and `unload_extension` without
+leaving an externally-namespaced class registered. The five original entrypoint
+files are now short, explicit compatibility wrappers. The source code,
+SQL queries, persistent Discord controls, background tasks, Google Sheets
+synchronisation, setup order and production data paths are unchanged.
+
+The final switch to loading feature extensions directly should only be
+considered after a separate integration test for Discord reloads and
+a planned rollout; it is **not** part of this repository-only migration.
 
 ## Intended package layout
 

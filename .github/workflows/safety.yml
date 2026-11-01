@@ -264,3 +264,23 @@ jobs:
           assert "hyped_ogre_daily_roll_v2" in ids
           print("Roll, coin, gamble and persistent V2 controls validated")
           '
+
+      - name: Verify legacy Discord extensions load feature sources in Docker image
+        run: |
+          docker run --rm -e HYPED_GUILD_ID=77 --entrypoint python hyped-ogre-test -c '
+          import inspect
+          from pathlib import Path
+          from cogs import countdown, lfg_preview, raid_signup, streams, suggestions
+          for mod, cls in [
+              (countdown, countdown.CountdownCog),
+              (lfg_preview, lfg_preview.LFGPreview),
+              (raid_signup, raid_signup.RaidPrototype),
+              (streams, streams.StreamsCog),
+              (suggestions, suggestions.SuggestionsCog),
+          ]:
+              assert mod.setup.__module__ == mod.__name__
+              assert cls.__module__ == mod.__name__
+              assert "/hyped_ogre/features/" in inspect.getsourcefile(mod.setup)
+          assert lfg_preview.raid_signup is raid_signup
+          print("Legacy Discord extensions load relocated feature source successfully")
+          '

@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import AsyncMock
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "cogs" / "lfg_preview.py"
+SOURCE = Path(__file__).resolve().parents[1] / "hyped_ogre/features/lfg/extension_source.py"
 
 
 class NotFound(Exception):

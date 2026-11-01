@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "cogs" / "lfg_preview.py"
+SOURCE = Path(__file__).resolve().parents[1] / "hyped_ogre/features/lfg/extension_source.py"
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"))
 HELPERS = {"show_lfm_emoji", "format_roles"}
 NODES = [

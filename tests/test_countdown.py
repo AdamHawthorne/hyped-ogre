@@ -13,7 +13,7 @@ from cogs.countdown_core import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "cogs" / "countdown.py").read_text(encoding="utf-8")
+SOURCE = (ROOT / "hyped_ogre/features/countdowns/extension_source.py").read_text(encoding="utf-8")
 
 
 class CountdownClockTests(unittest.TestCase):

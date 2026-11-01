@@ -7,7 +7,7 @@ import unittest
 class PlayingDaysTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        path = Path(__file__).resolve().parents[1] / 'cogs/lfg_preview.py'
+        path = Path(__file__).resolve().parents[1] / 'hyped_ogre/features/lfg/extension_source.py'
         if not path.exists():
             path = Path(__file__).with_name('lfg_preview.py')
         tree = ast.parse(path.read_text())
