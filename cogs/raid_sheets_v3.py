@@ -886,7 +886,16 @@ def _sync_gear_tab(session, db_path, titles):
     title = wowsims_gear.SHEET_NAME
     if not profiles and title not in titles:
         return
-    rows, headings = wowsims_gear.sheet_rows(profiles)
+    # Download a compact Forever-only item catalog at most once per week
+    # to the raid DB directory. Failure leaves known data usable and
+    # unresolved item levels blank, never inferred from Classic Era.
+    needs_items = any(
+        parsed and parsed["equipped"] > 0 for parsed in
+        (wowsims_gear.parse_export(p["raw_text"]) for p in profiles)
+    )
+    item_catalog = (forever_item_data.catalog(db_path) if needs_items
+                    else forever_item_data.cached_catalog(db_path))
+    rows, headings = wowsims_gear.sheet_rows(profiles, item_catalog)
     if len(rows) > 1500:
         raise RuntimeError("WoWSims gear overview exceeds its 1,500 row limit.")
     is_new = title not in titles
@@ -897,7 +906,7 @@ def _sync_gear_tab(session, db_path, titles):
             json={"requests": [{"addSheet": {"properties": {
                 "title": title,
                 "gridProperties": {
-                    "rowCount": 1500, "columnCount": 8,
+                    "rowCount": 1500, "columnCount": 9,
                     "frozenRowCount": 3, "hideGridlines": True,
                 },
             }}}]},
@@ -906,6 +915,28 @@ def _sync_gear_tab(session, db_path, titles):
         titles[title] = {"sheetId": sid, "title": title}
     else:
         sid = titles[title]["sheetId"]
+        count = titles[title].get("gridProperties", {}).get("columnCount", 8)
+        if count < 9:
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [
+                    {"appendDimension": {"sheetId": sid,
+                                         "dimension": "COLUMNS",
+                                         "length": 9 - count}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 7, "endIndex": 8},
+                        "properties": {"pixelSize": 95},
+                        "fields": "pixelSize"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 8, "endIndex": 9},
+                        "properties": {"pixelSize": 170},
+                        "fields": "pixelSize"}},
+                ]},
+            )
+            titles[title].setdefault("gridProperties", {})["columnCount"] = 9
     # Cache includes only the latest exported rows, not mutable references.
     stamp = tuple(tuple(str(cell) for cell in row) for row in rows)
     if not is_new and _GEAR_TAB_SNAPSHOT.get(sid) == stamp:
@@ -935,7 +966,7 @@ def _sync_gear_tab(session, db_path, titles):
                                    "fontFamily": "Roboto", "fontSize": 11}}},
                 "fields": "userEnteredFormat"}},
         ]
-        for col, width in enumerate((180, 90, 160, 150, 135, 150, 375, 170)):
+        for col, width in enumerate((180, 90, 160, 150, 220, 150, 110, 95, 170)):
             requests.append({"updateDimensionProperties": {
                 "range": {"sheetId": sid, "dimension": "COLUMNS",
                           "startIndex": col, "endIndex": col + 1},
@@ -967,19 +998,19 @@ def _sync_gear_tab(session, db_path, titles):
         old = raid_sheets._json(
             session, "GET",
             f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-            + quote(f"'{title}'!A1:H1500", safe="'!:"),
+            + quote(f"'{title}'!A1:I1500", safe="'!:"),
             params={"valueRenderOption": "FORMATTED_VALUE"},
         ).get("values", [])
 
     # The value input is RAW: imported character names never become formulas.
-    target = rows + [[""] * 8 for _ in range(max(0, len(old) - len(rows)))]
+    target = rows + [[""] * 9 for _ in range(max(0, len(old) - len(rows)))]
     if not is_new and old == target:
         _GEAR_TAB_SNAPSHOT[sid] = stamp
         return
     raid_sheets._json(
         session, "PUT",
         f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-        + quote(f"'{title}'!A1:H{len(target)}", safe="'!:"),
+        + quote(f"'{title}'!A1:I{len(target)}", safe="'!:"),
         params={"valueInputOption": "RAW"},
         json={"values": target},
     )
@@ -989,11 +1020,11 @@ def _sync_gear_tab(session, db_path, titles):
     hyperlinks = []
     for row in target:
         link = str(row[6]) if len(row) > 6 else ""
-        if link.startswith("https://www.wowhead.com/classic/item="):
+        if link.startswith(forever_item_data.WOWHEAD_BASE):
             item_id = link.rsplit("=", 1)[-1]
             if item_id.isascii() and item_id.isdecimal():
                 hyperlinks.append([
-                    f'=HYPERLINK("https://www.wowhead.com/classic/item={item_id}","View item")'
+                    f'=HYPERLINK("{forever_item_data.WOWHEAD_BASE}{item_id}","View item")'
                 ])
                 continue
         hyperlinks.append([""])
