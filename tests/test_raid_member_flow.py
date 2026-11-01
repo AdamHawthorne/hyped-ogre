@@ -248,6 +248,66 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("curseforge.com/wow/addons/wowsims-exporter", data)
 
 
+    async def test_wowsims_button_skips_instructions_after_first_export(self):
+        character = (7, "Snore Mon", "Warrior", "Protection", "Tank", None)
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42), guild_id=77,
+            response=SimpleNamespace(
+                send_message=AsyncMock(), send_modal=AsyncMock(),
+            ),
+        )
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "member_characters", return_value=[character]), \
+             patch.object(raid, "has_wowsims_export", return_value=False) as has_export:
+            cog = raid.RaidPrototype(SimpleNamespace())
+            await cog.on_gear(interaction)
+            self.assertIsInstance(
+                interaction.response.send_message.await_args.kwargs["view"],
+                raid.WoWSimsInstructionsView,
+            )
+            interaction.response.send_message.reset_mock()
+            has_export.return_value = True
+            await cog.on_gear(interaction)
+            modal = interaction.response.send_modal.await_args.args[0]
+            self.assertIsInstance(modal, raid.WoWSimsExportModal)
+            self.assertEqual(modal.char_id, 7)
+            interaction.response.send_message.assert_not_awaited()
+            self.assertEqual(has_export.call_count, 2)
+
+    async def test_wowsims_multi_character_selection_checks_each_char(self):
+        characters = [
+            (7, "Snore Mon", "Warrior", "Protection", "Tank", None),
+            (8, "Other Alt", "Mage", "Frost", "DPS", None),
+        ]
+        response = SimpleNamespace(
+            edit_message=AsyncMock(), send_modal=AsyncMock(),
+            send_message=AsyncMock(),
+        )
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42), guild_id=77, response=response,
+        )
+        with patch.object(raid, "GUILD_ID", 77), \
+             patch.object(raid, "member_characters", return_value=characters), \
+             patch.object(raid, "main_character_ids", return_value={7}), \
+             patch.object(raid, "has_wowsims_export",
+                          side_effect=lambda user, character: character == 8):
+            view = raid.CharacterActionView(42, purpose="gear")
+            selection = next(item for item in view.walk_children()
+                             if isinstance(item, discord.ui.Select))
+            selection._values = ["7"]
+            await selection.callback(interaction)
+            self.assertIsInstance(
+                response.edit_message.await_args.kwargs["view"],
+                raid.WoWSimsInstructionsView,
+            )
+            response.edit_message.reset_mock()
+            selection._values = ["8"]
+            await selection.callback(interaction)
+            modal = response.send_modal.await_args.args[0]
+            self.assertIsInstance(modal, raid.WoWSimsExportModal)
+            self.assertEqual(modal.char_id, 8)
+            response.edit_message.assert_not_awaited()
+
     async def test_signup_and_update_are_private_discord_views(self):
         with patch.object(raid, "member_characters", return_value=[
             (7, "First Last", "Mage", "Frost", "DPS", None)
