@@ -399,11 +399,11 @@ def _header(event, body, tab):
     panel_url = (f"https://discord.com/channels/{channel}/{message}"
                  if channel and message else "")
     coverage = forever_raid_buffs.instance_summaries(body, event)
-    # G2:G5 contains the missing-buff/debuff summary itself. Keep the
-    # associated instance label in H2:H5 so G can be scanned directly.
-    # Always use six preceding cells so a missing prefix never shifts
-    # one of the summaries into I or an unrelated notes column.
-    coverage_cells = [(missing, instance) for instance, missing in coverage]
+    # G2:G5 = instances (brackets count missing buffs, not players).
+    # H2:H5 = the corresponding missing-buff list.
+    # Keep the fixed dashboard coordinates separate from the reordered
+    # player table below row 7.
+    coverage_cells = coverage
     lines = [
         [title],
         ["Date", when.strftime("%A, %d %B %Y"), "Status", state,
@@ -519,7 +519,7 @@ def _make_tab(session, title):
                             "textFormat": {"foregroundColor": {
                                 "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 340), (7, 150),
+                       (4, 90), (5, 90), (6, 160), (7, 340),
                        (8, 130), (9, 85), (10, 75), (11, 220),
                        (12, 330), (13, 210), (14, 210),
                        (17, 195), (18, 195), (19, 95)):
@@ -595,7 +595,7 @@ def _paint_sections(session, sid, rows):
         },
     } for index, row in enumerate(rows[7:], start=7)
       if row[9] == "Selected" and row[8] == "Signed")
-    # Keep the G (missing buffs) / H (instance) panel readable on existing tabs.
+    # Keep the G (instance/count) / H (missing buffs) panel readable on existing tabs.
     requests.extend([
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "ROWS",
@@ -604,6 +604,10 @@ def _paint_sections(session, sid, rows):
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": 6, "endIndex": 7},
+            "properties": {"pixelSize": 160}, "fields": "pixelSize"}},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS",
+                      "startIndex": 7, "endIndex": 8},
             "properties": {"pixelSize": 340}, "fields": "pixelSize"}},
         {"repeatCell": {
             "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5,
