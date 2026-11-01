@@ -96,8 +96,9 @@ def summary(profile):
     if not profile:
         return "WoWSims received"
     level = f"Lv {profile['level']} · " if profile["level"] else ""
+    enchant_count = profile["enchanted"]
     return (f"{level}{profile['equipped']}/17 equipped · "
-            f"{profile['enchanted']} enchants reported")
+            f"{enchant_count} enchant{'s' if enchant_count != 1 else ''} reported")
 
 
 def _exported_uk(value):
