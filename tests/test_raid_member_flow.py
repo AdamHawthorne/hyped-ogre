@@ -1,3 +1,4 @@
+from wowsims_helper import signup_with_export, seed_export, example_export
 """Regression tests for the four-button raid member flow and private gear uploads."""
 import io
 import json
@@ -64,7 +65,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                 if isinstance(item, discord.ui.Button)
             ]
             self.assertEqual([b.label for b in buttons],
-                             ["Attend", None, "Characters", "SimC", "Absent"])
+                             ["Attend", None, "Characters", "WoWSims", "Absent"])
             self.assertTrue(all(not b.disabled for b in buttons if b.label is not None))
             self.assertTrue(next(b for b in buttons if b.label is None).disabled)
             self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
@@ -90,13 +91,13 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             locked = status(event)
             self.assertTrue(locked["Attend"])
             self.assertFalse(locked["Characters"])
-            self.assertFalse(locked["SimC"])
+            self.assertFalse(locked["WoWSims"])
             self.assertFalse(locked["Absent"])
             self.assertFalse(locked["Remind"])
             event["archived_at"] = "2026-12-10T01:00:00+00:00"
             archived = status(event)
             self.assertFalse(archived["Characters"])
-            self.assertFalse(archived["SimC"])
+            self.assertFalse(archived["WoWSims"])
             self.assertTrue(archived["Absent"])
             self.assertTrue(archived["Remind"])
 
@@ -137,24 +138,24 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.save_raid(path, 2, "2026-12-09 21:00", "Ony (40m)")
             raid.save_character(42, "First Last", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            raid.save_signup(2, 42, char_id, path, note="Need to leave at 22:30")
+            signup_with_export(2, 42, char_id, path, note="Need to leave at 22:30")
             with raid.database(path) as con:
                 first = con.execute(
                     "SELECT note, submitted_at FROM signups WHERE raid_id=2"
                 ).fetchone()
             self.assertEqual(first[0], "Need to leave at 22:30")
-            raid.save_signup(2, 42, char_id, path)
+            signup_with_export(2, 42, char_id, path)
             with raid.database(path) as con:
                 rows = con.execute("SELECT note, submitted_at FROM signups").fetchall()
             self.assertEqual(rows, [first])
-            raid.save_signup(2, 42, char_id, path, note="")
+            signup_with_export(2, 42, char_id, path, note="")
             with raid.database(path) as con:
                 self.assertEqual(con.execute(
                     "SELECT note FROM signups"
                 ).fetchone()[0], "")
             with self.assertRaises(ValueError):
-                raid.save_signup(2, 42, char_id, path, note="X" * 501)
-            raid.save_signup(2, 42, char_id, path, note="Leaving early")
+                signup_with_export(2, 42, char_id, path, note="X" * 501)
+            signup_with_export(2, 42, char_id, path, note="Leaving early")
             raid.save_absence(2, 42, "Not coming", path)
             with raid.database(path) as con:
                 self.assertEqual(
@@ -171,7 +172,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             raid_schedule.save_raid(path, 1, "2026-12-09 21:00", "Hyjal (20m)")
             raid.save_character(42, "First Last", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            raid.save_signup(1, 42, char_id, path)
+            signup_with_export(1, 42, char_id, path)
             self.assertEqual(raid.update_character_profile(
                 42, char_id, "Warrior", "Protection", "Tank", path
             ), "First Last")
