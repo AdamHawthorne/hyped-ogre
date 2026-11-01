@@ -19,8 +19,9 @@ The current application still imports the old `cogs/` paths. These thin compatib
 | Raid attendance history | `hyped_ogre/features/raids/history.py` | `cogs/raid_history.py` |
 | Forever item metadata | `hyped_ogre/features/characters/items.py` | `cogs/forever_item_data.py` |
 | WoWSims equipment parser and sheet rows | `hyped_ogre/features/characters/equipment.py` | `cogs/wowsims_gear.py` |
+| Countdown clock, DST and reminder calculations | `hyped_ogre/features/countdowns/core.py` | `cogs/countdown_core.py` |
 
-The Forever item metadata path is a full Python module alias rather than simple function re-exports, preserving the same in-memory cache, patchable download helper, offline cache behaviour and `.forever_items.json` files adjacent to the raid database. The WoWSims equipment module also uses a same-object alias, retaining its exact parsing, query and sheet-generation functions. Saved WoWSims exports remain in the existing raid database. Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
+The Forever item metadata path is a full Python module alias rather than simple function re-exports, preserving the same in-memory cache, patchable download helper, offline cache behaviour and `.forever_items.json` files adjacent to the raid database. The WoWSims equipment module also uses a same-object alias, retaining its exact parsing, query and sheet-generation functions. Saved WoWSims exports remain in the existing raid database. The countdown calculations now share one module object across both import paths. Their UK time parsing, DST safeguards, timer rendering and reminder de-duplication remain unchanged; the countdown extension and stored reminder database have not moved. Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
 
 ## Intended package layout
 
