@@ -84,5 +84,4 @@ def update_character_profile(con, discord_id, character_id, class_name,
         "WHERE character_id=? AND discord_id=?",
         (class_name, spec, role, race, character_id, discord_id),
     )
-return row[0]
     return row[0]
