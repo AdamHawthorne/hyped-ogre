@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cogs import raid_signup as raid, raid_schedule as schedule, lfg_preview
+from cogs import raid_signup as raid, raid_schedule as schedule
 from hyped_ogre.features.characters import mutations
 
 
@@ -25,6 +25,8 @@ class CharacterMutationsMigrationTests(unittest.TestCase):
         schedule.ensure_raid_fields(self.path)
 
     def test_original_extension_and_api_signatures_are_still_available(self):
+        with patch.dict("os.environ", {"HYPED_GUILD_ID": "77"}):
+            from cogs import lfg_preview
         self.assertIs(lfg_preview.raid_signup, raid)
         self.assertEqual(raid.RaidPrototype.__module__, "cogs.raid_signup")
         self.assertEqual(raid.setup.__module__, "cogs.raid_signup")

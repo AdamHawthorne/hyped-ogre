@@ -193,7 +193,7 @@ jobs:
 
       - name: Verify character write helpers and original Discord module in runtime image
         run: |
-          docker run --rm --entrypoint python hyped-ogre-test -c '
+          docker run --rm -e HYPED_GUILD_ID=77 --entrypoint python hyped-ogre-test -c '
           import tempfile
           from pathlib import Path
           from cogs import raid_signup as raid, lfg_preview
