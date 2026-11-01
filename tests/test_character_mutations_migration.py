@@ -87,7 +87,7 @@ class CharacterMutationsMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "isn't yours"):
             raid.set_character_race(99, character_id, "Orc", self.path)
         with self.assertRaisesRegex(ValueError, "cannot play"):
-            raid.set_character_race(42, character_id, "Tauren", self.path)
+            raid.set_character_race(42, character_id, "Unknown", self.path)
         with self.assertRaisesRegex(ValueError, "someone else's"):
             raid.set_main_character(99, character_id, self.path)
         with self.assertRaisesRegex(ValueError, "someone else's"):
@@ -108,7 +108,7 @@ class CharacterMutationsMigrationTests(unittest.TestCase):
                            "Hyjal (20m)", wowsims_policy="optional")
         raid.save_character(42, "Snore Mon", "Warrior", "Protection", "Tank", self.path)
         cid = raid.member_characters(42, self.path)[0][0]
-        raid.set_character_race(42, cid, "Orc", self.path)
+        raid.set_character_race(42, cid, "Tauren", self.path)
         with raid.database(self.path) as db:
             db.execute(
                 "INSERT INTO gear_exports "
@@ -120,7 +120,7 @@ class CharacterMutationsMigrationTests(unittest.TestCase):
         self.assertEqual(raid.update_character_profile(
             42, cid, "Warrior", "Fury", "DPS", self.path
         ), "Snore Mon")
-        self.assertEqual(raid.character_race(42, cid, self.path), "Orc")
+        self.assertEqual(raid.character_race(42, cid, self.path), "Tauren")
         self.assertEqual(raid.update_character_profile(
             42, cid, "Mage", "Frost", "DPS", self.path
         ), "Snore Mon")
