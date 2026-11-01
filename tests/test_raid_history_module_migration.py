@@ -1,6 +1,7 @@
 """Regression guards for moving raid attendance history into Hyped Ogre."""
 
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,7 +18,7 @@ class RaidHistoryModuleMigrationTests(unittest.TestCase):
     def test_history_preserves_attendance_precedence_and_padding(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "history.db"
-            with sqlite3.connect(path) as con:
+            with closing(sqlite3.connect(path)) as con, con:
                 con.executescript("""
                     CREATE TABLE raids (raid_id INTEGER, raid_at TEXT);
                     CREATE TABLE signups (raid_id INTEGER, discord_id INTEGER, availability TEXT);
@@ -37,7 +38,7 @@ class RaidHistoryModuleMigrationTests(unittest.TestCase):
                              "— · — · No-show | Absent · — · —")
             self.assertEqual(actual, legacy.history_for_raid(str(path), 2))
             self.assertEqual(canonical.history_for_raid(str(path), 100), {})
-            with sqlite3.connect(path) as con:
+            with closing(sqlite3.connect(path)) as con, con:
                 self.assertEqual(con.execute(
                     "SELECT COUNT(*) FROM attendance").fetchone()[0], 1)
 

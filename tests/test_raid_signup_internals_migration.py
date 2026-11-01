@@ -18,7 +18,7 @@ class RaidSignupInternalsMigrationTests(unittest.TestCase):
         # LFG imports raid_signup before rollf loads it as an extension.
         # Keep its original module so load/reload and app commands stay valid.
         spec = importlib.util.find_spec("cogs.raid_signup")
-        self.assertTrue(spec.origin.replace("\\\\", "/").endswith("/cogs/raid_signup.py"))
+        self.assertTrue(Path(spec.origin).as_posix().endswith("/cogs/raid_signup.py"))
         self.assertEqual(raid.RaidPrototype.__module__, "cogs.raid_signup")
         self.assertEqual(raid.setup.__module__, "cogs.raid_signup")
         self.assertTrue(issubclass(raid.RaidPrototype, commands.GroupCog))

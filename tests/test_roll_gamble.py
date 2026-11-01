@@ -17,7 +17,7 @@ from cogs.roll_coins import (
 from cogs.roll_gamble import gamble_once, GambleError
 
 
-SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text(encoding="utf-8")
 
 
 def load_roll_writer(connection):

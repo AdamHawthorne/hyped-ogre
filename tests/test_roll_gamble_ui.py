@@ -15,7 +15,7 @@ from cogs.roll_gamble import gamble_once, GambleError
 from cogs.roll_panels import DailyRollPanel
 from cogs.emojis import roll_dice_markup
 
-SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text(encoding="utf-8")
 
 
 def load(names, namespace):
