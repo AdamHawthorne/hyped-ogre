@@ -4,7 +4,21 @@
 
 The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
 
-**Migrated foundations:** the Ogre voice bank lives in `hyped_ogre/features/voice/messages.py`, and shared Discord emoji/role helpers live in `hyped_ogre/core/emojis.py`. The old `cogs/ogre_voice.py` and `cogs/emojis.py` paths remain compatibility wrappers exporting the same functions and shared values. This preserves existing commands, posted Discord component identifiers, and import paths. **LFG helper migration:** sorting and pagination implementations now live in `hyped_ogre/features/lfg/`. The legacy `cogs/lfg_sort.py` and `cogs/lfg_pagination.py` modules remain compatibility wrappers, so the live LFG board imports, component limits, saved group ordering and database behaviour remain unchanged. **Character and raid references:** shared Forever race/class/starting-zone data lives in `hyped_ogre/features/characters/races.py`, and conservative raid-buff coverage logic lives in `hyped_ogre/features/raids/buffs.py`. The original `cogs/forever_races.py` and `cogs/forever_raid_buffs.py` modules remain compatibility wrappers, preserving existing LFG restrictions, Sheets coverage, group assignment and imports. Other folders below remain targets for later changes.
+## Migrated modules
+
+The current application still imports the old `cogs/` paths. These thin compatibility modules export the canonical implementations without changing existing runtime contracts:
+
+| Feature | Canonical module | Backwards-compatible import |
+| --- | --- | --- |
+| Ogre messaging | `hyped_ogre/features/voice/messages.py` | `cogs/ogre_voice.py` |
+| Discord emojis and visual roles | `hyped_ogre/core/emojis.py` | `cogs/emojis.py` |
+| LFG sorting | `hyped_ogre/features/lfg/sorting.py` | `cogs/lfg_sort.py` |
+| LFG pagination | `hyped_ogre/features/lfg/pagination.py` | `cogs/lfg_pagination.py` |
+| Forever race and class data | `hyped_ogre/features/characters/races.py` | `cogs/forever_races.py` |
+| Raid class and spec coverage | `hyped_ogre/features/raids/buffs.py` | `cogs/forever_raid_buffs.py` |
+| Raid attendance history | `hyped_ogre/features/raids/history.py` | `cogs/raid_history.py` |
+
+Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
 
 ## Intended package layout
 
