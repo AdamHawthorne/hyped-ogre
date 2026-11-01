@@ -9,15 +9,25 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    The bot automatically creates a private tab named e.g.
    **Raid #1 - Wed 09 Dec 2026** (and syncs every ~60 seconds).
 2. Players use **Attend** and **Characters** to register their main or alt.
-   A character must have a saved **WoWSims** export before its first signup.
+   The raid poster sets the requirement. New raids default to **WoWSims:
+   Required if missing**, so a character must have a saved export before
+   its first signup. In private `/raid poster`, the **Show on Discord /
+   WoWSims requirement** picker also offers **Require fresh** (export
+   submitted after leadership enables that mode) and **Optional / off**
+   (Attend without an export). Poster edits preserve existing policy
+   settings and fresh-export cutoff. Current sign-ups are never discarded
+   when leadership changes modes.
    The **WoWSims** button links to the
    [WoWSims Exporter addon](https://www.curseforge.com/wow/addons/wowsims-exporter).
    In game, `/wse export` opens the exporter and highlights data ready for
    Ctrl+C. Players select **Paste export** in Discord and paste with Ctrl+V.
    The first-time registration flow saves the character, then prompts for
    the export before signing them up. An export is saved per character and
-   reused for later raids. Players may update it via **WoWSims** before the
-   roster-confirmation date. One character per player per raid night.
+   reused for later raids. Players should update it before the
+   roster-confirmation date where possible, but WoWSims collection remains
+   open until leadership completes/archives the raid. The public raid panel
+   displays the selected requirement and a link to the addon. One character
+   per player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
    them with **Confirmation:** and the scheduled Discord relative
