@@ -426,7 +426,9 @@ class RaidPosterView(discord.ui.LayoutView):
             f"**Check message:** {'[View message](' + d['check_message_url'] + ')' if d.get('check_message_url') else 'Not set (optional)'}\n"
             f"**SoftRes:** {'Set' if d.get('softres_url') else 'Not set (optional)'}\n"
             f"**Bottom banner:** {'Custom image' if d.get('banner_url') else 'None (optional)'}\n"
-            f"**Show on Discord:** {'Yes' if d.get('default_show_discord', True) else 'No'}\n"
+            f"**Default sign-up visibility:** {'Show names' if d.get('default_show_discord', True) else 'Hide names'}\n"
+            "-# This only controls player names. The raid panel stays posted. "
+            "Existing per-player choices in Sheets take priority.\n"
             f"**WoWSims:** {WOWSIMS_POLICIES[d.get('wowsims_policy', 'missing')]}\n"
             f"**Ping roles (new panel only):** "
             f"{', '.join('<@&' + str(r) + '>' for r in d.get('ping_role_ids', [])) or 'None'}\n\n"
@@ -509,15 +511,15 @@ class RaidPosterView(discord.ui.LayoutView):
             await self.changed(
                 interaction, default_show_discord=(picker.values[0] == "yes")
             )
-        picker = self._select("Show selected players by default?", [
+        picker = self._select("Show new sign-up names by default?", [
             discord.SelectOption(
                 label="Yes", value="yes",
-                description="Show selected players on confirmed roster",
+                description="New players appear in Sign-ups and confirmed rosters",
                 default=bool(self.draft.get("default_show_discord", True)),
             ),
             discord.SelectOption(
                 label="No", value="no",
-                description="Keep players hidden until individually enabled",
+                description="Hide new player names; override per player in Sheets",
                 default=not bool(self.draft.get("default_show_discord", True)),
             ),
         ], choose)
