@@ -45,10 +45,8 @@ def next_sunday_date(raids=(), now=None):
     latest = max(scheduled) if scheduled else None
     anchor = max(today, latest) if latest else today
     days = (6 - anchor.weekday()) % 7
-    if days == 0 and (
-        (latest is not None and latest >= today) or
-        (anchor == today and now.hour >= 20)
-    ):
+    # Sunday means NEXT Sunday rather than a potentially same-day raid.
+    if days == 0:
         days = 7
     return (anchor + timedelta(days=days)).isoformat()
 
