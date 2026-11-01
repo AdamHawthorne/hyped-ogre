@@ -125,18 +125,18 @@ Below the fixed headings, registrations appear under five sections:
 | E | Role | Ogre |
 | F | Main / Alt | Ogre |
 | G | Sign-up notes (and absence note) | Ogre |
-| H | Original signed-at timestamp | Ogre |
-| I | Signed / Absent | Ogre |
-| J | Selection: Pending / Selected / Bench / Not selected | Leadership |
-| K | Show on Discord: No / Yes | Leadership |
-| L | Hyjal: No / Yes | Leadership |
-| M | Barrows: No / 🔸 / 🔹 | Leadership |
-| N | Ony: No / Yes | Leadership |
+| H | Signed / Absent | Ogre |
+| I | Selection: Pending / Selected / Bench / Not selected | Leadership |
+| J | Hyjal: No / Yes | Leadership |
+| K | Barrows: No / 🔸 / 🔹 | Leadership |
+| L | Ony: No / Yes | Leadership |
+| M | Show on Discord: No / Yes | Leadership |
+| N | WoWSims average iLvl and conservative enchant gaps | Ogre |
 | O | Leadership notes | Leadership |
-| P | WoWSims average known iLvl and conservative standard-slot enchant gaps | Ogre |
-| Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
-| S | Signed-at timestamp (readable UK time) | Ogre |
-| T | Past 3 / Next 3 raid statuses, relative to this tab's raid date | Ogre |
+| P-Q | Internal Discord and character IDs, hidden for readability | Ogre |
+| R | Signed-off/absent timestamp | Ogre |
+| S | Original signed-at timestamp (readable UK time) | Ogre |
+| T | Past 3 / Next 3 raid status relative to this raid date | Ogre |
 
 Every new player is **Signed** by default. The raid poster's
 **Default sign-up visibility** controls whether new players' names
@@ -156,15 +156,20 @@ publishes the roster; **Show on Discord** continues to apply then.
 Existing players' manual visibility choices in Sheets are preserved
 when the poster's default is changed.
 
-For a player to appear in Hyjal, for example: choose **Selected** (J),
-**Yes** (K) and **Yes** (L). For Barrows, select the relevant team symbol in
-column M. Changes are noticed at the next successful ~60-second sync.
+For a player to appear in Hyjal, for example: choose **Selected** (I),
+**Yes** (M, Show on Discord), and **Yes** (J, Hyjal). For Barrows, select
+the relevant team symbol in column K. Changes are noticed at the next successful ~60-second sync.
 Hyjal remains one roster headed by 🔹🔸 and Barrows has two rosters
 headed 🔸 and 🔹. The diamond headers stay visible after players appear.
 Names have no bullet prefixes. The bot uses server custom emoji named
 `Tank`, `Healer`, `DPS`, `Ranged` and class names such as `Warrior` and
 `Mage`, when present; readable Unicode icons are the fallback.
 Class/spec/role data travels with the private selected roster, including PUGs.
+
+The columns above reflect the actual displayed order, not the internal
+Python/SQLite field indices. During sync, Ogre migrates existing 19-column
+raid sheets by appending T. Earlier 18-column sheets are extended without
+moving their existing signed-at history into the new status column.
 
 The Discord paste field supports a maximum of 4,000 characters. Ogre
 validates WoWSims JSON and confirms its character name matches the
