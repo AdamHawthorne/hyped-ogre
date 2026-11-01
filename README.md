@@ -1,110 +1,61 @@
-# Hyped Ogre 🎲
+# Hyped Ogre
 
-A private daily dice-roll Discord bot for the **Hyped** community.
-
-Each member gets one roll from **1–100 per UK calendar day**. The bot tracks statistics and gold coins, and the current daily leader automatically holds the **👑 High Roller** role until somebody rolls higher.
+**Hyped Ogre** is an independent Python Discord bot for the Hyped World of Warcraft guild. It combines raid organisation, character and group tools, daily rolls and coins, Twitch notifications, and community utilities.
 
 ## Features
 
-- One roll per member per day
-- UK reset at midnight using `Europe/London`
-- One all-time gold coin leaderboard via `/leaderboard`
-- One gold coin for each completed UK day’s highest roll, including Ogre; earliest roll wins ties
-- Persistent V2 daily reset panel with lifetime top five gold coin holders and Roll, Leaderboard and My Stats buttons, plus a separate conversational winner message at UK midnight
-- `/stats` retains roll history and adds lifetime gold coins
-- Roll statistics and streak tracking
-- Automatic **👑 High Roller** role transfer
-- First player to reach a tied high score keeps the crown
-- Automatic crown removal at the daily reset
-- Persistent SQLite storage
-- Docker support
-- Single-server safeguard for the Hyped Discord
+- **Daily rolls:** one free roll per UK day, a gold-coin ledger, Sunday double-coin awards, a once-per-day coin gamble, statistics and a High Roller role
+- **Raids:** signups, saved characters, roster management, attendance, Warcraft Logs links, and Google Sheets integration
+- **Characters and equipment:** saved characters, class/role handling and WoWSims export support
+- **LFG/LFM:** dungeon and group-planning panels
+- **Streams:** Twitch registration and stream notifications
+- **Guild utilities:** Forever role panels, countdowns, suggestions, flameboard and Ogre messaging
 
-## Configuration
+Feature behaviour is covered by regression tests in `tests/`.
 
-Copy `.env.example` to `.env` and provide the required values.
+## Runtime and persistence
 
-The Discord bot token is a secret. Never commit `.env`, bot tokens, API keys or production database files to Git.
+The **current production entry point is `rollf.py`** for backwards compatibility during the structural migration. The Dockerfile still launches `python rollf.py`. The project is being reorganised into feature modules incrementally. Do not change the Docker entry point without verifying the whole application.
 
-Required configuration:
+The Fly.io application is `hyped-diceman` (configured in `fly.toml`). Its persistent SQLite data is stored on the mounted `/data` volume:
 
-- `DISCORD_TOKEN`
-- `HYPED_GUILD_ID`
-- `ROLL_CHANNEL_ID`
-- `HIGH_ROLLER_ROLE_ID`
+| Data | Fly path |
+| --- | --- |
+| Rolls and coin ledger | `/data/bot.db` |
+| Raid signups and characters | `/data/raid_signup.db` |
+| LFG board | `/data/lfg_board.db` |
+| Countdown data | `/data/countdown.db` |
+| Stream registrations | `/data/streams.db` |
 
-Optional owner/admin configuration is documented in `.env.example`.
-
-The bot role must sit **above** the High Roller role in Discord's role hierarchy and needs permission to manage that role.
+Never delete, overwrite, move, or reinitialise these live databases as part of a code refactor. Keep the Fly volume mounted at `/data`. Database migrations must be additive and tested before deployment.
 
 ## Local setup
 
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python rollf.py
-```
-
-On Windows PowerShell, activate the virtual environment with:
+Use Python 3.13. Create a local `.env` from `.env.example`, supply your own credentials, and install dependencies:
 
 ```powershell
-.\venv\Scripts\Activate.ps1
+cd "C:\Users\Adam\hyped-ogre"
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe rollf.py
 ```
 
-## Docker
+**Do not run a second local production bot using the same Discord token while Fly.io is serving the guild.** For ordinary development, run offline tests instead:
 
-```bash
-docker compose up -d --build
+```powershell
+python -m unittest discover -s tests -v
 ```
 
-View logs with:
+## Development and deployment
 
-```bash
-docker compose logs -f
-```
+- `main` is intended to be the stable, reviewed code baseline.
+- Use short-lived `feature/*`, `fix/*` or `refactor/*` branches for changes; features are **folders/modules**, not permanent branches.
+- Run syntax checks, unit tests and Docker build checks before merging.
+- A merge does **not** automatically deploy to Fly.io unless an explicit deployment workflow is configured.
+- Don't deploy structural migrations without a verified database backup, health checks and a rollback plan.
 
-## Upstream and licence
+See [architecture](docs/architecture.md) and [operational safety](docs/operations.md).
 
-Hyped Ogre is a modified fork of **RollF**, originally created by **hegernat/plutonium87**:
+## Licence and provenance
 
-https://github.com/hegernat/rollf-bot
-
-The fork deliberately uses a different project/bot name from the public RollF instance.
-
-The project remains licensed under the **MIT License**. The original copyright and permission notice are preserved unchanged in `LICENSE`, as required by the licence. See `NOTICE.md` for attribution details.
-
-Changes specific to Hyped are maintained separately from the upstream project.
-
-
-## Gold coins and daily reset
-
-Gold coins are bragging rights only. At UK midnight, the highest roll from
-that completed day receives one coin. Ogre participates and can win. Ogre's own roll does not compete. Ties go
-to the earliest highest roll, matching the High Roller crown. At the natural UK-midnight reset, the bot posts the V2 panel with the lifetime top five coin holders and a separate normal Discord message naming the previous day's highest roller, the casual weekday, winning roll, one new coin and lifetime total. The winner message uses the guild's `:ogrecoin:` emoji (identified by Discord at runtime). Upload the attached coin artwork to the guild as a custom emoji named `ogrecoin` before deployment. Until it exists, the bot falls back to the words `gold coin`. The inline emoji replaces the gallery image. The panel rotates its daily headline, removes the bragging-rights footer, and hides the roll-date line. Today's existing panel is not edited on startup; tomorrow's new panel appears naturally at midnight.
-
-The additive `roll_coin_awards` table uses `(guild_id, roll_date)` as its primary
-key. On startup, all completed days in the existing Hyped roll database are
-backfilled once. UK dates are calculated from timestamps, including older UTC
-`roll_date` values. Existing rolls and score tables are preserved. The current
-day is never awarded early. Restarting or retrying a failed Discord post cannot
-award another coin for the same date. Missed days are included in totals without
-posting a backlog of announcements.
-
-- `/leaderboard`: one paginated server leaderboard by lifetime coin count.
-- `/stats [user]`: existing statistics plus gold coins.
-- `/previewroll`: owner-only private preview with disabled buttons; changes no data.
-- `/postroll`: in the daily-roll channel, refreshes the existing daily panel (or
-  restores it if deleted). Elsewhere in Hyped, posts a test panel without changing
-  rolls, coins or crowns; its Roll button points users to the daily-roll channel.
-- `/awardcoin day:YYYY-MM-DD user:@member winning_roll:92`: owner-only recovery
-  for a completed day missing from saved history. Grants exactly one coin, records
-  the owner, rejects bots/future dates and refuses to duplicate or replace a day's
-  existing award. Saved rolls take priority. Use one command per missing day.
-
-After merging the V2 feature branch into `hyped-customisation`, deploy that branch as usual. Startup creates the ledger,
-backfills saved history, leaves today's panel untouched until the next normal reset, and syncs
-the singular `/leaderboard` command (the old period-based `/leaderboards` is removed).
-A tested backup should be retained when deploying database changes. No live
-Discord data is accessed by the automated test suite.
+Hyped Ogre is an **independent GitHub repository** and is not part of the RollF fork network. Some original code derives from [RollF](https://github.com/hegernat/rollf-bot), by hegernat/plutonium87. Attribution and the original MIT licence notice are retained in [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md). Independence does not remove inherited licence obligations.
