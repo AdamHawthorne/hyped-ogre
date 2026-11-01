@@ -802,7 +802,7 @@ class RaidEventPanel(discord.ui.LayoutView):
         gear = discord.ui.Button(
             label="WoWSims", custom_id=f"hyped_raid_{event_id}_gear",
             style=discord.ButtonStyle.secondary,
-            disabled=on_gear is None,
+            disabled=on_gear is None or bool(event.get("archived_at")),
         )
         absent = discord.ui.Button(
             label="Absent", custom_id=f"hyped_raid_{event_id}_absent",
