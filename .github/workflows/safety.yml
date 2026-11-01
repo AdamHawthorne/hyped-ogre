@@ -127,3 +127,23 @@ jobs:
           assert sheets._existing_keys("roster", [[], ["1", "", "42"]]) == {"1:42": 2}
           print("Google Sheets bridge imports and legacy roster keys validated")
           '
+
+      - name: Verify per-raid Sheets dashboard import and cells in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          from cogs import raid_sheets_v3, raid_signup, raid_sheets
+          from hyped_ogre.features.raids import sheets_dashboard
+          assert raid_sheets_v3 is sheets_dashboard
+          assert raid_signup.raid_sheets_v3 is sheets_dashboard
+          assert sheets_dashboard.raid_sheets is raid_sheets
+          event = {"raid_id": 7, "raid_at": "2026-12-09T21:00:00+00:00",
+                   "instance_1": "Hyjal (20m)", "instance_2": "Barrows (10m)",
+                   "instance_3": None, "archive_notes": "Manual notes",
+                   "wcl_url": "https://www.warcraftlogs.com/reports/test"}
+          rows = sheets_dashboard._header(event, [], sheets_dashboard.tab_title(event))
+          assert rows[1][6] == "Barrows 🔸 (9)"
+          assert rows[3][1] == event["wcl_url"]
+          assert rows[3][3] == "Manual notes"
+          assert len(rows[6]) == 20
+          print("Per-raid Sheets dashboard import and fixed cells validated")
+          '
