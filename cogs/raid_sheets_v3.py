@@ -103,13 +103,18 @@ def _read(session, tab):
     aliases = {"Show on Discord": "Show"}
     by_name = {aliases.get(str(value).strip(), str(value).strip()): i
                for i, value in enumerate(headers)}
+    # The first six rows are fixed-position dashboard cells, not roster
+    # columns. Applying roster column rearrangement here moves G2 into
+    # N2, losing the requested buff summary position and misreads top cells.
+    top_rows = [(list(row) + [""] * len(COLUMNS))[:len(COLUMNS)]
+                for row in result[:6]]
     if len(by_name) >= 12 and "Discord Name" in by_name:
         def from_labels(row):
             return [row[by_name[name]] if name in by_name and
                     by_name[name] < len(row) else ""
                     for name in COLUMNS]
-        return [from_labels(row) for row in result]
-    return [_internal(row) for row in result]
+        return top_rows + [from_labels(row) for row in result[6:]]
+    return top_rows + [_internal(row) for row in result[6:]]
 
 
 def _list_tabs(session):
@@ -643,8 +648,13 @@ def _write(session, title, sid, existing, rows):
     needed = rows + [[""] * width] * max(0, len(current) - len(rows))
     if len(needed) > 500:
         raise RuntimeError("Raid tab has too many populated rows to rewrite safely.")
-    old_display = [_display(r) for r in current]
-    new_display = [_display(r) for r in needed]
+    # Only the roster heading and player rows use DISPLAY_ORDER.
+    # Rows 1-6 are already in their physical Sheet coordinates; keep G2:G5,
+    # B4 Warcraft Logs and D4 Raid Notes exactly where leadership expects.
+    old_display = [row if index < 6 else _display(row)
+                   for index, row in enumerate(current)]
+    new_display = [row if index < 6 else _display(row)
+                   for index, row in enumerate(needed)]
     changed = old_display != new_display
     if changed:
         raid_sheets._json(
