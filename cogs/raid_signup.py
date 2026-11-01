@@ -1557,8 +1557,12 @@ class RaidCompletionConfirm(discord.ui.View):
                                             RAID_DB, self.raid_id)
             raid_status(RAID_DB, self.raid_id, "archive",
                         notes=self.notes, wcl_url=self.url)
-            await self.cog.sync_raid_sheets()
-            await self.cog.refresh_saved_panel(self.raid_id)
+            # The stored raid is closed regardless of Sheets availability.
+            # Always edit the public panel so Attend greys out on completion.
+            try:
+                await self.cog.sync_raid_sheets()
+            finally:
+                await self.cog.refresh_saved_panel(self.raid_id)
         except Exception as exc:
             await interaction.followup.send(f"Completion failed: {exc}", ephemeral=True)
             return
@@ -2110,8 +2114,11 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         try:
             raid_status(RAID_DB, number, "archive", notes=notes, wcl_url=url)
-            await self.sync_raid_sheets()
-            await self.refresh_saved_panel(number)
+            # Close the Discord Attend control even when Sheets is unavailable.
+            try:
+                await self.sync_raid_sheets()
+            finally:
+                await self.refresh_saved_panel(number)
         except (ValueError, RuntimeError, sqlite3.Error,
                 discord.HTTPException) as exc:
             await interaction.followup.send(f"Raid archive: {exc}", ephemeral=True)
