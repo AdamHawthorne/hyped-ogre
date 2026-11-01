@@ -12,7 +12,8 @@ import discord
 
 from cogs.roll_coins import UK, ensure_coin_schema, coin_total, daily_coin_prize
 from cogs.roll_gamble import gamble_once, GambleError
-from cogs.roll_panels import DailyRollPanel\nfrom cogs.emojis import roll_dice_markup
+from cogs.roll_panels import DailyRollPanel
+from cogs.emojis import roll_dice_markup
 
 SOURCE = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
 
@@ -82,7 +83,8 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         rolls = iter([91, 77, 55])
         self.ns = dict(
             discord=discord, HYPED_GUILD_ID=9, ROLL_CHANNEL_ID=88,
-            TZ=UK, datetime=FixedClock, timedelta=timedelta,\n            roll_dice_markup=roll_dice_markup,
+            TZ=UK, datetime=FixedClock, timedelta=timedelta,
+            roll_dice_markup=roll_dice_markup,
             db=lambda: self.con, coin_total=coin_total,
             today_range=lambda: (
                 int(datetime(2026, 11, 1, 0, 0, tzinfo=UK).timestamp()),
