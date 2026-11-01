@@ -570,6 +570,18 @@ def _paint_sections(session, sid, rows):
     requests = [paint(7, 500, grey, ink)]
     requests.extend(paint(index, index + 1, black, white, bold=True, size=11)
                     for index in _section_positions(rows))
+    # Keep Selected visibly green after its move from old column I to G.
+    requests.extend({
+        "repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": index,
+                      "endRowIndex": index + 1, "startColumnIndex": 6,
+                      "endColumnIndex": 7},
+            "cell": {"userEnteredFormat": {"backgroundColor": {
+                "red": .84313726, "green": .9372549, "blue": .84313726}}},
+            "fields": "userEnteredFormat.backgroundColor",
+        },
+    } for index, row in enumerate(rows[7:], start=7)
+      if row[9] == "Selected" and row[8] == "Signed")
     # Keep the G/H coverage panel readable in existing tabs too.
     requests.extend([
         {"updateDimensionProperties": {
