@@ -1585,7 +1585,7 @@ async def announce_sunday_double_coin():
     notice = (
         f"**{marker}** {ogre_coin_emoji()}\n"
         "**Ogre give 2 coins** to Sunday's highest roller, not 1. "
-        "Only one daily winner. Gamble give no extra coin."
+
     )
     try:
         # Recover any notice sent immediately before a restart; never repost
