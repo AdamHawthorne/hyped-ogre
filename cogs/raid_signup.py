@@ -836,84 +836,118 @@ class ExistingAttendanceView(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(edit))
 
 
-class GearUploadModal(discord.ui.Modal):
-    """Submit SimulationCraft text directly or as a text file."""
+class WoWSimsExportModal(discord.ui.Modal):
+    """Only paste /wse export JSON; optionally finish the pending raid sign-up."""
 
-    def __init__(self, member_id, char_id, char_name):
-        super().__init__(title="SimC · " + char_name[:32])
-        self.member_id = member_id
-        self.char_id = char_id
-        self.char_name = char_name
-        self.simc = discord.ui.TextInput(
-            label="Paste SimC export (or upload .txt)", required=False,
-            style=discord.TextStyle.paragraph, max_length=4000,
+    def __init__(self, member_id, char_id, char_name, raid_id=None, note=None):
+        super().__init__(title="WoWSims · " + char_name[:30])
+        self.member_id, self.char_id, self.char_name = member_id, char_id, char_name
+        self.raid_id, self.pending_note = raid_id, note
+        self.export_text = discord.ui.TextInput(
+            label="Paste /wse export here", required=True,
+            style=discord.TextStyle.paragraph,
+            placeholder='{"name":"Character","class":"warrior",...}',
+            min_length=50, max_length=4000,
         )
-        self.uploads = discord.ui.FileUpload(
-            required=False, min_values=0, max_values=1,
-        )
-        self.add_item(self.simc)
-        self.add_item(discord.ui.Label(
-            text="Or upload SimC file (.txt/.simc)",
-            description="Only needed if not pasting a SimC export",
-            component=self.uploads,
-        ))
+        self.add_item(self.export_text)
+        self.note = None
+        if raid_id is not None and note is None:
+            self.note = discord.ui.TextInput(
+                label="Raid note (optional)", required=False,
+                style=discord.TextStyle.paragraph, max_length=500,
+                placeholder="Any plans Ogre should know?",
+            )
+            self.add_item(self.note)
 
     async def on_submit(self, interaction):
         if not is_test_member(interaction) or interaction.user.id != self.member_id:
             await interaction.response.send_message(
-                "This character belongs to another player.", ephemeral=True
-            )
+                "That character not yours.", ephemeral=True)
             return
-        simc_text = (self.simc.value or "").strip()
-        attachments = list(self.uploads.values or [])
-        if not simc_text and not attachments:
-            await interaction.response.send_message(
-                "Ogre need a pasted SimC export or a .txt/.simc file.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        saved = []
         try:
-            if simc_text:
-                save_gear(self.member_id, self.char_id, simc_text)
-                saved.append("SimC")
-            for attachment in attachments:
-                filename = attachment.filename.lower()
-                if filename.endswith((".txt", ".simc")):
-                    if attachment.size > 200_000:
-                        raise ValueError("SimC file must be under 200 KB.")
-                    data = await attachment.read()
-                    if len(data) > 200_000:
-                        raise ValueError("SimC file must be under 200 KB.")
-                    save_gear(
-                        self.member_id, self.char_id, data.decode("utf-8-sig")
-                    )
-                    saved.append("SimC")
-                else:
-                    raise ValueError("Upload a .txt or .simc file.")
-        except (ValueError, UnicodeError, sqlite3.Error, discord.HTTPException) as exc:
-            await interaction.followup.send(
-                f"Ogre couldn't save all gear: {exc}", ephemeral=True
+            save_wowsims_export(
+                self.member_id, self.char_id, self.export_text.value
             )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't save WoWSims: {exc}", ephemeral=True)
             return
-        await interaction.followup.send(
-            f"Ogre saved **{discord.utils.escape_markdown(self.char_name)}** gear: "
-            f"{', '.join(saved)}.", ephemeral=True
-        )
+        name = discord.utils.escape_markdown(self.char_name)
+        if self.raid_id is not None:
+            note = self.note.value if self.note is not None else self.pending_note
+            try:
+                save_signup(self.raid_id, self.member_id, self.char_id, note=note)
+            except (ValueError, sqlite3.Error) as exc:
+                await interaction.response.send_message(
+                    f"Ogre saved **{name}** WoWSims, but couldn't sign Raid "
+                    f"#{self.raid_id}: {exc}", ephemeral=True)
+                return
+            await interaction.response.send_message(
+                f"Ogre got **{name}** WoWSims! Signed for Raid #{self.raid_id}. "
+                "Ogre keep export for next raids too. "
+                "You can replace it using **WoWSims** before roster confirmation.",
+                ephemeral=True)
+            await refresh_player_signup_panel(interaction, self.raid_id)
+            return
+        await interaction.response.send_message(
+            f"Ogre got **{name}** WoWSims! Ogre keep this export. "
+            "Use **WoWSims** again whenever gear changes, especially "
+            "before roster confirmation.", ephemeral=True)
+
+
+class WoWSimsInstructionsView(discord.ui.LayoutView):
+    """Show addon instructions and a single paste action before opening modal."""
+
+    def __init__(self, owner_id, char_id, char_name, *, raid_id=None, note=None):
+        super().__init__(timeout=300)
+        event = read_raid(RAID_DB, raid_id) if raid_id is not None else None
+        deadline = (format_discord_date(event["roster_announce_at"], style="F",
+                                        with_relative=False)
+                    if event and event.get("roster_announce_at") else None)
+        hint = (f"before roster confirmation ({deadline})"
+                if deadline else "before Ogre confirms roster")
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## WoWSims · {discord.utils.escape_markdown(char_name)}\n"
+                + ("Ogre need WoWSims export before signing you up.\n\n"
+                   if raid_id is not None else
+                   "Ogre keep WoWSims export with your character.\n\n")
+                + f"1. [Get WoWSims Exporter addon]({WOWSIMS_ADDON_URL}).\n"
+                "2. In game, type `/wse export`. Export window opens, "
+                "your data already selected. Press **Ctrl+C**.\n"
+                "3. Come back and press **Paste export**, then **Ctrl+V**.\n\n"
+                f"Ogre let you update export any time {hint}. "
+                "One export per character, reused for future raids."
+            ), accent_color=ACCENT,
+        ))
+        paste = discord.ui.Button(label="Paste export",
+                                  style=discord.ButtonStyle.success)
+
+        async def open_paste(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message(
+                    "That export not yours.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                WoWSimsExportModal(owner_id, char_id, char_name, raid_id, note)
+            )
+
+        paste.callback = open_paste
+        self.add_item(discord.ui.ActionRow(paste))
 
 
 class CharacterActionView(discord.ui.LayoutView):
-    """One dropdown for signup, character management and SimC uploads."""
+    """One dropdown for signup, character management and WoWSims exports."""
 
     def __init__(self, owner_id, *, raid_id=None, purpose="signup", current_signup=None):
         super().__init__(timeout=300)
         self.owner_id, self.raid_id, self.purpose = owner_id, raid_id, purpose
         rows = member_characters(owner_id)
         main_ids = main_character_ids(owner_id)
-        title = {"signup": "Attend", "gear": "SimC", "update": "Characters"}[purpose]
+        title = {"signup": "Attend", "gear": "WoWSims", "update": "Characters"}[purpose]
         hint = {
             "signup": "Choose the character you will raid on. Add an optional note next.",
-            "gear": "Choose a character to upload a SimulationCraft export.",
+            "gear": "Choose a character to paste /wse export. [Get addon](" + WOWSIMS_ADDON_URL + ").",
             "update": "Choose a character to manage, or add an alt.",
         }[purpose]
         self.add_item(discord.ui.Container(
@@ -955,17 +989,24 @@ class CharacterActionView(discord.ui.LayoutView):
                 )
                 return
             if self.purpose == "gear":
-                await interaction.response.send_modal(
-                    GearUploadModal(self.owner_id, char_id, match[1])
+                await interaction.response.edit_message(
+                    view=WoWSimsInstructionsView(self.owner_id, char_id, match[1])
                 )
             elif self.purpose == "update":
                 await interaction.response.edit_message(
                     view=CharacterManageView(self.owner_id, char_id, match)
                 )
             else:
-                await interaction.response.send_modal(
-                    SignupNoteModal(self.owner_id, self.raid_id, char_id, match[1])
-                )
+                if not has_wowsims_export(self.owner_id, char_id):
+                    await interaction.response.edit_message(
+                        view=WoWSimsInstructionsView(
+                            self.owner_id, char_id, match[1], raid_id=self.raid_id
+                        )
+                    )
+                else:
+                    await interaction.response.send_modal(
+                        SignupNoteModal(self.owner_id, self.raid_id, char_id, match[1])
+                    )
 
         selection.callback = select_character
         self.add_item(discord.ui.ActionRow(selection))
