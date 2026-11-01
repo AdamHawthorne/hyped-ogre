@@ -133,8 +133,10 @@ Below the fixed headings, registrations appear under five sections:
 | M | Barrows: No / 🔸 / 🔹 | Leadership |
 | N | Ony: No / Yes | Leadership |
 | O | Leadership notes | Leadership |
-| P | WoWSims character level, equipped-slot and reported-enchant summary | Ogre |
+| P | WoWSims average known iLvl and conservative standard-slot enchant gaps | Ogre |
 | Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
+| S | Signed-at timestamp (readable UK time) | Ogre |
+| T | Past 3 / Next 3 raid statuses, relative to this tab's raid date | Ogre |
 
 Every new player is **Signed** by default. The raid poster's
 **Default sign-up visibility** controls whether new players' names
@@ -199,28 +201,68 @@ tab; PUGs can also be added manually, with a character, class/spec/role,
 Status=Signed and the leadership dropdowns. Do not overwrite the hidden
 internal ID columns for registered guild members.
 
-## Forever Gear: WoWSims equipment overview
+## Forever Gear: iLvl, enchants and Wowhead
 
-A separate **Forever Gear** tab is created automatically when at least one
-character has a valid WoWSims export. It is refreshed during the existing
-Google Sheets sync. The raid tab's **WoWSims gear** column shows a compact
-summary such as **Lv 15 · 9/17 equipped · 1 enchant reported**.
+The permanent **Forever Gear** tab shows the most recent WoWSims export
+for every registered character: character level, class/spec, professions
+and 17 equipment slots. Each equipped item has a human-readable name and
+base **iLvl** when found in the **Forever-specific item catalog** and a
+working clickable **View item** link to `wowhead.com/forever/item=ID`.
+A new **iLvl** column displays each resolved piece. Existing eight-column
+gear tabs are automatically extended to nine columns without losing data.
 
-The permanent gear tab groups equipment by character. Its dark heading
-shows character name, class/spec, character **level**, professions if
-provided, equipped-slot count, enchant count and time of latest export.
-Below it, each of the 17 standard WoWSims gear slots has a separate row
-with **Item #ID**, **Enchant #ID** (or **Not reported**) and a Wowhead
-Classic item link. Only the latest saved export per character is shown.
-No raw JSON is sent to Sheets. Changing WoWSims in Discord refreshes
-the details on the next successful sync, normally about once a minute.
+The external item data comes from
+[Napalmsteak's WoW Classic Item Caches](https://github.com/Napalmsteak/WoW-Classic-Item-Caches),
+specifically the **Forever** data snapshot, not Classic Era. Ogre fetches
+it at most once every seven days, keeps a compact cache alongside the
+raid database, and continues syncing Sheets if the catalog is unavailable.
+Unknown item levels appear blank, never guessed. The source is a beta
+snapshot, so individual items may change after updates to Forever.
 
-**Scope:** This is a visual equipment inventory, not a simulation, item
-score or gear audit. The WoWSims export has character level and item/
-enchant IDs, but does **not** supply item names, item icons, rarity or
-item level. Determining those requires a separate, verified item
-database. **Not reported** for an enchant must not be interpreted
-automatically as an error: not every item supports or requires enchantment.
+The raid tab's **WoWSims gear** cell contains a compact summary such as
+**iLvl 70.0 · 2 enchant gaps**. If only some equipped items are known,
+Ogre labels the average with its coverage, e.g.
+**iLvl 65.0 (2/3 known) · 2 enchant gaps**. An average of equipped items
+is an *informal gear comparison*, not a simulation, performance score or
+Blizzard's canonical character-item-level calculation.
+
+**Enchant gaps** count equipped items without a reported enchant in a
+conservative set of commonly enchantable slots: head, shoulders, back,
+chest, wrists, hands, legs, feet and main hand. They deliberately exclude
+rings, trinkets, necks, off-hand frills and ranged scopes, and they do not
+check whether the particular item supports an appropriate enchant.
+Some head/shoulder enchants have progression requirements. Use this
+as a checklist for review, not an automatic raid readiness judgement.
+
+Player names and raw JSON are not published to any external item-data
+service. The exported item IDs alone are looked up against the catalog.
+Item links may be opened manually; the bot does not upload players'
+WoWSims exports to Wowhead.
+
+## Past 3 | Next 3 on every raid tab
+
+A new **T** column displays a member's registration history for the
+three scheduled raids before and three after that tab's raid date,
+in chronological order. Example:
+
+`Missing · Missing · Attend | Attend · Absent · Absent`
+
+**Attend** means the member registered as available, **Absent** means
+they recorded absence, and **Missing** means no registration or absence
+was recorded. If an earlier raid has actual attendance data, that result
+(e.g. **Attended**, **Late**, **No-show**) takes precedence. Therefore
+**Attend** for a past raid is not proof they physically attended.
+
+A dash (—) means no raid exists in that position; it is different from
+**Missing**. Ogre cannot infer when a member joined the guild, so a
+Missing value may predate their membership. Entries are joined by the
+person's **Discord ID**, across mains/alts, rather than by character ID.
+The **current raid** is excluded from the six statuses.
+
+The raid roster is also sorted with the Discord account identified by
+`OWNER_ID` first within its Tanks, Healers, Melee or Ranged section,
+before the remaining class/character order. No hidden character IDs are
+modified by this presentation choice.
 
 This view is bot-maintained. Don't manually edit the tab; use the
 WoWSims paste function in Discord to update equipment. Existing raid
