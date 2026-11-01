@@ -1738,6 +1738,49 @@ class RaidCompletionConfirm(discord.ui.View):
         await interaction.response.edit_message(content="Raid completion cancelled.", view=None)
 
 
+
+class RaidUnpublishConfirmation(discord.ui.View):
+    """Two-step, owner-only unpublish: no attendance or sign-ups lost."""
+
+    def __init__(self, cog, raid_id):
+        super().__init__(timeout=180)
+        self.cog, self.raid_id = cog, raid_id
+
+    @discord.ui.button(label="Confirm unpublish", style=discord.ButtonStyle.danger)
+    async def confirm_unpublish(self, interaction, button):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.cog.unpublish_roster(self.raid_id)
+        except (ValueError, RuntimeError, sqlite3.Error, discord.HTTPException) as exc:
+            await interaction.followup.send(
+                f"Ogre couldn't unpublish Raid #{self.raid_id}: {exc}",
+                ephemeral=True,
+            )
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self)
+        await interaction.followup.send(
+            f"Raid #{self.raid_id} roster unpublished. Ogre show sign-ups again. "
+            "Attendance, characters and Sheet selections still saved. "
+            "Attend stay open; no new pings sent. "
+            "Ogre withdraw old announcement if one was sent.",
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        await interaction.response.edit_message(
+            content="Ogre keep roster published.", view=None
+        )
+
+
 class RaidManageView(discord.ui.View):
     def __init__(self, cog, raid_id):
         super().__init__(timeout=300)
@@ -1772,6 +1815,28 @@ class RaidManageView(discord.ui.View):
     async def excused(self, interaction, button):
         await self._choose(interaction, "Excused")
 
+    @discord.ui.button(label="Unpublish Roster", style=discord.ButtonStyle.secondary)
+    async def unpublish(self, interaction, button):
+        if not self.cog.allowed(interaction):
+            await interaction.response.send_message("Officer-only.", ephemeral=True)
+            return
+        event = read_raid(RAID_DB, self.raid_id)
+        if not event or event.get("archived_at") or not event.get("roster_published"):
+            await interaction.response.send_message(
+                "Ogre can only unpublish a currently published active raid.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f"**Unpublish Raid #{self.raid_id}?**\n"
+            "Ogre return public panel to sign-up list. "
+            "Sign-ups and Sheet selections stay saved. "
+            "Any earlier roster ping will be marked withdrawn, "
+            "and Ogre will not ping everyone again automatically.",
+            view=RaidUnpublishConfirmation(self.cog, self.raid_id),
+            ephemeral=True,
+        )
+
     @discord.ui.button(label="Complete Raid", style=discord.ButtonStyle.success)
     async def complete(self, interaction, button):
         if not self.cog.allowed(interaction):
@@ -1805,6 +1870,28 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             return await raid_announcer.announce(
                 self.bot, RAID_DB, raid_id, GUILD_ID, selected=selected
             )
+
+    async def unpublish_roster(self, raid_id):
+        """Revert public roster and retract the old ping without new mentions."""
+        from cogs import raid_acknowledgements as ack
+        async with self._ack_lock:
+            event = read_raid(RAID_DB, raid_id)
+            if not event or event.get("archived_at") or not event.get("roster_published"):
+                raise ValueError("Raid roster is not currently published.")
+            raid_status(RAID_DB, raid_id, "reopen")
+            if ack.retract(RAID_DB, raid_id):
+                try:
+                    await raid_announcer.refresh(self.bot, RAID_DB, raid_id, GUILD_ID)
+                except (discord.HTTPException, ValueError) as exc:
+                    # State is saved. Background sync will retry message edit.
+                    LOGGER.warning("Raid #%s announcement retraction delayed: %s",
+                                   raid_id, exc)
+        try:
+            await self.sync_raid_sheets()
+        except Exception as exc:
+            LOGGER.warning("Raid #%s unpublish sheet sync delayed: %s",
+                           raid_id, exc)
+        await self.refresh_saved_panel(raid_id)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -2236,15 +2323,15 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            raid_status(RAID_DB, number, "reopen")
-            await self.sync_raid_sheets()
-            await self.refresh_saved_panel(number)
+            await self.unpublish_roster(number)
         except (ValueError, RuntimeError, sqlite3.Error,
                 discord.HTTPException) as exc:
             await interaction.followup.send(f"Raid reopen: {exc}", ephemeral=True)
             return
         await interaction.followup.send(
-            f"Raid #{number} reopened. Update the raid Sheet, then /raid confirm.",
+            f"Raid #{number} roster unpublished. Sign-ups remain open. "
+            "Update the Sheet and publish again from /raid poster. "
+            "Ogre will not send another automatic ping.",
             ephemeral=True,
         )
 
