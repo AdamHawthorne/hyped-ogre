@@ -12,7 +12,7 @@ import discord
 
 from cogs.roll_coins import UK, ensure_coin_schema, coin_total, daily_coin_prize
 from cogs.roll_gamble import gamble_once, GambleError
-from cogs.roll_panels import DailyRollPanel
+from cogs.roll_panels import DailyRollPanel\nfrom cogs.emojis import roll_dice_markup
 
 SOURCE = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
 
@@ -82,7 +82,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         rolls = iter([91, 77, 55])
         self.ns = dict(
             discord=discord, HYPED_GUILD_ID=9, ROLL_CHANNEL_ID=88,
-            TZ=UK, datetime=FixedClock, timedelta=timedelta,
+            TZ=UK, datetime=FixedClock, timedelta=timedelta,\n            roll_dice_markup=roll_dice_markup,
             db=lambda: self.con, coin_total=coin_total,
             today_range=lambda: (
                 int(datetime(2026, 11, 1, 0, 0, tzinfo=UK).timestamp()),
@@ -146,7 +146,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([button.label for button in buttons],
                          ["Roll", "Gamble", "Leaderboard", "My stats"])
         self.assertEqual(buttons[1].style, discord.ButtonStyle.danger)
-        self.assertEqual(str(buttons[0].emoji), "<:ogreivory:1566177408556605460>")
+        self.assertEqual(str(buttons[0].emoji), "<:ogredie:1566175682034270288>")
         self.assertEqual(str(buttons[1].emoji), "<:ogrecoin:1565481626488807434>")
         self.assertEqual(buttons[1].custom_id, "hyped_ogre_coin_gamble_v1")
         self.assertTrue(panel.is_persistent())
@@ -202,7 +202,7 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count, 1)
         self.assertIn("19", self.channel.send.await_args.args[0])
         self.assertIn("91", self.channel.send.await_args.args[0])
-        self.assertIn("<:ogreivory:1566177408556605460>", self.channel.send.await_args.args[0])
+        self.assertIn("<:ogredie:1566175682034270288>", self.channel.send.await_args.args[0])
         self.assertIn("Gamer risked a coin to roll again:", self.channel.send.await_args.args[0])
         self.assertIn("Ogre say good roll. Have coin back!", self.channel.send.await_args.args[0])
         self.ns["roll_reactions"].sync.assert_awaited_once()
