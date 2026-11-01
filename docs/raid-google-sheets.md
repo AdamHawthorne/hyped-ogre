@@ -116,7 +116,7 @@ Below the fixed headings, registrations appear under five sections:
 | M | Barrows: No / 🔸 / 🔹 | Leadership |
 | N | Ony: No / Yes | Leadership |
 | O | Leadership notes | Leadership |
-| P | WoWSims received, screenshot, legacy SimC or Not submitted | Ogre |
+| P | WoWSims character level, equipped-slot and reported-enchant summary | Ogre |
 | Q-R | Internal Discord and character IDs, hidden for readability | Ogre |
 
 Every new player is **Signed** by default. Selection begins **Pending**;
@@ -135,8 +135,10 @@ Class/spec/role data travels with the private selected roster, including PUGs.
 The Discord paste field supports a maximum of 4,000 characters. Ogre
 validates WoWSims JSON and confirms its character name matches the
 registered character. Text-file uploads are no longer supported.
-Optional PNG/JPG/WEBP screenshots remain available using
-`/raid screenshot`, but do not replace the mandatory WoWSims export.
+The old `/raid screenshot` and `/raid gear-review` commands have been
+removed. Existing saved screenshots remain untouched in SQLite for
+backward-compatible data retention, but are no longer collected or displayed.
+The 4,000-character WoWSims paste limit remains unchanged.
 
 In `/raid poster`, **Check Message Link** optionally accepts a copied
 Discord message URL. When supplied, the raid panel shows a short
@@ -165,6 +167,33 @@ tab; PUGs can also be added manually, with a character, class/spec/role,
 Status=Signed and the leadership dropdowns. Do not overwrite the hidden
 internal ID columns for registered guild members.
 
+## Forever Gear: WoWSims equipment overview
+
+A separate **Forever Gear** tab is created automatically when at least one
+character has a valid WoWSims export. It is refreshed during the existing
+Google Sheets sync. The raid tab's **WoWSims gear** column shows a compact
+summary such as **Lv 15 · 9/17 equipped · 1 enchant reported**.
+
+The permanent gear tab groups equipment by character. Its dark heading
+shows character name, class/spec, character **level**, professions if
+provided, equipped-slot count, enchant count and time of latest export.
+Below it, each of the 17 standard WoWSims gear slots has a separate row
+with **Item #ID**, **Enchant #ID** (or **Not reported**) and a Wowhead
+Classic item link. Only the latest saved export per character is shown.
+No raw JSON is sent to Sheets. Changing WoWSims in Discord refreshes
+the details on the next successful sync, normally about once a minute.
+
+**Scope:** This is a visual equipment inventory, not a simulation, item
+score or gear audit. The WoWSims export has character level and item/
+enchant IDs, but does **not** supply item names, item icons, rarity or
+item level. Determining those requires a separate, verified item
+database. **Not reported** for an enchant must not be interpreted
+automatically as an error: not every item supports or requires enchantment.
+
+This view is bot-maintained. Don't manually edit the tab; use the
+WoWSims paste function in Discord to update equipment. Existing raid
+sheet leadership selections and notes remain separate and editable.
+
 ## Previous RM tabs and data safety
 
 On the first successful per-raid tab sync, Ogre hides the six old
@@ -174,8 +203,8 @@ rows for that raid are imported once. To inspect historical values, use
 Google Sheets' **View > Hidden sheets** menu.
 
 SQLite at `/data/raid_signup.db` remains authoritative for registration,
-attendance and gear uploads. Only basic metadata, not raw SimC text or gear
-screenshots, is synced to the new tab. The existing roll/coin database and
+attendance and gear uploads. Only parsed equipment metadata, never raw WoWSims JSON or gear
+screenshots, is sent to the new **Forever Gear** tab. The existing roll/coin database and
 all other Sheet tabs are untouched.
 
 For safety, run the Python regression suite before deploying. Do not merge
