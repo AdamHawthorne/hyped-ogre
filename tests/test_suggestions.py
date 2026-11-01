@@ -65,7 +65,7 @@ class SuggestionsSafetyTests(unittest.TestCase):
     def test_feature_does_not_touch_roll_database(self):
         self.assertNotIn("bot.db", SOURCE)
         self.assertNotIn("rolls", SOURCE.lower())
-        rollf = (ROOT / "rollf.py").read_text(encoding="utf-8")
+        rollf = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
         self.assertIn('await bot.load_extension("cogs.suggestions")', rollf)
 
 

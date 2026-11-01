@@ -150,5 +150,5 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     await cog.preview_live.callback(cog, interaction)
                     interaction.response.send_message.assert_awaited_once()
     async def test_extension_registered(self):
-        source = (ROOT / "rollf.py").read_text()
+        source = (ROOT / "hyped_ogre/bot.py").read_text()
         self.assertIn('await bot.load_extension("cogs.streams")', source)

@@ -186,7 +186,7 @@ class CountdownSafetyTests(unittest.TestCase):
         self.assertIn("interaction.delete_original_response()", SOURCE)
 
     def test_countdown_extension_and_lfg_remain_registered(self):
-        rollf = (ROOT / "rollf.py").read_text(encoding="utf-8")
+        rollf = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
         self.assertIn('await bot.load_extension("cogs.countdown")', rollf)
         self.assertIn('await bot.load_extension("cogs.lfg_preview")', rollf)
 
