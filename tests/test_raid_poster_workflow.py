@@ -128,6 +128,22 @@ class RaidPosterWorkflowTests(unittest.IsolatedAsyncioTestCase):
             schedule.record_panel(self.path, event["raid_id"], 777, 888)
         self.cog.post_panel.side_effect = save_post
         await self.buttons(initial)["Post / Update Raid"].callback(interaction)
+        self.cog.post_panel.assert_not_awaited()
+        self.assertIsNone(schedule.read_raid(self.path, 1))
+        prompt = interaction.response.send_message.await_args
+        self.assertTrue(prompt.kwargs["ephemeral"])
+        self.assertIn("Post <Hyped> Raid #1?", prompt.args[0])
+        confirmation = prompt.kwargs["view"]
+        self.assertIsInstance(confirmation, raid_poster.RaidPostConfirmation)
+        confirm_interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42),
+            message=SimpleNamespace(edit=AsyncMock()),
+            response=SimpleNamespace(send_message=AsyncMock()),
+            edit_original_response=AsyncMock(),
+        )
+        await self.buttons(confirmation)["Confirm and post raid"].callback(
+            confirm_interaction
+        )
         self.cog.post_panel.assert_awaited_once()
         updated = private_message.edit.await_args.kwargs["view"]
         self.assertEqual(updated.page, "schedule")
@@ -135,6 +151,44 @@ class RaidPosterWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.buttons(updated)["Preview / Confirm Roster"].disabled)
         self.assertFalse(self.buttons(updated)["Manage Raid"].disabled)
         self.assertEqual(schedule.read_raid(self.path, 1)["signup_open"], 1)
+
+    async def test_new_raid_confirmation_cancel_does_not_post_or_save(self):
+        poster = raid_poster.RaidPosterView(self.cog, 42)
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42),
+            message=SimpleNamespace(edit=AsyncMock()),
+            response=SimpleNamespace(
+                send_message=AsyncMock(), edit_message=AsyncMock()
+            ),
+        )
+        await self.buttons(poster)["Post / Update Raid"].callback(interaction)
+        confirmation = interaction.response.send_message.await_args.kwargs["view"]
+        self.assertIn("<#", interaction.response.send_message.await_args.args[0])
+        self.assertIn("No roles pinged",
+                      interaction.response.send_message.await_args.args[0])
+        await self.buttons(confirmation)["Cancel"].callback(interaction)
+        self.assertIsNone(schedule.read_raid(self.path, 1))
+        self.cog.post_panel.assert_not_awaited()
+        interaction.response.edit_message.assert_awaited_once()
+
+    async def test_existing_posted_raid_updates_without_second_confirmation(self):
+        event = schedule.save_raid(
+            self.path, 1, "2026-12-09 21:00", "Hyjal (20m)"
+        )
+        schedule.record_panel(self.path, 1, 777, 888)
+        poster = raid_poster.RaidPosterView(
+            self.cog, 42, raid_poster.draft_from_event(
+                schedule.read_raid(self.path, 1)
+            )
+        )
+        interaction = SimpleNamespace(
+            user=SimpleNamespace(id=42),
+            message=SimpleNamespace(edit=AsyncMock()),
+            response=SimpleNamespace(send_message=AsyncMock()),
+        )
+        await self.buttons(poster)["Post / Update Raid"].callback(interaction)
+        self.cog.post_panel.assert_awaited_once()
+        self.assertFalse(interaction.response.send_message.called)
 
     async def test_publishing_refreshes_private_card_to_managing_stage(self):
         schedule.save_raid(self.path, 1, "2026-12-09 21:00", "Hyjal (20m)")
