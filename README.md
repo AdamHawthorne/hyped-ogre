@@ -15,7 +15,31 @@ Feature behaviour is covered by regression tests in `tests/`.
 
 ## Runtime and persistence
 
-The **current production entry point is `rollf.py`** for backwards compatibility during the structural migration. The Dockerfile still launches `python rollf.py`. The project is being reorganised into feature modules incrementally. Do not change the Docker entry point without verifying the whole application.
+The **production boot command remains `python rollf.py`**. The original bot coordinator is now at `hyped_ogre/bot.py`, while `rollf.py` is a small backwards-compatible executable wrapper. Existing Discord extensions are still loaded under their original `cogs.*` module names, so command registration, extension unload/reload, permissions and persistent Discord button IDs are preserved.
+
+The implementation files are now grouped by feature under `hyped_ogre/features/`:
+
+```text
+hyped_ogre/
+  bot.py                  # complete roll coordinator and startup
+  core/                   # shared emojis and legacy extension source loader
+  features/
+    rolls/                # coins, gambling, panels, reactions
+    flameboard/           # event listeners
+    forever/              # guild role and leadership panels
+    raids/                # signup, schedule, roster, Google Sheets dashboard
+    characters/           # shared character and WoWSims data
+    lfg/                  # LFG board, dungeon requests, launch plans
+    countdowns/           # reminders, schedules and Discord controls
+    streams/              # Twitch notifications
+    suggestions/          # feedback panels
+    voice/                # Ogre dialogue
+  integrations/           # Google Sheets API bridge
+cogs/                     # compatibility imports and live extension identities
+rollf.py                  # unchanged production executable command
+```
+
+The active Discord extension source is loaded into its original `cogs.*` module via a checked-in allow-list and the standard-library `SourceFileLoader`. This deliberately retains Discord's correct Cog ownership during unload/reload. Do not directly import or register the private `extension_source.py` files as additional Cogs. See [architecture](docs/architecture.md) for the compatibility design.
 
 The Fly.io application is `hyped-diceman` (configured in `fly.toml`). Its persistent SQLite data is stored on the mounted `/data` volume:
 

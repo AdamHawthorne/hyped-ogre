@@ -17,7 +17,7 @@ from cogs.roll_coins import (
 from cogs.roll_gamble import gamble_once, GambleError
 
 
-SOURCE = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text()
 
 
 def load_roll_writer(connection):
@@ -30,7 +30,7 @@ def load_roll_writer(connection):
         sqlite3=sqlite3, time=time, datetime=datetime, timedelta=timedelta,
         TZ=UK, db=lambda: connection,
     )
-    exec(compile(ast.Module(body=[node], type_ignores=[]), "rollf.py", "exec"),
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "hyped_ogre/bot.py", "exec"),
          namespace)
     return namespace["insert_roll"]
 

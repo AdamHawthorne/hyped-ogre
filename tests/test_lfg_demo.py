@@ -44,11 +44,11 @@ class LFGLaunchPreviewTests(unittest.TestCase):
         non_lfm = [not is_open_lfm(row["activity"]) for row in rows]
         self.assertEqual(non_lfm, sorted(non_lfm))
         self.assertTrue(all(not is_open_lfm(row["activity"]) for row in rows[-5:]))
-        source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/lfg/extension_source.py").read_text(encoding="utf-8")
         self.assertIn('if not is_solo_or_sorted(row["activity"]):', source)
 
     def test_preview_edits_only_one_ephemeral_message(self):
-        source = (ROOT / "cogs" / "lfg_preview.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/lfg/extension_source.py").read_text(encoding="utf-8")
         self.assertNotIn("class BoardPageButton", source)
         self.assertIn("class BoardLayout", source)
         self.assertIn("lfg_board_overflow", source)

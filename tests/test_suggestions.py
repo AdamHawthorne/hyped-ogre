@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "cogs" / "suggestions.py").read_text(encoding="utf-8")
+SOURCE = (ROOT / "hyped_ogre/features/suggestions/extension_source.py").read_text(encoding="utf-8")
 
 
 class SuggestionsSafetyTests(unittest.TestCase):
@@ -65,7 +65,7 @@ class SuggestionsSafetyTests(unittest.TestCase):
     def test_feature_does_not_touch_roll_database(self):
         self.assertNotIn("bot.db", SOURCE)
         self.assertNotIn("rolls", SOURCE.lower())
-        rollf = (ROOT / "rollf.py").read_text(encoding="utf-8")
+        rollf = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
         self.assertIn('await bot.load_extension("cogs.suggestions")', rollf)
 
 

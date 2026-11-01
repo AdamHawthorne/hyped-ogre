@@ -241,3 +241,66 @@ jobs:
               assert raid.my_absence(3, 42, path) is None
           print("Original signup and absence transaction path validated")
           '
+
+      - name: Construct canonical roll and gamble panels in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import discord
+          from datetime import date
+          from cogs import roll_coins, roll_gamble, roll_panels, roll_reactions
+          from hyped_ogre.features.rolls import coins, gamble, panels, reactions
+          assert (roll_coins, roll_gamble, roll_panels, roll_reactions) == (
+              coins, gamble, panels, reactions)
+          assert coins.daily_coin_prize(date(2026, 11, 1)) == 2
+          async def action(interaction): pass
+          view = panels.DailyRollPanel(
+              day="2026-11-01", winner_text="Test", tagline="Roll",
+              on_roll=action, on_leaderboard=action, on_stats=action,
+              on_gamble=action)
+          assert view.is_persistent()
+          ids = {x.custom_id for x in view.walk_children()
+                 if isinstance(x, discord.ui.Button)}
+          assert "hyped_ogre_coin_gamble_v1" in ids
+          assert "hyped_ogre_daily_roll_v2" in ids
+          print("Roll, coin, gamble and persistent V2 controls validated")
+          '
+
+      - name: Verify legacy Discord extensions load feature sources in Docker image
+        run: |
+          docker run --rm -e HYPED_GUILD_ID=77 --entrypoint python hyped-ogre-test -c '
+          import inspect
+          from pathlib import Path
+          from cogs import countdown, lfg_preview, raid_signup, streams, suggestions
+          for mod, cls in [
+              (countdown, countdown.CountdownCog),
+              (lfg_preview, lfg_preview.LFGPreview),
+              (raid_signup, raid_signup.RaidPrototype),
+              (streams, streams.StreamsCog),
+              (suggestions, suggestions.SuggestionsCog),
+          ]:
+              assert mod.setup.__module__ == mod.__name__
+              assert cls.__module__ == mod.__name__
+              assert "/hyped_ogre/features/" in inspect.getsourcefile(mod.setup)
+          assert lfg_preview.raid_signup is raid_signup
+          print("Legacy Discord extensions load relocated feature source successfully")
+          '
+
+      - name: Verify legacy executable reaches configuration guard without Discord token
+        run: |
+          set +e
+          docker run --rm --entrypoint python \
+            -e DISCORD_TOKEN= -e HYPED_GUILD_ID=0 \
+            -e ROLL_CHANNEL_ID=0 -e HIGH_ROLLER_ROLE_ID=0 \
+            hyped-ogre-test rollf.py > /tmp/hyped-startup-smoke.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Bot unexpectedly launched with no credentials"
+            exit 1
+          fi
+          if ! grep -q "Missing required configuration:" /tmp/hyped-startup-smoke.log; then
+            cat /tmp/hyped-startup-smoke.log
+            echo "Entrypoint did not reach the original configuration guard"
+            exit 1
+          fi
+          echo "Original rollf.py command reached the canonical bot safely"

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MigrationSafetyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = (ROOT / "rollf.py").read_text(encoding="utf-8")
+        cls.source = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
         cls.tree = ast.parse(cls.source)
         cls.main_functions = {
             node.name for node in cls.tree.body
@@ -33,13 +33,13 @@ class MigrationSafetyTests(unittest.TestCase):
             self.assertIn(sql, self.source)
 
     def test_forever_button_id_and_messages_preserved(self):
-        source = (ROOT / "cogs/forever_role.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/forever/roles.py").read_text(encoding="utf-8")
         self.assertIn("hyped_ogre_forever_role", source)
         self.assertIn("**Forever** role added.", source)
         self.assertIn("**Forever** role removed.", source)
 
     def test_flameboard_deduplicated_event_listeners(self):
-        source = (ROOT / "cogs/flameboard.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/flameboard/events.py").read_text(encoding="utf-8")
         self.assertIn("on_raw_reaction_add", source)
         self.assertIn("on_raw_reaction_remove", source)
         self.assertNotIn("async def on_raw_reaction_add", self.source)
@@ -60,7 +60,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertIn("FlameboardEvents(bot, HYPED_GUILD_ID, sync_flameboard_message)", self.source)
 
     def test_lfg_is_isolated_from_legacy_data(self):
-        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/lfg/extension_source.py").read_text(encoding="utf-8")
         self.assertIn("lfg_board.db", source)
         self.assertIn("class BoardLayout", source)
         self.assertIn("class WizardState", source)
@@ -128,7 +128,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("DELETE FROM rolls", source)
 
     def test_lfg_levelling_plan_options(self):
-        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/lfg/extension_source.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         options = next(
             ast.literal_eval(node.value)
@@ -147,7 +147,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertLessEqual(len(options), 25)
 
     def test_lfg_select_menus_stay_within_discord_limit(self):
-        source = (ROOT / "cogs/lfg_preview.py").read_text(encoding="utf-8")
+        source = (ROOT / "hyped_ogre/features/lfg/extension_source.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         values = {}
         for node in tree.body:
@@ -164,7 +164,7 @@ class MigrationSafetyTests(unittest.TestCase):
         self.assertNotIn("DELETE FROM ROLLS", self.source.upper())
 
     def test_roll_history_is_append_only_across_runtime_sources(self):
-        runtime_sources = [ROOT / "rollf.py", *(ROOT / "cogs").glob("*.py")]
+        runtime_sources = [ROOT / "hyped_ogre/bot.py", *(ROOT / "cogs").glob("*.py"), *(ROOT / "hyped_ogre/features").rglob("*.py")]
         forbidden = (
             "DELETE FROM ROLLS",
             "DROP TABLE ROLLS",
@@ -198,10 +198,10 @@ class MigrationSafetyTests(unittest.TestCase):
 
     def test_raid_and_feature_databases_never_reuse_bot_db(self):
         for relative in (
-            "cogs/raid_signup.py",
-            "cogs/lfg_preview.py",
-            "cogs/countdown.py",
-            "cogs/streams.py",
+            "hyped_ogre/features/raids/signup_extension_source.py",
+            "hyped_ogre/features/lfg/extension_source.py",
+            "hyped_ogre/features/countdowns/extension_source.py",
+            "hyped_ogre/features/streams/extension_source.py",
         ):
             source = (ROOT / relative).read_text(encoding="utf-8")
             with self.subTest(source=relative):

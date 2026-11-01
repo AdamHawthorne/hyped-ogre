@@ -14,8 +14,8 @@ except ImportError:
     discord = None
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (ROOT / "cogs" / "forever_role.py").read_text(encoding="utf-8")
-ROLLF = (ROOT / "rollf.py").read_text(encoding="utf-8")
+SOURCE = (ROOT / "hyped_ogre/features/forever/roles.py").read_text(encoding="utf-8")
+ROLLF = (ROOT / "hyped_ogre/bot.py").read_text(encoding="utf-8")
 
 
 class ForeverLeadershipPreviewTests(unittest.TestCase):

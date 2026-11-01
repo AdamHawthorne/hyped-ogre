@@ -1341,5 +1341,5 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 response.send_message.reset_mock()
 
     async def test_loaded_but_public_channel_not_posted(self):
-        source = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
+        source = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text()
         self.assertIn('await bot.load_extension("cogs.raid_signup")', source)

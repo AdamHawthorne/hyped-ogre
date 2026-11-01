@@ -2,7 +2,7 @@
 
 ## Current state
 
-The production Discord bot starts from `rollf.py`, which still coordinates configuration, roll processing and startup. Most other functionality lives in top-level `cogs/` modules. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
+The production Discord bot continues to start via the existing `python rollf.py` command. That file is now a minimal executable compatibility entrypoint using Python's `runpy` to execute the original, unchanged bot coordinator from `hyped_ogre/bot.py` as `__main__`. The coordinator still owns configuration, roll processing and startup. The remaining Discord feature implementations now live in `hyped_ogre/features/`; only their identity-preserving extension entrypoints remain under `cogs/`. The Dockerfile copies `rollf.py`, `cogs/`, `hyped_ogre/`, `assets/` and `web/` and launches `python rollf.py`.
 
 ## Migrated modules
 
@@ -28,6 +28,12 @@ The current application still imports the old `cogs/` paths. These thin compatib
 | Forever item metadata | `hyped_ogre/features/characters/items.py` | `cogs/forever_item_data.py` |
 | WoWSims equipment parser and sheet rows | `hyped_ogre/features/characters/equipment.py` | `cogs/wowsims_gear.py` |
 | Countdown clock, DST and reminder calculations | `hyped_ogre/features/countdowns/core.py` | `cogs/countdown_core.py` |
+| Lifetime coin awards and Sunday prizes | `hyped_ogre/features/rolls/coins.py` | `cogs/roll_coins.py` |
+| Atomic coin staking and gamble | `hyped_ogre/features/rolls/gamble.py` | `cogs/roll_gamble.py` |
+| Daily roll panel and coin leaderboard V2 | `hyped_ogre/features/rolls/panels.py` | `cogs/roll_panels.py` |
+| Daily roll reaction reconciliation | `hyped_ogre/features/rolls/reactions.py` | `cogs/roll_reactions.py` |
+| Flameboard reaction listeners | `hyped_ogre/features/flameboard/events.py` | `cogs/flameboard.py` |
+| Forever role and leadership application panels | `hyped_ogre/features/forever/roles.py` | `cogs/forever_role.py` |
 
 The Forever item metadata path is a full Python module alias rather than simple function re-exports, preserving the same in-memory cache, patchable download helper, offline cache behaviour and `.forever_items.json` files adjacent to the raid database. The WoWSims equipment module also uses a same-object alias, retaining its exact parsing, query and sheet-generation functions. Saved WoWSims exports remain in the existing raid database. The countdown calculations now share one module object across both import paths. Their UK time parsing, DST safeguards, timer rendering and reminder de-duplication remain unchanged; the countdown extension and stored reminder database have not moved. LFG dungeon-request storage and demo helpers retain their original imports through same-module aliases; the LFG SQLite schema, existing launch plans, character IDs, dungeon choices and persistent Discord views are unchanged. Raid announcements and acknowledgement functions also use same-module aliases, preserving the existing one-post-per-raid guard, acknowledgement de-duplication, retraction history, retry behaviour and posted Discord message IDs without changing stored raid data. The existing raid scheduling and public roster module also remains available through a same-module alias, preserving the existing `_UNCHANGED` sentinel, SQL schema, raid lifecycle, roster ordering, and persistent Discord V2 button IDs. This is a whole-module relocation only, not a behaviour rewrite. The leadership raid poster editor retains its original import path via the same-module alias, preserving edit permissions, schedule and advanced views, explicit confirmation, raid defaults, and the existing database and Discord interfaces. The opt-in Google Sheets API integration has also been moved under `hyped_ogre/integrations/sheets.py` with a same-object legacy import alias. Its service-account credential handling, existing RM-tab read/write ranges and leadership-controlled selection columns are unchanged. The per-raid `raid_sheets_v3` dashboard now lives in the raid feature package and retains its old same-module import path. Its A1:H5 summary layout, WCL and raid-note edits, selection/show controls, guest rows, class styling, WoWSims gear and history views, and mutable formatting caches are not rewritten. Remaining features are to be migrated individually with compatibility tests. Do not rename the live Discord extensions, slash commands, persistent interaction IDs or database files as part of a module move.
 
@@ -91,6 +97,56 @@ original signup note, and does not require a character to be registered.
 No changes were made to the original Discord GroupCog, command registration,
 raid state management, character deletion, attendance history, scheduled
 Sheets synchronisation or production database schema.
+
+## Roll feature helpers
+
+The four roll helper modules are now canonical under `hyped_ogre/features/rolls/` with same-module `cogs` aliases. The existing `rollf.py` coordinator, midnight reset and database connection remain unchanged. The immutable history of daily rolls, coin-award migrations, once-a-day gamble writes, returned stakes, original free-roll tie priority, V2 button IDs and reaction recovery are preserved. The main `rollf.py` coordinator has **not** yet been moved or replaced.
+
+## Bot coordinator entrypoint migration
+
+The entire original `rollf.py` implementation was moved unchanged into
+`hyped_ogre/bot.py`. A tiny wrapper at the original path runs it as
+`__main__` with `runpy.run_module`. This preserves `python rollf.py`,
+the Dockerfile, `sys.argv`, existing Discord extension import strings,
+all command and handler registrations, bot startup tasks, RollF licence
+attribution and the current `bot.run(TOKEN)` behaviour. The coordinator
+has no `__file__`-relative resources or `sys.argv` parsing.
+
+**Do not import `hyped_ogre.bot` in offline tests:** its startup runs
+at module scope. Static source/AST regression tests now target the
+canonical module, and the compatibility wrapper is checked independently.
+
+The Fly.io bot has not been deployed or restarted as part of this
+repository migration.
+
+## Live Discord extension source relocation
+
+The active `cogs.countdown`, `cogs.lfg_preview`, `cogs.raid_signup`,
+`cogs.streams` and `cogs.suggestions` implementations have been physically
+moved unchanged into their corresponding feature folders as
+`extension_source.py` (or `signup_extension_source.py` for raids).
+
+**Discord registration still uses the original module names.**
+`hyped_ogre/core/legacy_source.py` uses an explicit allow-list and
+Python's standard-library `SourceFileLoader.exec_module` to execute the
+trusted package source in its original `cogs.*` module namespace.
+This is intentional: Discord's extension unload/reload mechanism identifies
+registered Cogs, commands and listeners by the original `__module__`.
+It also preserves relative imports inside LFG/countdown and shared mutable
+module globals used by other cogs and existing tests. The feature source
+files are private runtime implementation files; do not directly import them
+as an additional Cog or instantiate a second bot.
+
+Unlike simple aliases, this loading pattern supports Discord
+`load_extension("cogs.suggestions")` and `unload_extension` without
+leaving an externally-namespaced class registered. The five original entrypoint
+files are now short, explicit compatibility wrappers. The source code,
+SQL queries, persistent Discord controls, background tasks, Google Sheets
+synchronisation, setup order and production data paths are unchanged.
+
+The final switch to loading feature extensions directly should only be
+considered after a separate integration test for Discord reloads and
+a planned rollout; it is **not** part of this repository-only migration.
 
 ## Intended package layout
 

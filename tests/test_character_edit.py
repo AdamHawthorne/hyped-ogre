@@ -8,7 +8,7 @@ import unittest
 class CharacterEditTests(unittest.TestCase):
     def setUp(self):
         root = Path(__file__).resolve().parents[1]
-        path = root / 'cogs/lfg_preview.py'
+        path = root / 'hyped_ogre/features/lfg/extension_source.py'
         if not path.exists():
             path = Path(__file__).with_name('lfg_preview.py')
         tree = ast.parse(path.read_text())

@@ -15,7 +15,7 @@ from cogs.roll_gamble import gamble_once, GambleError
 from cogs.roll_panels import DailyRollPanel
 from cogs.emojis import roll_dice_markup
 
-SOURCE = (Path(__file__).resolve().parents[1] / "rollf.py").read_text()
+SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text()
 
 
 def load(names, namespace):
@@ -25,7 +25,7 @@ def load(names, namespace):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
         and node.name in names
     ]
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), "rollf.py", "exec"),
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "hyped_ogre/bot.py", "exec"),
          namespace)
 
 
