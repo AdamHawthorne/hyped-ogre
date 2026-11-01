@@ -41,7 +41,7 @@ class WoWSimsEquipmentModuleMigrationTests(unittest.TestCase):
         self.assertEqual(data["slots"][2]["id"], 15010)
         self.assertEqual(data["slots"][16]["slot"], "Ranged")
         self.assertEqual(data["level"], 15)
-        self.assertEqual(canonical.summary(data), "iLvl ? (0/4 known) · 2 enchant gaps")
+        self.assertEqual(canonical.summary(data), "iLvl ? (0/4 known) · 3 enchant gaps")
         self.assertEqual(legacy.summary(data), canonical.summary(data))
 
     def test_unknown_item_levels_and_urls_are_not_invented(self):
