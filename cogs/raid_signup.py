@@ -1,7 +1,6 @@
 """Private raid management: local database and optional Google Sheets sync."""
 import os
 import asyncio
-import io
 import json
 import logging
 import sqlite3
@@ -12,7 +11,6 @@ from contextlib import contextmanager
 import discord
 from discord import app_commands
 from discord.ext import commands
-from PIL import Image, ImageOps, UnidentifiedImageError
 
 from cogs import raid_sheets, raid_sheets_v3, raid_announcer
 from cogs.emojis import markup as guild_emoji, option_emoji, combat_role, EMOJI_IDS
@@ -615,50 +613,6 @@ def update_character_profile(discord_id, character_id, class_name, spec, role, p
             (class_name, spec, role, race, character_id, discord_id),
         )
     return row[0]
-
-
-def save_gear_image(discord_id, character_id, filename, payload, path=RAID_DB):
-    """Validate/compress a screenshot into the isolated raid database, no URLs."""
-    if len(payload) > 8 * 1024 * 1024:
-        raise ValueError("Screenshot too big (8 MB max).")
-    if len(payload) < 100:
-        raise ValueError("Screenshot file is empty or invalid.")
-    try:
-        with Image.open(io.BytesIO(payload)) as image:
-            if image.format not in ("PNG", "JPEG", "WEBP"):
-                raise ValueError("Upload PNG, JPG or WEBP character-panel screenshots.")
-            if image.width * image.height > 24_000_000:
-                raise ValueError("Screenshot resolution is too large.")
-            image = ImageOps.exif_transpose(image)
-            image.thumbnail((1800, 1800))
-            data = io.BytesIO()
-            image.convert("RGB").save(data, format="JPEG", quality=82, optimize=True)
-            screenshot = data.getvalue()
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
-        raise ValueError("That is not a valid character-panel screenshot.") from exc
-    with database(path) as con:
-        row = con.execute(
-            "SELECT 1 FROM characters WHERE character_id=? AND discord_id=?",
-            (character_id, discord_id),
-        ).fetchone()
-        if not row:
-            raise ValueError("That character doesn't belong to you.")
-        con.execute(
-            "INSERT INTO gear_images "
-            "(character_id, submitted_at, filename, mime_type, image_data) "
-            "VALUES (?, ?, ?, 'image/jpeg', ?)",
-            (character_id, datetime.now(timezone.utc).isoformat(),
-             "character-panel.jpg", screenshot),
-        )
-
-
-def last_gear_image(character_id, path=RAID_DB):
-    with database(path) as con:
-        return con.execute(
-            "SELECT filename, image_data FROM gear_images "
-            "WHERE character_id=? ORDER BY image_id DESC LIMIT 1",
-            (character_id,),
-        ).fetchone()
 
 
 def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
@@ -2549,107 +2503,6 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
             return
         await self.post_panel(interaction, event)
-
-    @app_commands.command(
-        name="gear-review",
-        description="Owner: view a saved character-panel screenshot privately",
-    )
-    @app_commands.describe(
-        character_id="Character ID from RM - Characters or RM - Gear Checks",
-    )
-    async def gear_review(self, interaction: discord.Interaction, character_id: int):
-        if not self.allowed(interaction):
-            await interaction.response.send_message(
-                "Only Ogre's owner can inspect screenshots in private #ogre.",
-                ephemeral=True,
-            )
-            return
-        try:
-            image = last_gear_image(character_id)
-        except sqlite3.Error:
-            await interaction.response.send_message(
-                "Ogre couldn't load that screenshot.", ephemeral=True
-            )
-            return
-        if not image:
-            await interaction.response.send_message(
-                "Ogre got no screenshot for that character yet.", ephemeral=True
-            )
-            return
-        filename, payload = image
-        await interaction.response.send_message(
-            file=discord.File(io.BytesIO(payload), filename=filename),
-            ephemeral=True,
-        )
-
-    @app_commands.command(
-        name="screenshot", description="Upload an optional character-panel screenshot"
-    )
-    @app_commands.describe(
-        character="Your saved character name",
-        file="Character-panel PNG/JPG/WEBP (optional)",
-    )
-    async def gear_file(self, interaction: discord.Interaction,
-                        character: str, file: discord.Attachment):
-        if not is_test_member(interaction):
-            await interaction.response.send_message(
-                "Gear uploads are available to members of this server.",
-                ephemeral=True,
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        matches = [
-            r for r in member_characters(interaction.user.id)
-            if r[1].casefold() == character.strip().casefold()
-        ]
-        if not matches:
-            await interaction.followup.send(
-                "Ogre not know that character. Press Sign to register first.",
-                ephemeral=True,
-            )
-            return
-        filename = file.filename.lower()
-        image_file = filename.endswith((".png", ".jpg", ".jpeg", ".webp"))
-        if not image_file:
-            await interaction.followup.send(
-                "Ogre only take PNG/JPG/WEBP screenshots here. "
-                "Paste /wse export using WoWSims on raid panel.",
-                ephemeral=True,
-            )
-            return
-        limit = 8 * 1024 * 1024
-        if file.size > limit:
-            await interaction.followup.send(
-                "Ogre say that file too big.", ephemeral=True
-            )
-            return
-        try:
-            data = await file.read()
-            if len(data) > limit:
-                raise ValueError("Uploaded file exceeds the size limit.")
-            save_gear_image(interaction.user.id, matches[0][0],
-                            file.filename, data)
-        except (ValueError, UnicodeDecodeError, sqlite3.Error,
-                discord.HTTPException) as exc:
-            await interaction.followup.send(
-                f"Ogre couldn't update gear: {exc}", ephemeral=True
-            )
-            return
-        await interaction.followup.send(
-            f"Ogre saved screenshot for "
-            f"**{discord.utils.escape_markdown(matches[0][1])}**.",
-            ephemeral=True,
-        )
-
-    @gear_file.autocomplete("character")
-    async def autocomplete_character(self, interaction: discord.Interaction, current: str):
-        if not is_test_member(interaction):
-            return []
-        return [
-            app_commands.Choice(name=row[1], value=row[1])
-            for row in member_characters(interaction.user.id)
-            if current.casefold() in row[1].casefold()
-        ][:25]
 
     @app_commands.command(name="register", description="Register or update a character")
     async def register(self, interaction: discord.Interaction):
