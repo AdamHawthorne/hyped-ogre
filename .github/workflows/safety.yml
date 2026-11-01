@@ -1,12 +1,24 @@
 name: Hyped Ogre safety checks
 on:
   push:
-    branches: [main, 'refactor/**', 'feature/**', 'fix/**']
+    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep one current run per PR or branch; production deploys have their own
+# separate concurrency group and are never cancelled by this workflow.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -304,3 +316,21 @@ jobs:
             exit 1
           fi
           echo "Original rollogre.py command reached the canonical bot safely"
+
+  verify-windows:
+    name: Windows development checks
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Compile all Python modules
+        run: python -m compileall -q rollogre.py cogs hyped_ogre tests
+      - name: Install runtime dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify installed dependencies
+        run: python -m pip check
+      - name: Run offline tests on Windows
+        run: python -m unittest discover -s tests -v

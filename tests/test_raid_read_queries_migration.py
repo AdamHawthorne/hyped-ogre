@@ -7,6 +7,7 @@ to own connection lifecycles, permissions, commands and all write operations.
 import inspect
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -133,7 +134,7 @@ class RaidReadQueriesMigrationTests(unittest.TestCase):
             database.assert_called_once_with(self.path)
         unknown = str(Path(self.temp.name) / "missing.db")
         self.assertEqual(raid.main_character_ids(42, unknown), set())
-        with sqlite3.connect(unknown) as db:
+        with closing(sqlite3.connect(unknown)) as db, db:
             self.assertEqual(
                 db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'")
                 .fetchone()[0], 0,

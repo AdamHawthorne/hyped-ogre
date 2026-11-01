@@ -53,7 +53,7 @@ class BoardScrollIntegrationTests(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         lfg.init_db()
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute(
                 "INSERT INTO lfg_boards "
                 "(channel_id,guild_id,message_id,board_day,page_index) "
@@ -74,7 +74,7 @@ class BoardScrollIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_all_twenty_listings_show_without_navigation(self):
         await self.cog.refresh(111)
-        with lfg.connect() as db:
+        with lfg.database() as db:
             overflow = db.execute(
                 "SELECT position,message_id FROM lfg_board_overflow "
                 "ORDER BY position").fetchall()
@@ -98,11 +98,11 @@ class BoardScrollIntegrationTests(unittest.IsolatedAsyncioTestCase):
         saved = [m.id for m in self.channel.sent]
         await self.cog.refresh(111)
         self.assertEqual([m.id for m in self.channel.sent], saved)
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute("DELETE FROM lfg_listings WHERE user_id > 2")
         await self.cog.refresh(111)
         self.assertTrue(all(m.deleted for m in self.channel.sent))
-        with lfg.connect() as db:
+        with lfg.database() as db:
             self.assertEqual(db.execute(
                 "SELECT COUNT(*) FROM lfg_board_overflow").fetchone()[0], 0)
             self.assertEqual(db.execute(
@@ -119,7 +119,7 @@ class BoardScrollIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await button.callback(interaction)
         self.assertIn("don't have a dungeon request",
                       interaction.response.send_message.await_args.args[0])
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute(
                 "INSERT INTO lfg_dungeon_requests "
                 "(channel_id,user_id,character_id,dungeons,availability) "

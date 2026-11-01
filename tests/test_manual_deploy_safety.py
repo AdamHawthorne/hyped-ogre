@@ -131,7 +131,8 @@ else:
 '''
 
 
-@unittest.skipUnless(BASH, "Bash is required to execute GitHub runner guards")
+@unittest.skipUnless(os.name == "posix" and BASH,
+                     "Fly runner shell checks require POSIX Bash; run them in Linux CI")
 class ManualFlyPreflightExecutionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

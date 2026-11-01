@@ -1,6 +1,7 @@
 """LFG module migration: preserve previews, dungeon data and SQLite writes."""
 
 import importlib
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -55,7 +56,7 @@ class LFGUtilitiesMigrationTests(unittest.TestCase):
     def test_existing_dungeon_requests_upgrade_without_losing_launch_plans(self):
         with tempfile.TemporaryDirectory() as folder:
             db_path = Path(folder) / "lfg_board.db"
-            with sqlite3.connect(db_path) as db:
+            with closing(sqlite3.connect(db_path)) as db, db:
                 db.row_factory = sqlite3.Row
                 db.executescript("""
                     CREATE TABLE lfg_dungeon_requests (

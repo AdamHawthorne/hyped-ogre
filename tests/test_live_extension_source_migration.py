@@ -46,7 +46,7 @@ class DiscordExtensionModuleMigrationTests(unittest.TestCase):
                     module = importlib.import_module(module_name)
                     cog = getattr(module, class_name)
                     self.assertEqual(module.__name__, module_name)
-                    self.assertTrue(module.__file__.endswith(
+                    self.assertTrue(Path(module.__file__).as_posix().endswith(
                         module_name.replace(".", "/") + ".py"
                     ))
                     self.assertEqual(module.setup.__module__, module_name)
@@ -55,7 +55,7 @@ class DiscordExtensionModuleMigrationTests(unittest.TestCase):
                     self.assertEqual(module.__package__, "cogs")
                     source_file = inspect.getsourcefile(module.setup)
                     self.assertTrue(
-                        source_file.endswith(_SOURCE_FILES[module_name]),
+                        Path(source_file).as_posix().endswith(_SOURCE_FILES[module_name]),
                         source_file,
                     )
         from cogs import raid_signup, lfg_preview

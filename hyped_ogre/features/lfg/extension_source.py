@@ -9,6 +9,7 @@ import asyncio
 import os
 from pathlib import Path
 import sqlite3
+from contextlib import closing, contextmanager
 
 import discord
 from discord import app_commands
@@ -96,8 +97,16 @@ def connect():
     return db
 
 
+@contextmanager
+def database():
+    """Keep SQLite transaction behaviour and release the connection on exit."""
+    with closing(connect()) as db:
+        with db:
+            yield db
+
+
 def init_db():
-    with connect() as db:
+    with database() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS lfg_boards (
             channel_id INTEGER PRIMARY KEY,
             guild_id INTEGER NOT NULL,
@@ -167,7 +176,7 @@ def init_db():
 
 
 def get_board(channel_id):
-    with connect() as db:
+    with database() as db:
         return db.execute(
             "SELECT * FROM lfg_boards WHERE channel_id=?",
             (channel_id,),
@@ -175,7 +184,7 @@ def get_board(channel_id):
 
 
 def current_listing(channel_id, user_id):
-    with connect() as db:
+    with database() as db:
         return db.execute(
             "SELECT * FROM lfg_listings WHERE channel_id=? AND user_id=?",
             (channel_id, user_id),
@@ -183,7 +192,7 @@ def current_listing(channel_id, user_id):
 
 
 def entries(channel_id):
-    with connect() as db:
+    with database() as db:
         roster = db.execute(
             "SELECT * FROM lfg_listings WHERE channel_id=?",
             (channel_id,),
@@ -198,7 +207,7 @@ def board_entries(channel_id):
     Older PvP selections remain safely stored but are not advertised while
     dungeon-farming is the only supported activity.
     """
-    with connect() as db:
+    with database() as db:
         requests = lfg_dungeons.list_requests(db, channel_id)
     visible_requests = []
     for row in requests:
@@ -817,7 +826,7 @@ class ReviewView(discord.ui.View):
                 f"Ogre couldn't save race: {exc}", ephemeral=True)
             return
         await interaction.response.defer()
-        with connect() as db:
+        with database() as db:
             db.execute(
                 """INSERT INTO lfg_listings
                 (channel_id,user_id,character,level,level_label,level_sort,class_name,role,
@@ -977,7 +986,7 @@ def save_character_edit(channel_id, user_id, original, race, class_name, role):
     roles = [part.strip() for part in role.split(",") if part.strip()]
     if not roles or any(part not in CLASS_ROLES[class_name] for part in roles):
         raise ValueError("Choose valid roles for this class")
-    with connect() as db:
+    with database() as db:
         result = db.execute(
             """UPDATE lfg_listings SET race=?, starting_zone=?, class_name=?, role=?
             WHERE channel_id=? AND user_id=? AND race=? AND starting_zone=?
@@ -1149,7 +1158,7 @@ class CharactersButton(discord.ui.Button):
 class DungeonState:
     def __init__(self, cog, channel_id, owner_id):
         self.cog, self.channel_id, self.owner_id = cog, channel_id, owner_id
-        with connect() as db:
+        with database() as db:
             current = lfg_dungeons.get_request(db, channel_id, owner_id)
         self.current = current
         self.character_id = current["character_id"] if current else None
@@ -1354,7 +1363,7 @@ class DungeonDetailsModal(discord.ui.Modal, title="LFG · Activity details"):
                 raise ValueError("Your selected character no longer exists.")
             wanted_items = lfg_dungeons.normalise_wanted_items(self.items.value)
             chosen = lfg_dungeons.validate_dungeons(state.dungeons)
-            with connect() as db:
+            with database() as db:
                 lfg_dungeons.save_request(
                     db, state.channel_id, state.owner_id, character[0],
                     chosen, wanted_items, self.availability.value, self.notes.value,
@@ -1384,7 +1393,7 @@ class DungeonRemoveView(discord.ui.View):
     async def remove(self, interaction, button):
         if not await self.state.check(interaction):
             return
-        with connect() as db:
+        with database() as db:
             count = lfg_dungeons.delete_request(
                 db, self.state.channel_id, self.state.owner_id)
         await interaction.response.edit_message(
@@ -1457,7 +1466,7 @@ class RemoveButton(discord.ui.Button):
 
     async def callback(self, interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        with connect() as db:
+        with database() as db:
             result = db.execute(
                 "DELETE FROM lfg_listings WHERE channel_id=? AND user_id=?",
                 (self.channel_id, interaction.user.id),
@@ -1622,7 +1631,7 @@ class LFGPreview(commands.Cog):
         # additive race migration exist before rebuilding persistent LFG cards.
         raid_signup.create_schema(raid_signup.RAID_DB)
         init_db()
-        with connect() as db:
+        with database() as db:
             boards = db.execute(
                 "SELECT channel_id, guild_id, message_id, page_index FROM lfg_boards"
             ).fetchall()
@@ -1639,7 +1648,7 @@ class LFGPreview(commands.Cog):
 
     async def refresh_member_boards(self, member_id):
         """Refresh every board referencing this member's shared profile."""
-        with connect() as db:
+        with database() as db:
             ids = {
                 row[0] for row in db.execute(
                     "SELECT channel_id FROM lfg_listings WHERE user_id=? "
@@ -1683,7 +1692,7 @@ class LFGPreview(commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none(),
             )
 
-            with connect() as db:
+            with database() as db:
                 db.execute(
                     "UPDATE lfg_boards SET page_index=0 WHERE channel_id=?",
                     (channel_id,),
@@ -1723,7 +1732,7 @@ class LFGPreview(commands.Cog):
                     # potentially creating duplicate public cards.
                 message = await channel.send(
                     view=view, allowed_mentions=discord.AllowedMentions.none())
-                with connect() as db:
+                with database() as db:
                     db.execute(
                         "INSERT INTO lfg_board_overflow "
                         "(channel_id,position,message_id) VALUES(?,?,?) "
@@ -1744,7 +1753,7 @@ class LFGPreview(commands.Cog):
                 except (discord.Forbidden, discord.HTTPException) as exc:
                     print(f"LFG OVERFLOW DELETE FAILED {message_id}: {exc!r}")
                     continue
-                with connect() as db:
+                with database() as db:
                     db.execute(
                         "DELETE FROM lfg_board_overflow "
                         "WHERE channel_id=? AND position=? AND message_id=?",
@@ -1762,7 +1771,7 @@ class LFGPreview(commands.Cog):
                         f"message={part['message_id']} error={exc!r}"
                     )
                     continue
-                with connect() as db:
+                with database() as db:
                     db.execute(
                         "DELETE FROM lfg_board_parts WHERE channel_id=? AND message_id=?",
                         (channel_id, part["message_id"]),
@@ -1785,7 +1794,7 @@ class LFGPreview(commands.Cog):
                                  page_index=page),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-            with connect() as db:
+            with database() as db:
                 db.execute(
                     "INSERT INTO lfg_boards(channel_id,guild_id,message_id,board_day,page_index) "
                     "VALUES(?,?,?,'launch',?) "

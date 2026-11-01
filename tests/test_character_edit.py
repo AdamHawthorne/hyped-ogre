@@ -11,7 +11,7 @@ class CharacterEditTests(unittest.TestCase):
         path = root / 'hyped_ogre/features/lfg/extension_source.py'
         if not path.exists():
             path = Path(__file__).with_name('lfg_preview.py')
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         wanted = {'RACES', 'RACE_CLASSES', 'CLASS_ROLES', 'STARTING_ZONES'}
         nodes = [n for n in tree.body if
                  (isinstance(n, ast.FunctionDef) and n.name == 'save_character_edit') or
@@ -23,7 +23,7 @@ class CharacterEditTests(unittest.TestCase):
         self.db.execute("INSERT INTO lfg_listings VALUES (1, 2, 'Orc', 'Durotar', 'Warrior', 'Tank', 'original', 'questing')")
         self.original = dict(self.row())
         from cogs.forever_races import RACE_CLASSES, STARTING_ZONES
-        scope = {'connect': lambda: self.db, 'RACE_CLASSES': RACE_CLASSES,
+        scope = {'database': lambda: self.db, 'RACE_CLASSES': RACE_CLASSES,
                  'STARTING_ZONES': STARTING_ZONES}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), scope)
         self.save = scope['save_character_edit']

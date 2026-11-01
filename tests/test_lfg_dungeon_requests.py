@@ -42,10 +42,30 @@ class DungeonRequestTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_database_commits_rolls_back_and_closes_connections(self):
+        with lfg.database() as committed:
+            committed.execute("CREATE TABLE lifecycle_test (value INTEGER)")
+            committed.execute("INSERT INTO lifecycle_test VALUES (1)")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            committed.execute("SELECT 1")
+
+        with self.assertRaisesRegex(RuntimeError, "rollback"):
+            with lfg.database() as rolled_back:
+                rolled_back.execute("INSERT INTO lifecycle_test VALUES (2)")
+                raise RuntimeError("rollback")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            rolled_back.execute("SELECT 1")
+
+        with lfg.database() as db:
+            self.assertEqual(
+                [row[0] for row in db.execute("SELECT value FROM lifecycle_test")],
+                [1],
+            )
+
     def save(self, user_id=123, dungeons=("Alcaz Prison", "Blackrock Depths"),
              wanted_items="Hand of Justice, a better shield",
              availability="Evenings 19:00 onwards"):
-        with lfg.connect() as db:
+        with lfg.database() as db:
             dungeon.save_request(
                 db, 111, user_id, self.character_id, dungeons, wanted_items,
                 availability, "Farm until drop", "https://i.vgy.me/XIszIH.png")
@@ -151,7 +171,7 @@ class DungeonRequestTests(unittest.TestCase):
             dungeon.normalise_wanted_items("x" * 251)
 
     def test_existing_item_ids_are_preserved_as_plain_text(self):
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute(
                 "INSERT INTO lfg_dungeon_requests "
                 "(channel_id,user_id,character_id,dungeons,item_ids,availability) "
@@ -160,14 +180,14 @@ class DungeonRequestTests(unittest.TestCase):
             )
             db.execute("UPDATE lfg_dungeon_requests SET wanted_items='11815, 12590'")
         lfg.init_db()
-        with lfg.connect() as db:
+        with lfg.database() as db:
             self.assertEqual(
                 dungeon.get_request(db, 111, 123)["wanted_items"],
                 "11815, 12590",
             )
         self.save(wanted_items="Justice, shield")
         lfg.init_db()
-        with lfg.connect() as db:
+        with lfg.database() as db:
             self.assertEqual(
                 dungeon.get_request(db, 111, 123)["wanted_items"],
                 "Justice, shield",
@@ -175,7 +195,7 @@ class DungeonRequestTests(unittest.TestCase):
             self.assertEqual(dungeon.get_request(db, 111, 123)["item_ids"], "")
 
     def test_dungeon_request_updates_remove_without_touching_launch_plan(self):
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute(
                 "INSERT INTO lfg_listings "
                 "(channel_id,user_id,character,class_name,role,availability,activity) "
@@ -183,7 +203,7 @@ class DungeonRequestTests(unittest.TestCase):
         self.save()
         self.save(dungeons=("Shaper's Terrace",), wanted_items="New staff",
                   availability="Sunday afternoon")
-        with lfg.connect() as db:
+        with lfg.database() as db:
             requests = dungeon.list_requests(db, 111)
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0]["character_id"], self.character_id)
@@ -195,7 +215,7 @@ class DungeonRequestTests(unittest.TestCase):
                 "SELECT 1 FROM lfg_listings WHERE user_id=123").fetchone())
 
     def test_legacy_pvp_requests_stay_saved_but_are_hidden_from_dungeon_board(self):
-        with lfg.connect() as db:
+        with lfg.database() as db:
             for user_id, activities in (
                 (123, "Blackrock Depths, Warsong Gulch"),
                 (456, "Warsong Gulch"),
@@ -217,7 +237,7 @@ class DungeonRequestTests(unittest.TestCase):
         self.assertNotIn("Warsong Gulch", json.dumps(
             lfg.BoardLayout(SimpleNamespace(), 111).to_components()
         ))
-        with lfg.connect() as db:
+        with lfg.database() as db:
             records = dungeon.list_requests(db, 111)
             self.assertEqual(len(records), 2)
             self.assertEqual(
@@ -248,14 +268,14 @@ class DungeonRequestTests(unittest.TestCase):
         self.assertIn("DPS", updated)
 
     def test_legacy_launch_rows_survive_additive_migration(self):
-        with lfg.connect() as db:
+        with lfg.database() as db:
             db.execute(
                 "INSERT INTO lfg_listings "
                 "(channel_id,user_id,character,class_name,role,availability,activity,race) "
                 "VALUES (111,456,'Old Char','Mage','DPS','Later','Open / Flexible','Troll')")
         lfg.init_db()
         lfg.init_db()
-        with lfg.connect() as db:
+        with lfg.database() as db:
             old = db.execute(
                 "SELECT character,race,activity,character_id FROM lfg_listings "
                 "WHERE channel_id=111 AND user_id=456").fetchone()

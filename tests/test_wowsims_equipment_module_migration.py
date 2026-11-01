@@ -3,6 +3,7 @@
 import importlib
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,13 +71,13 @@ class WoWSimsEquipmentModuleMigrationTests(unittest.TestCase):
             char_id = raid.member_characters(42, path)[0][0]
             raid.save_wowsims_export(42, char_id, sample_export(15), path)
             raid.save_wowsims_export(42, char_id, sample_export(60), path)
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 before = db.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0]
             profiles = canonical.latest_profiles(path)
             self.assertEqual(len(profiles), 1)
             self.assertEqual(canonical.parse_export(profiles[0]["raw_text"])["level"], 60)
             self.assertEqual(profiles, legacy.latest_profiles(path))
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 self.assertEqual(
                     db.execute("SELECT COUNT(*) FROM gear_exports").fetchone()[0],
                     before,
