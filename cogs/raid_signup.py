@@ -1657,6 +1657,18 @@ class RaidLateModal(discord.ui.Modal, title="Mark player late"):
             await interaction.followup.send(f"Attendance update failed: {exc}", ephemeral=True)
 
 
+async def refresh_management_poster(cog, owner_id, message, draft):
+    """Reflect completed/unpublished state on the original private poster."""
+    if owner_id is None or message is None or draft is None:
+        return
+    try:
+        await message.edit(view=RaidPosterView(
+            cog, owner_id, draft, page="schedule"
+        ))
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+        LOGGER.warning("Could not refresh private raid poster: %s", exc)
+
+
 class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
     wcl = discord.ui.TextInput(label="Warcraft Logs URL (optional)", required=False,
                                max_length=500)
@@ -1664,9 +1676,12 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
                                 max_length=800, style=discord.TextStyle.paragraph)
     notes = discord.ui.TextInput(label="Raid notes (optional)", required=False,
                                  max_length=600, style=discord.TextStyle.paragraph)
-    def __init__(self, cog, raid_id):
+    def __init__(self, cog, raid_id, *,
+                 poster_owner_id=None, poster_message=None, poster_draft=None):
         super().__init__()
         self.cog, self.raid_id = cog, raid_id
+        self.poster_owner_id, self.poster_message = poster_owner_id, poster_message
+        self.poster_draft = poster_draft
 
     async def on_submit(self, interaction):
         if not self.cog.allowed(interaction):
@@ -1697,14 +1712,22 @@ class RaidCompleteModal(discord.ui.Modal, title="Complete raid"):
             "and excused results will be preserved. The raid will be archived.\n"
             f"WCL: {url or 'Not provided'}\n"
             f"Loot: {'Provided' if loot else 'Not provided'}",
-            view=RaidCompletionConfirm(self.cog, self.raid_id, url, combined),
+            view=RaidCompletionConfirm(
+                self.cog, self.raid_id, url, combined,
+                poster_owner_id=self.poster_owner_id,
+                poster_message=self.poster_message,
+                poster_draft=self.poster_draft,
+            ),
             ephemeral=True)
 
 
 class RaidCompletionConfirm(discord.ui.View):
-    def __init__(self, cog, raid_id, url, notes):
+    def __init__(self, cog, raid_id, url, notes, *,
+                 poster_owner_id=None, poster_message=None, poster_draft=None):
         super().__init__(timeout=180)
         self.cog, self.raid_id, self.url, self.notes = cog, raid_id, url, notes
+        self.poster_owner_id, self.poster_message = poster_owner_id, poster_message
+        self.poster_draft = poster_draft
 
     @discord.ui.button(label="Confirm completion", style=discord.ButtonStyle.success)
     async def confirm(self, interaction, button):
@@ -1726,6 +1749,10 @@ class RaidCompletionConfirm(discord.ui.View):
         except Exception as exc:
             await interaction.followup.send(f"Completion failed: {exc}", ephemeral=True)
             return
+        await refresh_management_poster(
+            self.cog, self.poster_owner_id, self.poster_message,
+            self.poster_draft,
+        )
         for item in self.children:
             item.disabled = True
         await interaction.edit_original_response(view=self)
@@ -1742,9 +1769,12 @@ class RaidCompletionConfirm(discord.ui.View):
 class RaidUnpublishConfirmation(discord.ui.View):
     """Two-step, owner-only unpublish: no attendance or sign-ups lost."""
 
-    def __init__(self, cog, raid_id):
+    def __init__(self, cog, raid_id, *,
+                 poster_owner_id=None, poster_message=None, poster_draft=None):
         super().__init__(timeout=180)
         self.cog, self.raid_id = cog, raid_id
+        self.poster_owner_id, self.poster_message = poster_owner_id, poster_message
+        self.poster_draft = poster_draft
 
     @discord.ui.button(label="Confirm unpublish", style=discord.ButtonStyle.danger)
     async def confirm_unpublish(self, interaction, button):
@@ -1760,6 +1790,10 @@ class RaidUnpublishConfirmation(discord.ui.View):
                 ephemeral=True,
             )
             return
+        await refresh_management_poster(
+            self.cog, self.poster_owner_id, self.poster_message,
+            self.poster_draft,
+        )
         for item in self.children:
             item.disabled = True
         await interaction.edit_original_response(view=self)
@@ -1782,9 +1816,12 @@ class RaidUnpublishConfirmation(discord.ui.View):
 
 
 class RaidManageView(discord.ui.View):
-    def __init__(self, cog, raid_id):
+    def __init__(self, cog, raid_id, *,
+                 poster_owner_id=None, poster_message=None, poster_draft=None):
         super().__init__(timeout=300)
         self.cog, self.raid_id = cog, raid_id
+        self.poster_owner_id, self.poster_message = poster_owner_id, poster_message
+        self.poster_draft = poster_draft
 
     async def _choose(self, interaction, outcome):
         if not self.cog.allowed(interaction):
@@ -1833,7 +1870,12 @@ class RaidManageView(discord.ui.View):
             "Sign-ups and Sheet selections stay saved. "
             "Any earlier roster ping will be marked withdrawn, "
             "and Ogre will not ping everyone again automatically.",
-            view=RaidUnpublishConfirmation(self.cog, self.raid_id),
+            view=RaidUnpublishConfirmation(
+                self.cog, self.raid_id,
+                poster_owner_id=self.poster_owner_id,
+                poster_message=self.poster_message,
+                poster_draft=self.poster_draft,
+            ),
             ephemeral=True,
         )
 
@@ -1842,7 +1884,12 @@ class RaidManageView(discord.ui.View):
         if not self.cog.allowed(interaction):
             await interaction.response.send_message("Officer-only.", ephemeral=True)
             return
-        await interaction.response.send_modal(RaidCompleteModal(self.cog, self.raid_id))
+        await interaction.response.send_modal(RaidCompleteModal(
+            self.cog, self.raid_id,
+            poster_owner_id=self.poster_owner_id,
+            poster_message=self.poster_message,
+            poster_draft=self.poster_draft,
+        ))
 
 
 @app_commands.guilds(discord.Object(id=GUILD_ID))
