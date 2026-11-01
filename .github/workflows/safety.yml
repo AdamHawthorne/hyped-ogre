@@ -90,3 +90,27 @@ jobs:
                          ("signup", "reminder", "update", "gear", "absent")}
           print("Persistent raid panel and button IDs built successfully")
           '
+
+      - name: Construct private raid poster schedule and advanced V2 views in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import tempfile
+          from pathlib import Path
+          from types import SimpleNamespace
+          from cogs import raid_signup, raid_schedule
+          from cogs.raid_poster import RaidPosterView
+          with tempfile.TemporaryDirectory() as tmp:
+              path = str(Path(tmp) / "raid_signup.db")
+              raid_signup.create_schema(path)
+              raid_schedule.ensure_raid_fields(path)
+              cog = SimpleNamespace(raid_db_path=lambda: path,
+                                    allowed=lambda interaction: True)
+              schedule = RaidPosterView(cog, 42)
+              advanced = RaidPosterView(cog, 42, schedule.draft, page="advanced")
+              assert schedule.timeout == 900
+              assert 0 < schedule.total_children_count <= 40
+              assert 0 < advanced.total_children_count <= 40
+              assert "Advanced settings" in str(schedule.to_components())
+              assert "Back to schedule" in str(advanced.to_components())
+          print("Private raid poster schedule and advanced views built successfully")
+          '
