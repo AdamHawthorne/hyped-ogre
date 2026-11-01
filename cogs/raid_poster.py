@@ -13,6 +13,8 @@ from cogs.raid_schedule import (
 )
 
 UK = ZoneInfo("Europe/London")
+# Prefer the guild raid channel; never accidentally publish a new raid to #ogre.
+DEFAULT_RAID_CHANNEL_ID = 1563663151323553802
 INSTANCES = ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)")
 TIMES = ("18:00", "18:30", "19:00", "19:30", "20:00", "20:30",
          "21:00", "21:30", "22:00")
@@ -32,13 +34,40 @@ ANNOUNCEMENTS = {
 }
 
 
-def draft_from_event(event):
-    """Existing raid loads without losing optional instance or SoftRes values."""
+def next_sunday_date(raids=(), now=None):
+    """The next Sunday slot, after any already scheduled raids."""
+    now = now or datetime.now(UK)
+    today = now.date()
+    scheduled = [
+        datetime.fromisoformat(raid["raid_at"]).astimezone(UK).date()
+        for raid in raids if raid.get("raid_at")
+    ]
+    latest = max(scheduled) if scheduled else None
+    anchor = max(today, latest) if latest else today
+    days = (6 - anchor.weekday()) % 7
+    if days == 0 and (
+        (latest is not None and latest >= today) or
+        (anchor == today and now.hour >= 20)
+    ):
+        days = 7
+    return (anchor + timedelta(days=days)).isoformat()
+
+
+def draft_from_event(event, raids=()):
+    """New Sunday raid with safe defaults; existing raid preserves its values."""
     if not event:
+        saved_channel = next(
+            (raid.get("panel_channel_id") for raid in raids
+             if raid.get("panel_channel_id")), None
+        )
         return {
-            "number": None, "day": None, "time": "20:00", "channel_id": None, "ping_role_ids": [], "default_show_discord": True, "wowsims_policy": "missing",
-            "end_time": None, "check_message_url": None,
-            "instance_1": None, "instance_2": None, "instance_3": None,
+            "number": None, "day": next_sunday_date(raids), "time": "20:00",
+            "channel_id": saved_channel or DEFAULT_RAID_CHANNEL_ID,
+            "ping_role_ids": [], "default_show_discord": True,
+            "wowsims_policy": "missing", "end_time": None,
+            "check_message_url": None,
+            "instance_1": "Hyjal (20m)", "instance_2": "Barrows (10m)",
+            "instance_3": None,
             "announce": "1", "custom_announce": None, "softres_url": None,
             "custom_title": "", "banner_url": None,
         }
