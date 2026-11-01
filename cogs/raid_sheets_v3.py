@@ -937,6 +937,26 @@ def _sync_gear_tab(session, db_path, titles):
                                   "startIndex": 8, "endIndex": 9},
                         "properties": {"pixelSize": 170},
                         "fields": "pixelSize"}},
+                    {"addConditionalFormatRule": {
+                        "index": 0, "rule": {
+                            "ranges": [{"sheetId": sid,
+                                        "startRowIndex": 3,
+                                        "endRowIndex": 1500,
+                                        "startColumnIndex": 5,
+                                        "endColumnIndex": 6}],
+                            "booleanRule": {
+                                "condition": {
+                                    "type": "CUSTOM_FORMULA",
+                                    "values": [{"userEnteredValue":
+                                        '=AND($F4="Not reported",'
+                                        'REGEXMATCH($D4,'
+                                        '"^(Head|Shoulders|Back|Chest|Wrists|'
+                                        'Hands|Legs|Feet|Main Hand)$"))'}]},
+                                "format": {"backgroundColor": {
+                                    "red": 1.0, "green": .86, "blue": .65}},
+                            },
+                        },
+                    }},
                 ]},
             )
             titles[title].setdefault("gridProperties", {})["columnCount"] = 9
