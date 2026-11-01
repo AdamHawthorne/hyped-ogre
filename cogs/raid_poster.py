@@ -905,7 +905,12 @@ class RaidPosterView(discord.ui.LayoutView):
             from cogs.raid_signup import RaidManageView
             await interaction.response.send_message(
                 f"Raid #{event['raid_id']} management", ephemeral=True,
-                view=RaidManageView(self.cog, event["raid_id"]))
+                view=RaidManageView(
+                    self.cog, event["raid_id"],
+                    poster_owner_id=self.owner_id,
+                    poster_message=getattr(interaction, "message", None),
+                    poster_draft=self.draft,
+                ))
 
         async def open_advanced(interaction):
             if not self.authorised(interaction):
