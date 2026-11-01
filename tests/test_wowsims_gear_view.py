@@ -122,7 +122,7 @@ class GearSheetSyncTests(unittest.TestCase):
             self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
             self.assertEqual(writes[1][2]["params"]["valueInputOption"], "USER_ENTERED")
             self.assertIn('=HYPERLINK("https://www.wowhead.com/classic/item=10638","View item")',
-                          json.dumps(writes[1]))
+                          [cell[0] for cell in writes[1][2]["json"]["values"]])
             self.assertTrue(any(
                 "https://www.wowhead.com/classic/item=10638" in json.dumps(call)
                 for call in writes
