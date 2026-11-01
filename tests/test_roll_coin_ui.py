@@ -59,7 +59,9 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<@6>", text)
         self.assertIn("Feeling lucky today?", text)
         self.assertIn("<:ogrecoin:123456789>", text)
-        self.assertNotIn("Yesterday\'s gold coin", text)\n        self.assertNotIn("**1.**", text)\n        self.assertNotIn("highest <:ogrecoin:123456789>", text)
+        self.assertNotIn("Yesterday\'s gold coin", text)
+        self.assertNotIn("**1.**", text)
+        self.assertNotIn("highest <:ogrecoin:123456789>", text)
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
