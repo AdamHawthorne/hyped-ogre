@@ -215,10 +215,11 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
                 sign_note += (" | " if sign_note else "") + "Signed off: " + absence["signed_off_at"]
         name = (names or {}).get(int(member_id)) or previous[0] or member_id
         uploaded = gear_by_char.get(char_id, {})
-        gear_status = ("SimC + screenshot" if uploaded.get("simc_latest")
+        gear_status = ("WoWSims + screenshot" if uploaded.get("wowsims_latest")
                        and uploaded.get("image_latest") else
-                       "SimC received" if uploaded.get("simc_latest") else
-                       "Screenshot received" if uploaded.get("image_latest")
+                       "WoWSims received" if uploaded.get("wowsims_latest") else
+                       "Legacy SimC" if uploaded.get("simc_latest") else
+                       "Screenshot only" if uploaded.get("image_latest")
                        else "Not submitted")
         row = [
             name, signup["character"], signup["class_name"], signup["spec"],
