@@ -673,6 +673,30 @@ def _apply_wcl_from_sheet(db_path, event, existing):
     return None
 
 
+def _apply_notes_from_sheet(db_path, event, existing):
+    """D4 is editable; keep user-written notes instead of reprinting old DB data."""
+    if len(existing) < 4:
+        return None
+    raw = str(existing[3][3]) if len(existing[3]) > 3 else ""
+    last_synced = event.get("raid_notes_sheet_synced")
+    current = event.get("archive_notes") or ""
+    edited = (raw != last_synced if last_synced is not None
+              else bool(raw) and raw != current)
+    if not edited:
+        return None
+    if len(raw) > 1500:
+        LOGGER.warning("Raid #%s notes in D4 exceed 1500 characters",
+                       event["raid_id"])
+        return raw
+    with database(db_path) as con:
+        con.execute(
+            "UPDATE raids SET archive_notes=? WHERE raid_id=?",
+            (raw, event["raid_id"]),
+        )
+    event["archive_notes"] = raw
+    return None
+
+
 def _cache_signup_visibility(db_path, raid_id, body):
     """Apply Sheet 'Show on Discord' flags after a successful sync.
 
@@ -773,6 +797,7 @@ def _one(session, db_path, event, names, titles):
             raise RuntimeError("Raid tab has an unexpected number of columns.")
     existing = [] if new else _read(session, title)
     invalid_wcl = _apply_wcl_from_sheet(db_path, event, existing)
+    invalid_notes = _apply_notes_from_sheet(db_path, event, existing)
     # Also recover a sheet created just before an interrupted first write.
     legacy = _legacy_choices(session, event) if new or not existing else None
     body = _rows(db_path, event, names, old_rows=existing, legacy=legacy)
@@ -780,14 +805,24 @@ def _one(session, db_path, event, names, titles):
     if invalid_wcl is not None:
         # Retain an invalid entry for leadership to correct; don't echo it to Discord.
         full[3][1] = invalid_wcl
+    if invalid_notes is not None:
+        full[3][3] = invalid_notes
     changed = _write(session, title, sid, existing, full)
     # The live unconfirmed panel uses the same visibility choices as Sheets,
     # independently of the confirmed roster and without exposing assignments.
     _cache_signup_visibility(db_path, number, body)
-    if invalid_wcl is None:
+    if invalid_wcl is None or invalid_notes is None:
         with database(db_path) as con:
-            con.execute("UPDATE raids SET wcl_sheet_synced=? WHERE raid_id=?",
-                        (event.get("wcl_url") or "", event["raid_id"]))
+            if invalid_wcl is None:
+                con.execute(
+                    "UPDATE raids SET wcl_sheet_synced=? WHERE raid_id=?",
+                    (event.get("wcl_url") or "", event["raid_id"]),
+                )
+            if invalid_notes is None:
+                con.execute(
+                    "UPDATE raids SET raid_notes_sheet_synced=? WHERE raid_id=?",
+                    (event.get("archive_notes") or "", event["raid_id"]),
+                )
     if event.get("archived_at"):
         if not titles[title].get("hidden"):
             raid_sheets._json(
