@@ -39,7 +39,7 @@ class GearParserTests(unittest.TestCase):
         self.assertEqual(data["slots"][15]["slot"], "Off Hand")
         self.assertEqual(data["professions"], ["Alchemy"])
         self.assertEqual(gear.summary(data),
-                         "Lv 15 · 9/17 equipped · 1 enchants reported")
+                         "Lv 15 · 9/17 equipped · 1 enchant reported")
         self.assertIsNone(gear.parse_export('{"invalid":true}'))
         self.assertIsNone(gear.parse_export("not-json"))
 
@@ -142,4 +142,4 @@ class GearSheetSyncTests(unittest.TestCase):
         body = sheets._rows(self.path, event, {})
         player = next(row for row in body if row[1] == "Horrible")
         self.assertEqual(player[15],
-                         "Lv 15 · 9/17 equipped · 1 enchants reported")
+                         "Lv 15 · 9/17 equipped · 1 enchant reported")
