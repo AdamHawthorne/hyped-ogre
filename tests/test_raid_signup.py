@@ -697,7 +697,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Advanced settings", components)
             self.assertIn("Post / Update Raid", components)
             self.assertIn("Choose exact announcement date & time", components)
-            self.assertIn("When to announce the roster?", components)
+            self.assertIn("Target roster confirmation (manual)", components)
             self.assertIn("New Raid #1", components)
             self.assertIn("**Raid commands**", components)
             self.assertIn("/raid archive", components)
