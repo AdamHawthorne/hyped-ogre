@@ -1,19 +1,13 @@
-"""Shared Forever race restrictions for the raid and LFG character manager."""
+"""Legacy import path for WoW: Forever race and class reference data.
 
-RACES = ("Orc", "Troll", "Tauren", "Undead", "Skyborne (Windshaper)")
+The canonical data now lives in hyped_ogre.features.characters.races.
+Keep these exports stable for posted LFG and raid character interactions.
+"""
 
-STARTING_ZONES = {
-    "Orc": "Durotar",
-    "Troll": "Durotar",
-    "Tauren": "Mulgore",
-    "Undead": "Tirisfal Glades",
-    "Skyborne (Windshaper)": "Zephras Isle",
-}
+from hyped_ogre.features.characters.races import (
+    RACES,
+    STARTING_ZONES,
+    RACE_CLASSES,
+)
 
-RACE_CLASSES = {
-    "Orc": ("Hunter", "Mage", "Rogue", "Shaman", "Warlock", "Warrior"),
-    "Troll": ("Hunter", "Mage", "Priest", "Rogue", "Shaman", "Warlock", "Warrior"),
-    "Tauren": ("Druid", "Hunter", "Shaman", "Warrior"),
-    "Undead": ("Mage", "Paladin", "Priest", "Rogue", "Warlock", "Warrior"),
-    "Skyborne (Windshaper)": ("Druid", "Hunter", "Rogue", "Shaman", "Warrior"),
-}
+__all__ = ["RACES", "STARTING_ZONES", "RACE_CLASSES"]
