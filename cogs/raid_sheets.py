@@ -111,6 +111,9 @@ def _raid_snapshot(db_path):
             SELECT c.character_id, c.discord_id, c.name,
                 (SELECT MAX(g.submitted_at) FROM gear_exports g
                  WHERE g.character_id=c.character_id) AS simc_latest,
+                (SELECT MAX(g.submitted_at) FROM gear_exports g
+                 WHERE g.character_id=c.character_id
+                   AND g.format='wowsims_json') AS wowsims_latest,
                 (SELECT MAX(i.submitted_at) FROM gear_images i
                  WHERE i.character_id=c.character_id) AS image_latest
             FROM characters c
