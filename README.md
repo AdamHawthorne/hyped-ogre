@@ -15,7 +15,7 @@ Feature behaviour is covered by regression tests in `tests/`.
 
 ## Runtime and persistence
 
-The **production boot command becomes `python rollogre.py`** after this release. The original bot coordinator is now at `hyped_ogre/bot.py`, while `rollogre.py` is the small executable launcher. Existing Discord extensions are still loaded under their original `cogs.*` module names, so command registration, extension unload/reload, permissions and persistent Discord button IDs are preserved.
+The **production boot command is `python rollogre.py`**. The original bot coordinator is now at `hyped_ogre/bot.py`, while `rollogre.py` is the small executable launcher. Existing Discord extensions are still loaded under their original `cogs.*` module names, so command registration, extension unload/reload, permissions and persistent Discord button IDs are preserved.
 
 The implementation files are now grouped by feature under `hyped_ogre/features/`:
 
@@ -55,27 +55,32 @@ Never delete, overwrite, move, or reinitialise these live databases as part of a
 
 ## Local setup
 
-Use Python 3.13. Create a local `.env` from `.env.example`, supply your own credentials, and install dependencies:
+Use Python 3.13 and the project virtual environment. Ordinary development and
+offline tests do not need a Discord token or a `.env` file:
 
 ```powershell
 cd "C:\Users\Adam\hyped-ogre"
-python -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe rollogre.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-**Do not run a second local production bot using the same Discord token while Fly.io is serving the guild.** For ordinary development, run offline tests instead:
+Open the repository folder in VS Code, select the `.venv` interpreter and
+install the recommended extensions. Press **Ctrl+Shift+B** to run dependency,
+syntax and test checks. Individual tests are available in the Testing view.
+The Fly runner's Bash tests run in Linux CI and are skipped on Windows.
 
-```powershell
-python -m unittest discover -s tests -v
-```
+See the [VS Code and GitHub workflow guide](docs/development.md) for setup,
+branching, pull requests and deployment. **Do not run a second local
+production bot using the same Discord token while Fly.io is serving the guild.**
 
 ## Development and deployment
 
 - `main` is intended to be the stable, reviewed code baseline.
 - Use short-lived `feature/*`, `fix/*` or `refactor/*` branches for changes; features are **folders/modules**, not permanent branches.
 - Run syntax checks, unit tests and Docker build checks before merging.
-- A merge does **not** automatically deploy to Fly.io unless an explicit deployment workflow is configured.
+- GitHub checks PRs, changes merged to `main`, and manually requested safety runs. The same PR update no longer starts both a branch-push safety run and a PR safety run.
+- A merge does **not** deploy to Fly.io. Deployment uses the separate **Deploy Hyped Ogre (manual only)** workflow.
 - Don't deploy structural migrations without a verified database backup, health checks and a rollback plan.
 
 See [architecture](docs/architecture.md) and [operational safety](docs/operations.md).
