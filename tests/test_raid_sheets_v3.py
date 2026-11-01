@@ -190,8 +190,8 @@ class RaidTabsTests(unittest.TestCase):
             self.assertIn(("42", "Snore Mon", "Hyjal, Barrows 🔹"),
                           sheet._approved(sheet._header(event, rows, ""), event))
 
-    def test_live_signup_roster_ignores_private_sheet_selections(self):
-        """Public roster stays role-based while leadership edits assignments."""
+    def test_live_signup_visibility_respects_sheet_but_hides_assignments(self):
+        """Sheet visibility applies immediately; selected teams stay private."""
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             self.setup_raid(path)
@@ -208,13 +208,18 @@ class RaidTabsTests(unittest.TestCase):
             mage = next(row for row in rows if row[16] == "44")
             mage[9:14] = ["Selected", "Yes", "No", "No", "No"]
             session = unittest.mock.MagicMock()
+            def fake_one(_session, db_path, _event, _names, _titles):
+                # The real _one caches visibility following a successful
+                # sheet read/write before the public roster is calculated.
+                sheet._cache_signup_visibility(db_path, 1, rows[7:])
+                return 0, rows
             with patch.object(sheet.raid_sheets, "configured", return_value=True), \
                  patch.object(sheet.raid_sheets, "_session", return_value=session), \
                  patch.object(sheet.raid_sheets, "_raid_snapshot",
                               return_value=([], {1: event}, [], [], [])), \
                  patch.object(sheet, "_list_tabs",
                               return_value={sheet.tab_title(event): {"sheetId": 1}}), \
-                 patch.object(sheet, "_one", return_value=(0, rows)), \
+                 patch.object(sheet, "_one", side_effect=fake_one), \
                  patch.object(sheet, "_sync_permanent"), \
                  patch.object(sheet, "_hide_legacy"):
                 _, changed = sheet.sync_once(path)
@@ -222,7 +227,6 @@ class RaidTabsTests(unittest.TestCase):
                 public = raid_schedule.read_public_roster(path, 1, include_details=True)
                 self.assertEqual(public, [
                     ("Snore Mon", "", "Warrior", "Tank", "Protection"),
-                    ("Fast Rogue", "", "Rogue", "DPS", "Combat"),
                     ("Mage Player", "", "Mage", "DPS", "Frost"),
                 ])
                 self.assertEqual(raid_schedule.read_raid(path, 1)["roster_published"], 0)
@@ -230,16 +234,19 @@ class RaidTabsTests(unittest.TestCase):
                 self.assertEqual(sheet._approved(rows, event), [
                     ("42", "Snore Mon", "Barrows 🔸")
                 ])
-                # Changes to assigned team or Show on Discord are not shown
-                # while we're still collecting sign-ups.
+                # Team assignments remain hidden before confirmation, but
+                # changing Show on Discord changes the visible player list.
                 rogue[10] = "Yes"
                 tank[10] = "No"
                 rogue[12] = "🔸"
                 _, changed = sheet.sync_once(path)
-                self.assertEqual(changed, set())
+                self.assertEqual(changed, {1})
                 self.assertEqual(
                     raid_schedule.read_public_roster(path, 1, include_details=True),
-                    public,
+                    [
+                        ("Fast Rogue", "", "Rogue", "DPS", "Combat"),
+                        ("Mage Player", "", "Mage", "DPS", "Frost"),
+                    ],
                 )
                 self.assertEqual(sheet._approved(rows, event), [
                     ("43", "Fast Rogue", "Barrows 🔸")
