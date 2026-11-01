@@ -495,36 +495,41 @@ class RaidPosterView(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(picker))
 
     def add_visibility_picker(self):
-        # Reuse the existing picker: Discord V2 has a 40-component limit,
-        # so adding another dropdown would prevent the poster from opening.
         async def choose(interaction):
-            selection = picker.values[0]
-            if selection.startswith("show:"):
-                await self.changed(
-                    interaction, default_show_discord=(selection == "show:yes")
-                )
-            else:
-                await self.changed(interaction, wowsims_policy=selection[4:])
-        picker = self._select("Show on Discord / WoWSims requirement", [
+            await self.changed(
+                interaction, default_show_discord=(picker.values[0] == "yes")
+            )
+        picker = self._select("Show selected players by default?", [
             discord.SelectOption(
-                label="Show on Discord: Yes", value="show:yes",
-                description="Show selected players by default",
+                label="Yes", value="yes",
+                description="Show selected players on confirmed roster",
+                default=bool(self.draft.get("default_show_discord", True)),
             ),
             discord.SelectOption(
-                label="Show on Discord: No", value="show:no",
-                description="Hide players until leadership enables them",
+                label="No", value="no",
+                description="Keep players hidden until individually enabled",
+                default=not bool(self.draft.get("default_show_discord", True)),
+            ),
+        ], choose)
+
+    def add_wowsims_picker(self):
+        async def choose(interaction):
+            await self.changed(interaction, wowsims_policy=picker.values[0])
+        picker = self._select("WoWSims requirement", [
+            discord.SelectOption(
+                label="Required if missing (default)", value="missing",
+                description="Saved exports OK; new characters must paste one",
+                default=self.draft.get("wowsims_policy", "missing") == "missing",
             ),
             discord.SelectOption(
-                label="WoWSims: Required if missing", value="wse:missing",
-                description="Default: reused exports OK; new characters must paste",
+                label="Require fresh export", value="fresh",
+                description="Each new sign-up needs an export after enabling",
+                default=self.draft.get("wowsims_policy") == "fresh",
             ),
             discord.SelectOption(
-                label="WoWSims: Require fresh", value="wse:fresh",
-                description="Need a new export after fresh mode is enabled",
-            ),
-            discord.SelectOption(
-                label="WoWSims: Optional / off", value="wse:optional",
-                description="Allow Attend without any WoWSims export",
+                label="Optional / off", value="optional",
+                description="Allow Attend without a WoWSims export",
+                default=self.draft.get("wowsims_policy") == "optional",
             ),
         ], choose)
 
