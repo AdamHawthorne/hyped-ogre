@@ -1,6 +1,5 @@
 from wowsims_helper import signup_with_export, seed_export, example_export
-"""Regression tests for the four-button raid member flow and private gear uploads."""
-import io
+"""Regression tests for the four-button raid member flow and WoWSims paste controls."""
 import json
 import sqlite3
 import tempfile
@@ -10,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import discord
-from PIL import Image
 
 from cogs import raid_schedule, raid_signup as raid, raid_sheets, raid_sheets_v3
 
@@ -185,32 +183,31 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
                     99, char_id, "Mage", "Frost", "DPS", path
                 )
 
-    async def test_screenshot_private_jpeg_and_sheets_metadata_only(self):
+    async def test_old_screenshot_data_is_preserved_but_commands_removed(self):
+        self.assertFalse(hasattr(raid.RaidPrototype, "gear_review"))
+        self.assertFalse(hasattr(raid.RaidPrototype, "gear_file"))
+        self.assertFalse(hasattr(raid, "save_gear_image"))
+        self.assertFalse(hasattr(raid, "last_gear_image"))
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
             raid.create_schema(path)
-            raid_schedule.ensure_raid_fields(path)
             raid.save_character(42, "First Last", "Mage", "Frost", "DPS", path)
             char_id = raid.member_characters(42, path)[0][0]
-            image = io.BytesIO()
-            Image.new("RGB", (400, 250), (110, 120, 130)).save(
-                image, format="PNG"
-            )
-            raid.save_gear_image(
-                42, char_id, "character.png", image.getvalue(), path
-            )
-            filename, payload = raid.last_gear_image(char_id, path)
-            self.assertEqual(filename, "character-panel.jpg")
-            self.assertTrue(payload.startswith(b"\xff\xd8"))
-            row = raid_sheets._desired_rows(path)["gear"][str(char_id)]
-            self.assertEqual(row[4], "Screenshot")
-            self.assertEqual(len(row), 5)
-            self.assertNotIn(payload[:20].hex(), json.dumps(row))
-            with self.assertRaises(ValueError):
-                raid.save_gear_image(99, char_id, "character.png",
-                                     image.getvalue(), path)
-            with self.assertRaises(ValueError):
-                raid.save_gear_image(42, char_id, "not-image.png", b"x" * 150, path)
+            # Removing the feature must not erase any historic uploaded files.
+            with raid.database(path) as con:
+                con.execute(
+                    "INSERT INTO gear_images "
+                    "(character_id, submitted_at, filename, mime_type, image_data) "
+                    "VALUES (?, '2026-11-01T12:00:00+00:00', "
+                    "'character-panel.jpg', 'image/jpeg', ?)",
+                    (char_id, b"archived screenshot"),
+                )
+                self.assertEqual(
+                    con.execute(
+                        "SELECT COUNT(*) FROM gear_images WHERE character_id=?",
+                        (char_id,),
+                    ).fetchone()[0], 1,
+                )
 
     async def test_character_delete_requires_no_raid_history_and_promotes_main(self):
         with tempfile.TemporaryDirectory() as tmp:
