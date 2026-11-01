@@ -1072,8 +1072,77 @@ class CharacterRaceView(discord.ui.LayoutView):
         self.add_item(discord.ui.ActionRow(picker))
 
 
+class CharacterProfileEditView(discord.ui.LayoutView):
+    """One character-profile menu for class, spec and compatible race."""
+
+    def __init__(self, owner_id, character_id, character):
+        super().__init__(timeout=300)
+        self.owner_id, self.character_id = owner_id, character_id
+        _, name, class_name, spec, role, _ = character
+        race = character_race(owner_id, character_id)
+        self.add_item(discord.ui.Container(
+            discord.ui.TextDisplay(
+                f"## Class / Spec / Race · {discord.utils.escape_markdown(name)}\n"
+                f"**Class / Spec:** {class_name} / {spec} · {role}\n"
+                f"**Race:** {race or 'Not set'}\n"
+                "Ogre keep raid sign-ups and WoWSims with this character. "
+                "Change class or spec first if needed, then choose compatible race."
+            ), accent_color=ACCENT,
+        ))
+        klass = discord.ui.Button(label="Change class / spec",
+                                  style=discord.ButtonStyle.secondary)
+        choose_race = discord.ui.Button(label="Change race",
+                                        style=discord.ButtonStyle.secondary)
+        back = discord.ui.Button(label="Back", style=discord.ButtonStyle.secondary)
+
+        async def change_class(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=ClassPickerView(owner_id, editing_character_id=character_id)
+            )
+
+        async def change_race(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
+                return
+            latest = next((row for row in member_characters(owner_id)
+                           if row[0] == character_id), None)
+            if latest is None:
+                await interaction.response.send_message(
+                    "Ogre cannot find that character.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterRaceView(owner_id, character_id, latest)
+            )
+
+        async def go_back(interaction):
+            if not is_test_member(interaction) or interaction.user.id != owner_id:
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
+                return
+            latest = next((row for row in member_characters(owner_id)
+                           if row[0] == character_id), None)
+            if latest is None:
+                await interaction.response.send_message(
+                    "Ogre cannot find that character.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                view=CharacterManageView(owner_id, character_id, latest)
+            )
+
+        klass.callback = change_class
+        choose_race.callback = change_race
+        back.callback = go_back
+        self.add_item(discord.ui.ActionRow(klass, choose_race))
+        self.add_item(discord.ui.ActionRow(back))
+
+
 class CharacterManageView(discord.ui.LayoutView):
-    """Edit class/spec or select the one Main, without changing raid records."""
+    """Manage class/spec/race, WoWSims, main status and deletion."""
 
     def __init__(self, owner_id, character_id, character):
         super().__init__(timeout=300)
@@ -1089,68 +1158,90 @@ class CharacterManageView(discord.ui.LayoutView):
             ), accent_color=ACCENT,
         ))
         buttons = discord.ui.ActionRow()
-        edit = discord.ui.Button(label="Edit class / spec", style=discord.ButtonStyle.secondary)
-        race_button = discord.ui.Button(label="Race", style=discord.ButtonStyle.secondary)
-        main = discord.ui.Button(label="Set Main", style=discord.ButtonStyle.success, disabled=is_main)
+        edit = discord.ui.Button(label="Class / Spec / Race",
+                                 style=discord.ButtonStyle.secondary)
+        wowsims = discord.ui.Button(label="Update WoWSims",
+                                    style=discord.ButtonStyle.secondary)
+        main = discord.ui.Button(label="Set Main",
+                                 style=discord.ButtonStyle.success, disabled=is_main)
+        delete = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
 
         async def edit_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
                 return
             await interaction.response.edit_message(
-                view=ClassPickerView(self.owner_id, editing_character_id=self.character_id)
+                view=CharacterProfileEditView(
+                    self.owner_id, self.character_id, character
+                )
             )
 
-        async def race_callback(interaction):
+        async def wowsims_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
                 return
-            await interaction.response.edit_message(
-                view=CharacterRaceView(self.owner_id, self.character_id, character))
+            if has_wowsims_export(self.owner_id, self.character_id):
+                await interaction.response.send_modal(
+                    WoWSimsExportModal(self.owner_id, self.character_id, name)
+                )
+            else:
+                await interaction.response.edit_message(
+                    view=WoWSimsInstructionsView(
+                        self.owner_id, self.character_id, name
+                    )
+                )
 
         async def main_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
                 return
             try:
                 set_main_character(self.owner_id, self.character_id)
             except (ValueError, sqlite3.Error) as exc:
-                await interaction.response.send_message(f"Ogre couldn't set Main: {exc}", ephemeral=True)
+                await interaction.response.send_message(
+                    f"Ogre couldn't set Main: {exc}", ephemeral=True)
                 return
             await interaction.response.edit_message(
                 view=CharacterManageView(self.owner_id, self.character_id, character)
             )
 
-        delete = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
-
         async def delete_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
-                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
                 return
             await interaction.response.edit_message(
-                view=ConfirmCharacterDeleteView(self.owner_id, self.character_id, name)
+                view=ConfirmCharacterDeleteView(
+                    self.owner_id, self.character_id, name
+                )
             )
 
+        edit.callback = edit_callback
+        wowsims.callback = wowsims_callback
+        main.callback = main_callback
         delete.callback = delete_callback
-        edit.callback, main.callback = edit_callback, main_callback
-        race_button.callback = race_callback
         buttons.add_item(edit)
-        buttons.add_item(race_button)
+        buttons.add_item(wowsims)
         buttons.add_item(main)
         buttons.add_item(delete)
         self.add_item(buttons)
-        back = discord.ui.Button(label="Back", style=discord.ButtonStyle.secondary)
+        back = discord.ui.Button(label="Back",
+                                 style=discord.ButtonStyle.secondary)
+
         async def back_callback(interaction):
             if interaction.user.id != self.owner_id:
-                await interaction.response.send_message("Not your characters.", ephemeral=True)
+                await interaction.response.send_message(
+                    "Not your characters.", ephemeral=True)
                 return
             await interaction.response.edit_message(
                 view=CharacterActionView(self.owner_id, purpose="update")
             )
+
         back.callback = back_callback
         self.add_item(discord.ui.ActionRow(back))
-
-
 
 class ConfirmCharacterDeleteView(discord.ui.LayoutView):
     """Require an explicit second click before permanently removing a character."""
