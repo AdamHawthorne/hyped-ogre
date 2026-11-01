@@ -41,6 +41,7 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
             ack.record_announcement(self.db, 1, 555, 778, [("42", "Snore")])
 
     async def test_manage_raid_unpublish_confirm_retracts_announcement(self):
+        schedule.record_panel(self.db, 1, 777, 888)
         ack.record_announcement(self.db, 1, 555, 777, [("42", "Snore")])
         message = SimpleNamespace(content=ack.render(1, ack.pending(self.db, 1), 1),
                                   edit=AsyncMock())
