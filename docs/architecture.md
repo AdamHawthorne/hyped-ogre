@@ -72,6 +72,26 @@ gear, raid signup and attendance references are preserved. The destructive
 `delete_character` path remains unchanged in the original extension: it
 must continue safeguarding both raid history and LFG requests.
 
+## Raid signup and absence writes (fourth stage)
+
+The active `cogs.raid_signup` extension continues to expose `save_signup`
+and `save_absence` with the same signatures, optional note validation,
+`path=RAID_DB` defaults and SQLite transaction lifecycle. The new
+`hyped_ogre/features/raids/signup_mutations.py` contains the original
+SQL and guard ordering, accepting the existing connection rather than
+opening another database.
+
+The unchanged WoWSims policy function is passed from the original cog,
+so callers and tests that patch `wowsims_requirement_for_signup` keep
+working. The same member/night upsert preserves notes and original
+signup timestamps where appropriate; restoring a signup deletes an
+absence record. Marking someone absent retains their character and
+original signup note, and does not require a character to be registered.
+
+No changes were made to the original Discord GroupCog, command registration,
+raid state management, character deletion, attendance history, scheduled
+Sheets synchronisation or production database schema.
+
 ## Intended package layout
 
 ```text

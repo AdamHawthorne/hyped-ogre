@@ -214,3 +214,30 @@ jobs:
               ) == "Snore Mon"
           print("Original Discord cog and character write helpers validated")
           '
+
+      - name: Verify signup and absence writes using original Discord extension
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import tempfile
+          from pathlib import Path
+          from cogs import raid_signup as raid, raid_schedule as schedule
+          from hyped_ogre.features.raids import signup_mutations
+          assert raid.RaidPrototype.__module__ == "cogs.raid_signup"
+          with tempfile.TemporaryDirectory() as tmp:
+              path = str(Path(tmp) / "raid_signup.db")
+              raid.create_schema(path)
+              schedule.ensure_raid_fields(path)
+              schedule.save_raid(
+                  path, 3, "2026-12-09 21:00", "Hyjal (20m)",
+                  wowsims_policy="optional"
+              )
+              raid.save_character(42, "Snore Mon", "Warrior", "Protection", "Tank", path)
+              cid = raid.member_characters(42, path)[0][0]
+              raid.save_signup(3, 42, cid, path, note="Coming")
+              assert raid.my_signup(3, 42, path) == ("Snore Mon", "Available")
+              raid.save_absence(3, 42, "Away", path)
+              assert raid.my_signup(3, 42, path) == ("Snore Mon", "Unavailable")
+              raid.save_signup(3, 42, cid, path)
+              assert raid.my_absence(3, 42, path) is None
+          print("Original signup and absence transaction path validated")
+          '
