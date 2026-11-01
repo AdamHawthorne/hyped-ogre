@@ -2,6 +2,7 @@
 import os
 import asyncio
 import io
+import json
 import logging
 import sqlite3
 import time
@@ -21,7 +22,7 @@ from cogs.raid_poster import RaidPosterView
 from cogs.raid_schedule import (
     RaidEventPanel, active_panels, ensure_raid_fields, latest_raid, list_raids,
     read_raid, read_public_roster, read_signup_roster, record_panel, save_raid, set_softres_url, delete_raid,
-    raid_status, validate_wcl_url,
+    raid_status, validate_wcl_url, format_discord_date,
 )
 
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID", "0"))
@@ -31,6 +32,7 @@ RAID_CHANNEL_ID = 1563663151323553802
 RAID_DB = os.getenv("RAID_DB_PATH", "/data/raid_signup.db" if os.path.isdir("/data") else "raid_signup.db")
 ACCENT = 0xA87535
 LOGGER = logging.getLogger(__name__)
+WOWSIMS_ADDON_URL = "https://www.curseforge.com/wow/addons/wowsims-exporter"
 
 SHEET_TABS = {
     "Characters": (
@@ -505,6 +507,57 @@ def save_gear(discord_id, character_id, text, path=RAID_DB):
         )
 
 
+
+def has_wowsims_export(discord_id, character_id, path=RAID_DB):
+    """A WoWSims export belongs to a character and can be reused for every raid."""
+    with database(path) as con:
+        return con.execute(
+            "SELECT 1 FROM characters c JOIN gear_exports g "
+            "ON g.character_id=c.character_id "
+            "WHERE c.discord_id=? AND c.character_id=? AND g.format='wowsims_json' "
+            "LIMIT 1", (discord_id, character_id)
+        ).fetchone() is not None
+
+
+def save_wowsims_export(discord_id, character_id, raw, path=RAID_DB):
+    """Accept a copied /wse export, not arbitrary text or legacy SimC text."""
+    raw = (raw or "").strip()
+    if not 50 <= len(raw) <= 4000:
+        raise ValueError("Ogre need complete WoWSims JSON (50-4,000 characters).")
+    try:
+        export = json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("That not WoWSims JSON. In game: /wse export, Ctrl+C, then paste.") from exc
+    if (not isinstance(export, dict)
+            or not isinstance(export.get("name"), str)
+            or not export["name"].strip()
+            or not isinstance(export.get("class"), str)
+            or not export["class"].strip()
+            or not isinstance(export.get("gear"), dict)
+            or not isinstance(export["gear"].get("items"), list)
+            or not isinstance(export.get("version"), str)):
+        raise ValueError("Ogre need full WoWSims Exporter data, not a partial JSON.")
+    with database(path) as con:
+        row = con.execute(
+            "SELECT name FROM characters WHERE character_id=? AND discord_id=?",
+            (character_id, discord_id)
+        ).fetchone()
+        if not row:
+            raise ValueError("Ogre not know that character belongs to you.")
+        if export["name"].strip().casefold() != row[0].strip().casefold():
+            raise ValueError("WoWSims export says " + export["name"][:40] +
+                             ", but selected character is " + row[0] +
+                             ". Export correct character.")
+        con.execute(
+            "INSERT INTO gear_exports (character_id, submitted_at, format, raw_text) "
+            "VALUES (?, ?, 'wowsims_json', ?)",
+            (character_id, datetime.now(timezone.utc).isoformat(), raw)
+        )
+        # Existing DB column name retained for backward-compatible migrations.
+        con.execute("UPDATE characters SET last_simc_at=? WHERE character_id=?",
+                    (int(time.time()), character_id))
+
+
 def update_character_profile(discord_id, character_id, class_name, spec, role, path=RAID_DB):
     """Edit class/spec/role in place, retaining gear exports and all raid signups."""
     if role not in CLASS_SPECS.get(class_name, {}).get(spec, ()):
@@ -584,6 +637,8 @@ def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
         ).fetchone()
         if not event or not event[0] or event[1]:
             raise ValueError("Sign-ups aren't open for this raid.")
+        if not has_wowsims_export(discord_id, character_id, path):
+            raise ValueError("Ogre need WoWSims export first. Click WoWSims on raid panel.")
         character = con.execute(
             "SELECT character_id FROM characters "
             "WHERE character_id=? AND discord_id=?",
