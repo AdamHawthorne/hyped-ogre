@@ -107,6 +107,49 @@ def _list_tabs(session):
     }
 
 
+def delete_raid_tab(raid_id):
+    """Delete only this raid's generated Sheets tab, not any shared tabs.
+
+    Call before deleting local raid records, so an API failure leaves the
+    existing raid intact and retryable. No historical RM or permanent tab
+    will ever match this exact raid-prefix check.
+    """
+    if not isinstance(raid_id, int) or raid_id < 1:
+        raise ValueError("Invalid raid number.")
+    if not raid_sheets.configured():
+        raise RuntimeError("Google Sheets not connected. Cannot verify raid tab deletion.")
+    session = raid_sheets._session()
+    try:
+        tabs = _list_tabs(session)
+        matches = [
+            (name, props) for name, props in tabs.items()
+            if name.startswith(f"Raid #{raid_id} - ")
+        ]
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"More than one Sheets tab matches Raid #{raid_id}. "
+                "Nothing deleted; check duplicate tabs manually."
+            )
+        if not matches:
+            return False
+        name, props = matches[0]
+        sheet_id = props.get("sheetId")
+        if not isinstance(sheet_id, int):
+            raise RuntimeError(
+                f"Raid #{raid_id} tab has no valid sheet ID. Nothing deleted."
+            )
+        raid_sheets._json(
+            session, "POST",
+            f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+            json={"requests": [{"deleteSheet": {"sheetId": sheet_id}}]},
+        )
+        _FORMATTED_SECTION_LAYOUTS.pop(sheet_id, None)
+        _GEAR_TAB_SNAPSHOT.pop(sheet_id, None)
+        return True
+    finally:
+        session.close()
+
+
 def _group(signup, absent):
     if absent:
         return "Absent"
