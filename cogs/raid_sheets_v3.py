@@ -9,7 +9,7 @@ import logging
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from cogs import raid_sheets
+from cogs import raid_sheets, wowsims_gear
 from cogs.forever_role import ACCENT as LEADERSHIP_ACCENT
 
 TITLE_COLOR = {key: ((LEADERSHIP_ACCENT >> shift) & 255) / 255
@@ -776,6 +776,147 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
             attendance_map[key] = (attendance_next, values)
             attendance_next += 1
 
+# Skip unnecessary gear-tab API reads and writes between exporter submissions.
+_GEAR_TAB_SNAPSHOT = {}
+
+
+def _sync_gear_tab(session, db_path, titles):
+    """Display latest WoWSims gear in one visual, read-only permanent tab.
+
+    No source JSON is copied into Google Sheets. The item page links are
+    generated only from numeric IDs found in the saved /wse exports.
+    """
+    profiles = wowsims_gear.latest_profiles(db_path)
+    if not profiles:
+        return
+    rows, headings = wowsims_gear.sheet_rows(profiles)
+    title = wowsims_gear.SHEET_NAME
+    if len(rows) > 1500:
+        raise RuntimeError("WoWSims gear overview exceeds its 1,500 row limit.")
+    is_new = title not in titles
+    if is_new:
+        response = raid_sheets._json(
+            session, "POST",
+            f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+            json={"requests": [{"addSheet": {"properties": {
+                "title": title,
+                "gridProperties": {
+                    "rowCount": 1500, "columnCount": 8,
+                    "frozenRowCount": 3, "hideGridlines": True,
+                },
+            }}}]},
+        )
+        sid = response["replies"][0]["addSheet"]["properties"]["sheetId"]
+        titles[title] = {"sheetId": sid, "title": title}
+    else:
+        sid = titles[title]["sheetId"]
+    # Cache includes only the latest exported rows, not mutable references.
+    stamp = tuple(tuple(str(cell) for cell in row) for row in rows)
+    if not is_new and _GEAR_TAB_SNAPSHOT.get(sid) == stamp:
+        return
+
+    if is_new:
+        black = {"red": 0, "green": 0, "blue": 0}
+        white = {"red": 1, "green": 1, "blue": 1}
+        grey = {"red": .89, "green": .89, "blue": .89}
+        ink = {"red": .09, "green": .09, "blue": .09}
+        requests = [
+            {"repeatCell": {
+                "range": {"sheetId": sid},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": grey,
+                    "textFormat": {"foregroundColor": ink,
+                                   "fontFamily": "Roboto", "fontSize": 10},
+                    "verticalAlignment": "MIDDLE",
+                }},
+                "fields": "userEnteredFormat"}},
+            {"repeatCell": {
+                "range": {"sheetId": sid, "startRowIndex": 0,
+                          "endRowIndex": 3},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": black,
+                    "textFormat": {"foregroundColor": white, "bold": True,
+                                   "fontFamily": "Roboto", "fontSize": 11}}},
+                "fields": "userEnteredFormat"}},
+        ]
+        for col, width in enumerate((180, 90, 160, 150, 135, 150, 375, 170)):
+            requests.append({"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "COLUMNS",
+                          "startIndex": col, "endIndex": col + 1},
+                "properties": {"pixelSize": width},
+                "fields": "pixelSize",
+            }})
+        # Enchanted cells are green without suggesting missing enchants are errors.
+        requests.append({"addConditionalFormatRule": {
+            "index": 0, "rule": {
+                "ranges": [{"sheetId": sid, "startRowIndex": 3,
+                            "endRowIndex": 1500,
+                            "startColumnIndex": 5, "endColumnIndex": 6}],
+                "booleanRule": {
+                    "condition": {"type": "TEXT_CONTAINS",
+                                  "values": [{"userEnteredValue": "Enchant #"}]},
+                    "format": {"backgroundColor": {
+                        "red": .78, "green": .91, "blue": .78}},
+                },
+            },
+        }})
+        raid_sheets._json(
+            session, "POST",
+            f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+            json={"requests": requests},
+        )
+
+    old = []
+    if not is_new:
+        old = raid_sheets._json(
+            session, "GET",
+            f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
+            + quote(f"'{title}'!A1:H1500", safe="'!:"),
+            params={"valueRenderOption": "FORMATTED_VALUE"},
+        ).get("values", [])
+
+    # The value input is RAW: imported character names never become formulas.
+    target = rows + [[""] * 8 for _ in range(max(0, len(old) - len(rows)))]
+    if not is_new and old == target:
+        _GEAR_TAB_SNAPSHOT[sid] = stamp
+        return
+    raid_sheets._json(
+        session, "PUT",
+        f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
+        + quote(f"'{title}'!A1:H{len(target)}", safe="'!:"),
+        params={"valueInputOption": "RAW"},
+        json={"values": target},
+    )
+    black = {"red": 0, "green": 0, "blue": 0}
+    white = {"red": 1, "green": 1, "blue": 1}
+    grey = {"red": .89, "green": .89, "blue": .89}
+    ink = {"red": .09, "green": .09, "blue": .09}
+    # Clear previous character bands so deletion/reordering doesn't leave
+    # old headings highlighted, then paint the current character sections.
+    requests = [{"repeatCell": {
+        "range": {"sheetId": sid, "startRowIndex": 3,
+                  "endRowIndex": 1500},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": grey,
+            "textFormat": {"foregroundColor": ink, "bold": False}}},
+        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat",
+    }}]
+    requests.extend({"repeatCell": {
+        "range": {"sheetId": sid, "startRowIndex": index,
+                  "endRowIndex": index + 1},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": black,
+            "textFormat": {"foregroundColor": white, "bold": True}}},
+        "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat",
+    }} for index in headings)
+    raid_sheets._json(
+        session, "POST",
+        f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+        json={"requests": requests},
+    )
+    _GEAR_TAB_SNAPSHOT[sid] = stamp
+
+
 def sync_once(db_path, discord_names=None):
     """Synchronise only posted raids into one private tab each."""
     if not raid_sheets.configured():
@@ -821,6 +962,12 @@ def sync_once(db_path, discord_names=None):
                 # raid assignments remain private until leadership confirms.
                 published[raid_id] = read_signup_roster(db_path, raid_id)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
+        try:
+            _sync_gear_tab(session, db_path, titles)
+        except Exception as exc:
+            # Gear view is informative; never interrupt attendance or
+            # publishing/refreshing the actual raid roster when it fails.
+            LOGGER.warning("WoWSims equipment view sync delayed: %s", exc)
         # Archived raids retain their most recent public roster and history.
         # Once an active raid tab exists, hide (never delete) old management tabs.
         if any(name.startswith("Raid #") for name in titles):
