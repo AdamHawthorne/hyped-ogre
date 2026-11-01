@@ -1002,9 +1002,14 @@ class CharacterActionView(discord.ui.LayoutView):
                 )
                 return
             if self.purpose == "gear":
-                await interaction.response.edit_message(
-                    view=WoWSimsInstructionsView(self.owner_id, char_id, match[1])
-                )
+                if has_wowsims_export(self.owner_id, char_id):
+                    await interaction.response.send_modal(
+                        WoWSimsExportModal(self.owner_id, char_id, match[1])
+                    )
+                else:
+                    await interaction.response.edit_message(
+                        view=WoWSimsInstructionsView(self.owner_id, char_id, match[1])
+                    )
             elif self.purpose == "update":
                 await interaction.response.edit_message(
                     view=CharacterManageView(self.owner_id, char_id, match)
@@ -1853,11 +1858,19 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 ephemeral=True,
             )
         elif len(rows) == 1:
-            await interaction.response.send_message(
-                view=WoWSimsInstructionsView(
-                    interaction.user.id, rows[0][0], rows[0][1]
-                ), ephemeral=True,
-            )
+            character_id, character_name = rows[0][:2]
+            if has_wowsims_export(interaction.user.id, character_id):
+                await interaction.response.send_modal(
+                    WoWSimsExportModal(
+                        interaction.user.id, character_id, character_name
+                    )
+                )
+            else:
+                await interaction.response.send_message(
+                    view=WoWSimsInstructionsView(
+                        interaction.user.id, character_id, character_name
+                    ), ephemeral=True,
+                )
         else:
             await interaction.response.send_message(
                 view=CharacterActionView(interaction.user.id, purpose="gear"),
