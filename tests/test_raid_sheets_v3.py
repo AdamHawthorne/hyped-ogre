@@ -1,3 +1,4 @@
+from wowsims_helper import signup_with_export, seed_export, example_export
 """Offline tests for one-tab-per-raid roster management."""
 import tempfile
 import unittest
@@ -16,13 +17,13 @@ class RaidTabsTests(unittest.TestCase):
         )
         raid.save_character(42, "Snore Mon", "Warrior", "Protection", "Tank", path)
         tank = raid.member_characters(42, path)[0][0]
-        raid.save_signup(1, 42, tank, path, note="Main tank")
+        signup_with_export(1, 42, tank, path, note="Main tank")
         raid.save_character(43, "Fast Rogue", "Rogue", "Combat", "DPS", path)
         rogue = raid.member_characters(43, path)[0][0]
-        raid.save_signup(1, 43, rogue, path)
+        signup_with_export(1, 43, rogue, path)
         raid.save_character(44, "Mage Player", "Mage", "Frost", "DPS", path)
         mage = raid.member_characters(44, path)[0][0]
-        raid.save_signup(1, 44, mage, path)
+        signup_with_export(1, 44, mage, path)
         return event
 
     def test_tab_name_and_sorted_role_sections(self):
@@ -71,7 +72,7 @@ class RaidTabsTests(unittest.TestCase):
                 raid.save_character(member_id, f"Tank {member_id}",
                                     "Warrior", "Protection", "Tank", path)
                 character = raid.member_characters(member_id, path)[0][0]
-                raid.save_signup(1, member_id, character, path)
+                signup_with_export(1, member_id, character, path)
 
             first = sheet._header(event, sheet._rows(path, event, {}), sheet.tab_title(event))
             original = next(row for row in first if row[16] == "42")
@@ -166,7 +167,7 @@ class RaidTabsTests(unittest.TestCase):
                 sheet._header(event, absent, sheet.tab_title(event)), event
             )])
             # Signing back on resets old instance assignments but restores signup defaults.
-            raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
+            signup_with_export(1, 42, raid.member_characters(42, path)[0][0], path)
             restored = sheet._rows(path, event, {}, old_rows=sheet._header(
                 event, absent, sheet.tab_title(event)
             ))
@@ -258,7 +259,7 @@ class RaidTabsTests(unittest.TestCase):
             self.assertIn("Roster confirmed:", raid_schedule.raid_roster_status(confirmed))
             self.assertEqual(raid_schedule.save_raid(
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)")["roster_published"], 1)
-            raid.save_signup(1, 42, raid.member_characters(42, path)[0][0], path)
+            signup_with_export(1, 42, raid.member_characters(42, path)[0][0], path)
             self.assertEqual(len(raid_schedule.confirmed_roster(path, 1)), 2)
             raid.save_absence(1, 42, "Away", path)
             self.assertEqual(raid_schedule.confirmed_roster(path, 1, {"42"}),
