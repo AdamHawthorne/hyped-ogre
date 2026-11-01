@@ -1218,6 +1218,14 @@ class CharacterNameModal(discord.ui.Modal):
                     row for row in member_characters(interaction.user.id)
                     if row[1].casefold() == self.name.value.strip().casefold()
                 )
+                if not has_wowsims_export(interaction.user.id, character[0]):
+                    await interaction.response.send_message(
+                        view=WoWSimsInstructionsView(
+                            interaction.user.id, character[0], character[1],
+                            raid_id=self.signup_raid_id, note=self.note.value
+                        ), ephemeral=True
+                    )
+                    return
                 save_signup(
                     self.signup_raid_id, interaction.user.id, character[0],
                     note=self.note.value,
@@ -1832,8 +1840,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 ephemeral=True,
             )
         elif len(rows) == 1:
-            await interaction.response.send_modal(
-                GearUploadModal(interaction.user.id, rows[0][0], rows[0][1])
+            await interaction.response.send_message(
+                view=WoWSimsInstructionsView(
+                    interaction.user.id, rows[0][0], rows[0][1]
+                ), ephemeral=True,
             )
         else:
             await interaction.response.send_message(
@@ -2246,11 +2256,11 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         )
 
     @app_commands.command(
-        name="gear", description="Upload SimC text or a character-panel screenshot"
+        name="screenshot", description="Upload an optional character-panel screenshot"
     )
     @app_commands.describe(
         character="Your saved character name",
-        file="SimC (.txt/.simc) or character-panel PNG/JPG/WEBP",
+        file="Character-panel PNG/JPG/WEBP (optional)",
     )
     async def gear_file(self, interaction: discord.Interaction,
                         character: str, file: discord.Attachment):
@@ -2272,15 +2282,15 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
             return
         filename = file.filename.lower()
-        simc_file = filename.endswith((".txt", ".simc"))
         image_file = filename.endswith((".png", ".jpg", ".jpeg", ".webp"))
-        if not (simc_file or image_file):
+        if not image_file:
             await interaction.followup.send(
-                "Use a SimC .txt/.simc or PNG/JPG/WEBP screenshot.",
+                "Ogre only take PNG/JPG/WEBP screenshots here. "
+                "Paste /wse export using WoWSims on raid panel.",
                 ephemeral=True,
             )
             return
-        limit = 200_000 if simc_file else 8 * 1024 * 1024
+        limit = 8 * 1024 * 1024
         if file.size > limit:
             await interaction.followup.send(
                 "Ogre say that file too big.", ephemeral=True
@@ -2290,12 +2300,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             data = await file.read()
             if len(data) > limit:
                 raise ValueError("Uploaded file exceeds the size limit.")
-            if simc_file:
-                save_gear(interaction.user.id, matches[0][0],
-                          data.decode("utf-8-sig"))
-            else:
-                save_gear_image(interaction.user.id, matches[0][0],
-                                file.filename, data)
+            save_gear_image(interaction.user.id, matches[0][0],
+                            file.filename, data)
         except (ValueError, UnicodeDecodeError, sqlite3.Error,
                 discord.HTTPException) as exc:
             await interaction.followup.send(
@@ -2303,7 +2309,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             )
             return
         await interaction.followup.send(
-            f"Ogre saved {'SimC' if simc_file else 'screenshot'} for "
+            f"Ogre saved screenshot for "
             f"**{discord.utils.escape_markdown(matches[0][1])}**.",
             ephemeral=True,
         )
