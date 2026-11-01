@@ -48,10 +48,10 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                                 on_roll=callbacks[0], on_leaderboard=callbacks[1],
                                 on_stats=callbacks[2])
         text = json.dumps(ranked.to_components())
-        self.assertIn("Coin count", text)
+        self.assertIn("Ogre\'s Ledger", text)
         self.assertNotIn("First roll wins a tie.", text)
         self.assertIn("One roll per day. Ogre give coin to highest", text)
-        self.assertLess(text.index("Hyped Rolls"), text.index("Coin count"))
+        self.assertLess(text.index("Hyped Rolls"), text.index("Ogre\'s Ledger"))
         self.assertNotIn("`/leaderboard`", text)
         self.assertNotIn("`/stats`", text)
         for i in range(1, 6):
@@ -59,11 +59,11 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<@6>", text)
         self.assertIn("Feeling lucky today?", text)
         self.assertIn("<:ogrecoin:123456789>", text)
-        self.assertNotIn("Yesterday\'s gold coin", text)
+        self.assertNotIn("Yesterday\'s gold coin", text)\n        self.assertNotIn("**1.**", text)\n        self.assertNotIn("highest <:ogrecoin:123456789>", text)
         buttons = [x for x in panel.walk_children() if isinstance(x, discord.ui.Button)]
         self.assertEqual(len({x.custom_id for x in buttons}), 3)
         self.assertEqual(buttons[0].style, discord.ButtonStyle.success)
-        self.assertEqual(str(buttons[0].emoji), "🎲")
+        self.assertEqual(str(buttons[0].emoji), "<:ogreivory:1566177408556605460>")
         for button, callback in zip(buttons, callbacks):
             await button.callback(None)
             callback.assert_awaited_once()
