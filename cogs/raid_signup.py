@@ -2398,9 +2398,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     @app_commands.command(name="sync", description="Synchronise raid SQLite data and visible roster with Google Sheets")
     async def sync(self, interaction: discord.Interaction):
-        if not self.allowed(interaction):
+        if not self.allowed_sync(interaction):
             await interaction.response.send_message(
-                "Only Ogre's owner can sync raids in private #ogre.", ephemeral=True
+                "Only Ogre's owner can sync raids in #ogre or the raid channel.", ephemeral=True
             )
             return
         if not raid_sheets.configured():
