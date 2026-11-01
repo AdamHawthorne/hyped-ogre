@@ -241,3 +241,26 @@ jobs:
               assert raid.my_absence(3, 42, path) is None
           print("Original signup and absence transaction path validated")
           '
+
+      - name: Construct canonical roll and gamble panels in runtime image
+        run: |
+          docker run --rm --entrypoint python hyped-ogre-test -c '
+          import discord
+          from datetime import date
+          from cogs import roll_coins, roll_gamble, roll_panels, roll_reactions
+          from hyped_ogre.features.rolls import coins, gamble, panels, reactions
+          assert (roll_coins, roll_gamble, roll_panels, roll_reactions) == (
+              coins, gamble, panels, reactions)
+          assert coins.daily_coin_prize(date(2026, 11, 1)) == 2
+          async def action(interaction): pass
+          view = panels.DailyRollPanel(
+              day="2026-11-01", winner_text="Test", tagline="Roll",
+              on_roll=action, on_leaderboard=action, on_stats=action,
+              on_gamble=action)
+          assert view.is_persistent()
+          ids = {x.custom_id for x in view.walk_children()
+                 if isinstance(x, discord.ui.Button)}
+          assert "hyped_ogre_coin_gamble_v1" in ids
+          assert "hyped_ogre_daily_roll_v2" in ids
+          print("Roll, coin, gamble and persistent V2 controls validated")
+          '
