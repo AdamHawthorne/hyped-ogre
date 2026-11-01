@@ -69,8 +69,8 @@ class ManualFlyDeploymentSafetyTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertIn(path, fly)
-        self.assertIn("flyctl volumes snapshots create", self.operations)
-        self.assertIn("flyctl releases --image", self.operations)
+        self.assertIn("fly volumes snapshots create", self.operations)
+        self.assertIn("fly releases --image", self.operations)
         self.assertIn("previous-working-image", self.operations)
 
 
