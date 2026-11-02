@@ -29,11 +29,7 @@ from .ui import (
 log = logging.getLogger(__name__)
 GUILD_ID = int(os.getenv("HYPED_GUILD_ID") or 0)
 OWNER_ID = int(os.getenv("OWNER_ID") or 0)
-ADMIN_CHANNEL_ID = int(
-    os.getenv("POLL_ADMIN_CHANNEL_ID")
-    or os.getenv("OFFICE_LOG_CHANNEL_ID")
-    or "1554621739017707591"
-)
+ADMIN_CHANNEL_ID = int(os.getenv("POLL_ADMIN_CHANNEL_ID") or "1564594901746716713")
 
 
 def store_path():
@@ -75,6 +71,8 @@ class PollsCog(
 
     async def cog_load(self):
         await self.run(self.store.initialise)
+        if GUILD_ID:
+            await self.run(self.store.route_admin_channel, GUILD_ID, ADMIN_CHANNEL_ID)
         self.bot.add_dynamic_items(PollButton)
         self.maintenance.start()
 
@@ -188,10 +186,24 @@ class PollsCog(
                 pass
         # Recover a send which reached Discord just before a process restart.
         expected = marker(poll["id"], kind)
+        nonce = f"p{poll['id']}{kind[0]}"
         async for previous in channel.history(limit=100):
-            if previous.author.id == self.bot.user.id and any(
+            if previous.author.id != self.bot.user.id:
+                continue
+            matches = getattr(previous, "nonce", None) == nonce or any(
                 (e.footer.text or "").endswith(expected) for e in previous.embeds
-            ):
+            )
+            if kind == "public":
+                matches |= any(
+                    (getattr(component, "custom_id", None) or "").startswith(
+                        f"hyped_poll:v1:{poll['id']}:vote:"
+                    )
+                    for row in getattr(previous, "components", [])
+                    for component in row.children
+                )
+            elif kind == "results" and result.url:
+                matches |= any(e.url == result.url for e in previous.embeds)
+            if matches:
                 message = await previous.edit(
                     embed=result,
                     view=controls,
@@ -204,7 +216,7 @@ class PollsCog(
             message = await channel.send(
                 embed=result,
                 view=controls,
-                nonce=f"p{poll['id']}{kind[0]}",
+                nonce=nonce,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         await self.run(self.store.message, GUILD_ID, poll["id"], kind, message.id)
@@ -235,6 +247,14 @@ class PollsCog(
                     allow_send=poll["state"] == "open"
                     or bool(poll["public_message_id"]),
                 )
+                if poll["results_message_id"]:
+                    await self.managed_message(
+                        poll,
+                        "results",
+                        channel,
+                        render(poll, results=True),
+                        allow_send=False,
+                    )
             await self.run(
                 self.store.clean, GUILD_ID, poll_id, "public", poll["revision"]
             )

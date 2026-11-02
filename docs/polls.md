@@ -1,15 +1,17 @@
 # Anonymous polls
 
 Use `/poll create` in the private Ogre control channel. Poll setup, management
-and private results are owner-only. The control channel defaults to the existing
-`OFFICE_LOG_CHANNEL_ID`; `POLL_ADMIN_CHANNEL_ID` can override it. It must deny
+and private results are owner-only. The control channel is Ogre
+(`1564594901746716713`), configured with `POLL_ADMIN_CHANNEL_ID`, separately from
+the logs channel. It must deny
 View Channel to `@everyone`. Voting works for members who can see the posted poll.
 
 ## Create and post
 
 1. Run `/poll create`. Enter the question/title and optional details. Options
-   start as **Yes** and **No**; replace them with 2–10 choices, one per line,
-   up to 80 characters each.
+   start as **Yes**, **No** and **Abstain**; remove Abstain if it is not needed,
+   or replace them with 2–10 choices, one per line, up to 80 characters each.
+   Every option gets its own grey voting button, including Abstain.
 2. Leave the deadline blank to close manually, or enter `30m`, `2h`, `7d` or
    a UK date-time such as `2026-11-04 20:00`. Absolute times use Europe/London
    by default. Clock-change gaps are rejected; a repeated hour needs an offset.
@@ -21,7 +23,10 @@ View Channel to `@everyone`. Voting works for members who can see the posted pol
 
 The question is the embed title and the choices appear in its body. The right
 thumbnail is always `https://i.vgy.me/dy0EEH.png`. Every poll button, including
-Yes/No, configuration and confirmation buttons, uses Discord's secondary grey.
+Yes/No/Abstain, configuration and confirmation buttons, uses Discord's secondary grey.
+Public polls and result summaries have no footer. Poll IDs and recovery details
+stay on the private Ogre card. A published result's title links to the original
+poll when its message is available.
 
 ## Votes and visibility
 
@@ -34,7 +39,10 @@ or manager command that displays who chose an option.
 | Participation only | Number of people who voted; option counts remain hidden |
 | Live results | Option counts, percentages and turnout, refreshed roughly every five seconds |
 
-The owner can change the display mode while voting is open. Hiding a previously
+The owner can change the display mode while voting is open: use
+`/poll manage poll_id` in Ogre, click **Display/deadline**, and choose
+**Hidden totals**, **Participation only** or **Live results** in the display
+menu. Saved votes and the public poll message are preserved. Hiding a previously
 visible count cannot make people forget or delete copies of counts already seen.
 The question, options, voting type and destination lock when posted, so existing
 ballots cannot silently be changed to answer a different question.
@@ -82,12 +90,21 @@ records. This is anonymity within the poll feature, not protection against every
 possible service operator or timing inference from live counts.
 
 Public controls use versioned dynamic IDs and survive restarts. Pending card
-updates retry without changing saved ballots. Poll/result messages have recovery
-markers; after a send interrupted by a restart, Ogre checks the latest 100
-messages before reposting. This reduces duplicates but cannot give a distributed
+updates retry without changing saved ballots. After a send interrupted by a
+restart, Ogre checks the latest 100 messages before reposting. Public polls are
+identified by their voting controls and results by their original-poll link;
+private cards retain recovery footers. Older public footer markers are still
+recognised so existing polls can be updated without reposting. This reduces
+duplicates but cannot give a distributed
 exactly-once guarantee if old messages are deleted or buried in a busy channel.
 Missing permissions can delay card updates or private results; saved totals remain
 in the database. Fix permissions and use `/poll manage` or wait for the retry.
+
+On startup, saved poll control cards follow the configured Ogre channel. When
+that channel changes, Ogre recreates the cards there, without moving public
+polls, changing options or modifying votes. Old cards in the previous channel
+are no longer updated. Existing posted polls keep their original options;
+to add Abstain to one that is already open, create a new poll.
 
 This release is tested offline and in the Docker runtime. A real Discord poll
 should be created by the owner to verify the server's actual channel permissions

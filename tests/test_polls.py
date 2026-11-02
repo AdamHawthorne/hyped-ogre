@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands
@@ -101,6 +102,45 @@ class PollStorageTests(unittest.TestCase):
         restarted.initialise()
         self.assertEqual(restarted.mine(7, self.ident, 123), [1])
         self.assertEqual(restarted.get(7, self.ident)["counts"], [0, 1])
+
+    def test_control_channel_change_preserves_all_other_state_and_is_idempotent(self):
+        self.opened()
+        self.store.message(7, self.ident, "admin", 101)
+        self.store.vote(7, self.ident, 123, 1)
+        closed = self.store.create(7, 99, 10, "Closed question?")
+        self.store.configure(7, closed, "public_channel_id", 20)
+        self.store.open(7, closed)
+        self.store.vote(7, closed, 124, 0)
+        self.store.close(7, closed)
+        draft = self.store.create(7, 99, 10, "Draft question?")
+        self.store.create(8, 99, 10, "Other guild?")
+        self.store.create(7, 99, 30, "Already in Ogre?")
+
+        def snapshot():
+            with self.store.connection() as con:
+                return {
+                    table: [dict(row) for row in con.execute(f"SELECT * FROM {table}")]
+                    for table in ("polls", "ballots")
+                }
+
+        before = snapshot()
+        self.assertEqual(self.store.route_admin_channel(7, 30), 3)
+        after = snapshot()
+        self.assertEqual(after["ballots"], before["ballots"])
+        for old, new in zip(before["polls"], after["polls"], strict=True):
+            expected = dict(old)
+            if old["id"] in {self.ident, closed, draft}:
+                expected.update(
+                    admin_channel_id=30,
+                    admin_message_id=None,
+                    admin_dirty=1,
+                    public_dirty=1,
+                    revision=old["revision"] + 1,
+                )
+            self.assertEqual(new, expected)
+        self.assertEqual(self.store.route_admin_channel(7, 30), 0)
+        self.assertEqual(snapshot(), after)
+        self.assertEqual(self.store.mine(7, self.ident, 123), [1])
 
     def test_ballots_contain_no_raw_member_id_and_closed_poll_discards_linking_keys(
         self,
@@ -242,6 +282,42 @@ class PollUiTests(unittest.IsolatedAsyncioTestCase):
             7, 99, 10, "Question?", "\n".join("Option " + str(i) for i in range(10))
         )
 
+    async def test_new_modal_saves_abstain_and_gives_it_a_working_grey_button(self):
+        cog = SimpleNamespace(
+            timezone=ZoneInfo("Europe/London"),
+            store=self.store,
+            require_admin=lambda _: None,
+            run=asyncio.to_thread,
+            sync=AsyncMock(),
+            respond=AsyncMock(),
+        )
+        editor = ui.PollEditor(cog, 99)
+        editor.question._value = "Use polls for guild decisions?"
+        editor.choices._value = editor.choices.default
+        editor.details._value = editor.deadline._value = ""
+        await editor.on_submit(
+            SimpleNamespace(
+                user=SimpleNamespace(id=99),
+                guild_id=7,
+                channel_id=10,
+                response=SimpleNamespace(defer=AsyncMock()),
+            )
+        )
+        ident = cog.sync.await_args.args[0]
+        self.store.configure(7, ident, "public_channel_id", 20)
+        self.store.open(7, ident)
+        self.store.message(7, ident, "public", 100)
+        poll = self.store.get(7, ident)
+        self.assertEqual(poll["options"], ["Yes", "No", "Abstain"])
+        buttons = [c for c in ui.public_view(poll).children if c.action == "vote"]
+        self.assertEqual([c.item.label for c in buttons], ["Yes", "No", "Abstain"])
+        self.assertTrue(
+            all(c.item.style == discord.ButtonStyle.secondary for c in buttons)
+        )
+        self.store.vote(7, ident, 123, buttons[2].option)
+        self.assertEqual(self.store.get(7, ident)["counts"], [0, 0, 1])
+        self.assertEqual(len(self.store.get(7, self.ident)["options"]), 10)
+
     async def test_buttons_persist_and_are_always_secondary(self):
         poll = self.store.get(7, self.ident)
         for state in ("draft", "open", "closed", "cancelled"):
@@ -264,6 +340,7 @@ class PollUiTests(unittest.IsolatedAsyncioTestCase):
         poll.update(state="open", counts=[1] * 10, voters=1)
         hidden = ui.render(poll)
         self.assertEqual(hidden.thumbnail.url, "https://i.vgy.me/dy0EEH.png")
+        self.assertIsNone(hidden.footer.text)
         self.assertNotIn("people have voted", hidden.description)
         self.assertNotIn("%", hidden.description)
         live = ui.render({**poll, "visibility": "live"})
@@ -272,6 +349,18 @@ class PollUiTests(unittest.IsolatedAsyncioTestCase):
         closed = ui.render({**poll, "state": "closed"}, private=True)
         self.assertIn("100%", closed.description)
         self.assertNotIn("<@", closed.description)
+        self.assertIn(ui.marker(self.ident, "admin"), closed.footer.text)
+        results = ui.render(
+            {
+                **poll,
+                "state": "closed",
+                "public_channel_id": 20,
+                "public_message_id": 100,
+            },
+            results=True,
+        )
+        self.assertIsNone(results.footer.text)
+        self.assertEqual(results.url, "https://discord.com/channels/7/20/100")
 
     async def test_worst_case_embed_and_real_modal_are_within_discord_limits(self):
         ident = self.store.create(
@@ -388,9 +477,92 @@ class PollUiTests(unittest.IsolatedAsyncioTestCase):
             channel.send.assert_not_awaited()
         self.assertEqual(self.store.get(7, self.ident)["admin_message_id"], 888)
 
+    async def test_footerless_public_send_recovery_uses_exact_poll_controls_and_author(
+        self,
+    ):
+        self.store.configure(7, self.ident, "public_channel_id", 20)
+        self.store.open(7, self.ident)
+        poll = self.store.get(7, self.ident)
+
+        def message(author, poll_id, ident):
+            saved = SimpleNamespace(
+                id=ident,
+                author=SimpleNamespace(id=author),
+                embeds=[ui.render(poll)],
+                components=[
+                    SimpleNamespace(
+                        children=[
+                            SimpleNamespace(custom_id=f"hyped_poll:v1:{poll_id}:vote:0")
+                        ]
+                    )
+                ],
+            )
+            saved.edit = AsyncMock(return_value=saved)
+            return saved
+
+        other_author = message(66, self.ident, 886)
+        other_poll = message(55, self.ident * 10, 887)
+        private_card = message(55, self.ident, 885)
+        private_card.components[0].children[0].custom_id = (
+            f"hyped_poll:v1:{self.ident}:configure:0"
+        )
+        previous = message(55, self.ident, 888)
+
+        async def history(**kwargs):
+            for saved in (other_author, other_poll, private_card, previous):
+                yield saved
+
+        channel = SimpleNamespace(history=history, send=AsyncMock())
+        cog = extension.PollsCog(SimpleNamespace(user=SimpleNamespace(id=55)))
+        cog.store = self.store
+        with patch.object(extension, "GUILD_ID", 7):
+            saved = await cog.managed_message(
+                poll, "public", channel, ui.render(poll), ui.public_view(poll)
+            )
+        self.assertEqual(saved.id, 888)
+        self.assertEqual(self.store.get(7, self.ident)["public_message_id"], 888)
+        channel.send.assert_not_awaited()
+        other_author.edit.assert_not_awaited()
+        other_poll.edit.assert_not_awaited()
+        private_card.edit.assert_not_awaited()
+
+    async def test_footerless_results_send_recovery_uses_original_poll_link(self):
+        self.store.configure(7, self.ident, "public_channel_id", 20)
+        self.store.open(7, self.ident)
+        self.store.message(7, self.ident, "public", 100)
+        self.store.close(7, self.ident)
+        poll = self.store.get(7, self.ident)
+        result = ui.render(poll, results=True)
+        previous = SimpleNamespace(
+            id=888, author=SimpleNamespace(id=55), embeds=[result]
+        )
+        previous.edit = AsyncMock(return_value=previous)
+
+        async def history(**kwargs):
+            yield previous
+
+        channel = SimpleNamespace(history=history, send=AsyncMock())
+        cog = extension.PollsCog(SimpleNamespace(user=SimpleNamespace(id=55)))
+        cog.store = self.store
+        with patch.object(extension, "GUILD_ID", 7):
+            saved = await cog.managed_message(poll, "results", channel, result)
+        self.assertEqual(saved.id, 888)
+        self.assertEqual(self.store.get(7, self.ident)["results_message_id"], 888)
+        channel.send.assert_not_awaited()
+
     async def test_extension_load_unload_has_no_login_and_uses_isolated_database(self):
-        path = str(Path(self.tmp.name) / "extension.db")
-        with patch.dict(os.environ, {"POLL_DB_PATH": path}):
+        self.store.configure(7, self.ident, "public_channel_id", 20)
+        self.store.open(7, self.ident)
+        self.store.message(7, self.ident, "public", 100)
+        self.store.vote(7, self.ident, 123, 0)
+        with patch.dict(
+            os.environ,
+            {
+                "POLL_DB_PATH": str(self.store.path),
+                "HYPED_GUILD_ID": "7",
+                "POLL_ADMIN_CHANNEL_ID": "30",
+            },
+        ):
             async with commands.Bot(
                 command_prefix="test_", intents=discord.Intents.none()
             ) as bot:
@@ -398,9 +570,11 @@ class PollUiTests(unittest.IsolatedAsyncioTestCase):
                 cog = bot.get_cog("PollsCog")
                 self.assertIsNotNone(cog)
                 self.assertEqual(cog.__module__, "hyped_ogre.features.polls.extension")
-                groups = bot.tree.get_commands(
-                    guild=discord.Object(id=extension.GUILD_ID)
-                )
+                saved = self.store.get(7, self.ident)
+                self.assertEqual(saved["admin_channel_id"], 30)
+                self.assertEqual(saved["public_message_id"], 100)
+                self.assertEqual(self.store.mine(7, self.ident, 123), [0])
+                groups = bot.tree.get_commands(guild=discord.Object(id=7))
                 self.assertEqual([command.name for command in groups], ["poll"])
                 for command in groups:
                     self.assertEqual(command.to_dict(bot.tree)["name"], "poll")
@@ -446,7 +620,8 @@ class PollFlowTests(unittest.IsolatedAsyncioTestCase):
 
         def permissions(who):
             return SimpleNamespace(
-                view_channel=ident != 10 or who is not self.guild.default_role,
+                view_channel=ident not in {10, 30}
+                or who is not self.guild.default_role,
                 send_messages=True,
                 embed_links=True,
                 read_message_history=True,
@@ -483,19 +658,84 @@ class PollFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         return channel
 
-    def interaction(self):
+    def interaction(self, channel_id=10):
         response = SimpleNamespace(
             is_done=lambda: True, defer=AsyncMock(), send_message=AsyncMock()
         )
         return SimpleNamespace(
             user=SimpleNamespace(id=99),
             guild_id=7,
-            channel_id=10,
-            channel=self.channels[10],
+            channel_id=channel_id,
+            channel=self.channels[channel_id],
             guild=self.guild,
             response=response,
             followup=SimpleNamespace(send=AsyncMock()),
         )
+
+    async def test_open_poll_can_switch_hidden_live_hidden_without_changing_votes(self):
+        await self.cog.perform_admin(self.interaction(), self.ident, "post")
+        self.store.vote(7, self.ident, 123, 0)
+        public = self.channels[20].sent[0]
+        for mode in ("live", "hidden", "participation", "hidden"):
+            await self.cog.configure(self.interaction(), self.ident, "visibility", mode)
+            poll = self.store.get(7, self.ident)
+            self.assertEqual(poll["counts"], [1, 0])
+            self.assertEqual(poll["voters"], 1)
+            self.assertEqual(poll["public_message_id"], public.id)
+            self.assertEqual(len(self.channels[20].sent), 1)
+            self.assertEqual("100%" in public.embeds[0].description, mode == "live")
+            self.assertEqual(
+                "person has voted" in public.embeds[0].description, mode != "hidden"
+            )
+        self.assertEqual(self.store.mine(7, self.ident, 123), [0])
+
+    async def test_existing_poll_rehomes_controls_and_private_results_to_ogre(self):
+        await self.cog.perform_admin(self.interaction(), self.ident, "post")
+        self.store.vote(7, self.ident, 123, 1)
+        old_card = self.channels[10].sent[0]
+        public = self.channels[20].sent[0]
+        public.embeds[0].set_footer(
+            text=f"Poll #{self.ident} · Anonymous · {ui.marker(self.ident, 'public')}"
+        )
+        self.channels[30] = self.make_channel(30)
+        self.store.route_admin_channel(7, 30)
+        with patch.object(extension, "ADMIN_CHANNEL_ID", 30):
+            await self.cog.sync(self.ident)
+            await self.cog.configure(
+                self.interaction(30), self.ident, "visibility", "live"
+            )
+            await self.cog.perform_admin(self.interaction(30), self.ident, "close")
+        poll = self.store.get(7, self.ident)
+        self.assertEqual(poll["admin_channel_id"], 30)
+        self.assertEqual(poll["admin_message_id"], self.channels[30].sent[0].id)
+        self.assertEqual(poll["public_message_id"], public.id)
+        self.assertEqual(poll["counts"], [0, 1])
+        self.assertEqual(len(self.channels[20].sent), 1)
+        self.assertEqual(len(self.channels[30].sent), 1)
+        self.assertIn("100%", self.channels[30].sent[0].embeds[0].description)
+        self.assertIsNone(public.embeds[0].footer.text)
+        old_card.edit.assert_not_awaited()
+
+    async def test_channel_move_cleans_existing_published_summary_without_reposting(
+        self,
+    ):
+        await self.cog.perform_admin(self.interaction(), self.ident, "post")
+        self.store.vote(7, self.ident, 123, 0)
+        await self.cog.perform_admin(self.interaction(), self.ident, "close")
+        await self.cog.perform_admin(self.interaction(), self.ident, "publish")
+        public, results = self.channels[20].sent
+        for message, kind in ((public, "public"), (results, "results")):
+            message.embeds[0].set_footer(text=ui.marker(self.ident, kind))
+        before = self.store.get(7, self.ident)
+        self.channels[30] = self.make_channel(30)
+        self.store.route_admin_channel(7, 30)
+        await self.cog.sync(self.ident)
+        after = self.store.get(7, self.ident)
+        self.assertEqual(len(self.channels[20].sent), 2)
+        for column in ("public_message_id", "results_message_id", "counts", "voters"):
+            self.assertEqual(after[column], before[column])
+        self.assertIsNone(public.embeds[0].footer.text)
+        self.assertIsNone(results.embeds[0].footer.text)
 
     async def test_full_private_draft_vote_close_and_deliberate_publication(self):
         await self.cog.sync(self.ident)
@@ -520,6 +760,7 @@ class PollFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(self.channels[20].sent), 2)
         self.assertIn("50%", self.channels[20].sent[1].embeds[0].description)
+        self.assertIsNone(self.channels[20].sent[1].embeds[0].footer.text)
         self.assertIn("50%", public.embeds[0].description)
         self.assertTrue(self.store.get(7, self.ident)["results_message_id"])
 
