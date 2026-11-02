@@ -13,6 +13,8 @@ from discord.ext import commands, tasks
 
 from .store import PollError, PollStore
 from .ui import (
+    ACCENT,
+    IMAGE,
     Confirmation,
     PollButton,
     PollEditor,
@@ -422,7 +424,12 @@ class PollsCog(
             )
             or "No polls yet. Use /poll create."
         )
-        await self.respond(interaction, text)
+        await self.respond(
+            interaction,
+            embed=discord.Embed(
+                title="Recent polls", description=text, colour=ACCENT
+            ).set_thumbnail(url=IMAGE),
+        )
 
     @app_commands.command(description="Close a posted poll after private confirmation")
     async def close(self, interaction: discord.Interaction, poll_id: int):
