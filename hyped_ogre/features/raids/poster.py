@@ -989,7 +989,7 @@ class RaidPosterView(discord.ui.LayoutView):
             note = ("Ogre already announced this raid; extra pings disabled."
                     if announced else
                     "Publish without a ping, or ping each selected guild member once. "
-                    "They react ✅ to acknowledge; Ogre removes them from the outstanding list.")
+                    "They react <:check:1566948806535159808> to acknowledge; Ogre removes them from the outstanding list.")
             for page in pages[:-1]:
                 await interaction.followup.send(
                     page, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())

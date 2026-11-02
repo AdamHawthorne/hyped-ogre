@@ -139,9 +139,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             empty = raid_schedule.raid_panel_text(event)
             self.assertNotIn("### Roster", empty)
-            self.assertNotIn("**Hyjal**", empty)
-            self.assertNotIn("**Barrows**", empty)
-            self.assertNotIn("**Ony**", empty)
+            self.assertNotIn("**Hyjal (", empty)
+            self.assertNotIn("**Barrows (", empty)
+            self.assertNotIn("**Ony (", empty)
             self.assertIn("**Roster confirmation:**", empty)
             members = [
                 ("Snore Mon", "Hyjal, Barrows 🔸, Ony"),
@@ -163,10 +163,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             # A confirmed event switches from role signups to instance teams.
             confirmed_event = {**event, "roster_published": 1}
             text = raid_schedule.raid_panel_text(confirmed_event, members)
-            self.assertIn("**Hyjal**", text)
-            self.assertEqual(text.count("**Hyjal**"), 1)
-            self.assertIn("**Barrows**", text)
-            self.assertIn("**Ony**", text)
+            self.assertIn("**Hyjal (", text)
+            self.assertEqual(text.count("**Hyjal ("), 1)
+            self.assertIn("**Barrows (", text)
+            self.assertIn("**Ony (", text)
             self.assertNotIn("20-player", text)
             self.assertNotIn("10-player", text)
             self.assertNotIn("40-player", text)
@@ -215,7 +215,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             hyjal_text = raid_schedule.raid_panel_text(hyjal_only)
             self.assertNotIn("### Roster", hyjal_text)
-            self.assertNotIn("**Hyjal**", hyjal_text)
+            self.assertNotIn("**Hyjal (", hyjal_text)
             self.assertNotIn("\n\n\n", hyjal_text)
 
             barrows_only = raid_schedule.save_raid(
@@ -225,10 +225,10 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 {**barrows_only, "roster_published": 1},
                 [("Split Two", "Barrows 🔹")]
             )
-            self.assertIn("**Barrows** 🔸\n-# **Tanks**", barrows_text)
-            self.assertIn("-# **DPS**\nSplit Two", barrows_text)
-            self.assertNotIn("**Hyjal**", barrows_text)
-            self.assertNotIn("**Ony**", barrows_text)
+            self.assertIn("**Barrows (0)** 🔸\n-# **Tanks (0)**", barrows_text)
+            self.assertIn("-# **DPS (1)**\n-# Split Two", barrows_text)
+            self.assertNotIn("**Hyjal (", barrows_text)
+            self.assertNotIn("**Ony (", barrows_text)
 
     async def test_hunter_specs_use_forever_melee_and_ranged_groups(self):
         for spec, expected in (
@@ -285,20 +285,20 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("**Melee (1)**", collecting)
             self.assertIn("**Ranged (1)**", collecting)
             self.assertIn("**Healers (1)**", collecting)
-            self.assertNotIn("**Hyjal**", collecting)
-            self.assertNotIn("**Barrows**", collecting)
-            self.assertNotIn("**Ony**", collecting)
+            self.assertNotIn("**Hyjal (", collecting)
+            self.assertNotIn("**Barrows (", collecting)
+            self.assertNotIn("**Ony (", collecting)
             cog = raid.RaidPrototype(SimpleNamespace())
             pre_panel = json.dumps(cog.make_panel(event).to_components())
             self.assertIn("Sign-ups (4)", pre_panel)
-            self.assertNotIn("**Barrows**", pre_panel)
+            self.assertNotIn("**Barrows (", pre_panel)
             # Private assignment edits must never turn on team display early.
             from cogs import raid_sheets_v3
             raid_sheets_v3._save_public_for_one(
                 raid.RAID_DB, 5, [("Tank Test", "Barrows 🔸", "Warrior", "Tank", "Protection")])
             pre_panel = json.dumps(cog.make_panel(event).to_components())
             self.assertIn("Sign-ups (4)", pre_panel)
-            self.assertNotIn("**Barrows**", pre_panel)
+            self.assertNotIn("**Barrows (", pre_panel)
 
             confirmed_entries = [
                 (str(member_id), name, assignment, klass, role, spec)
@@ -313,9 +313,9 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                                   for x in confirmed_entries])
             confirmed_panel = json.dumps(cog.make_panel(confirmed_event).to_components())
             self.assertIn("### Roster", confirmed_panel)
-            self.assertIn("**Hyjal**", confirmed_panel)
-            self.assertIn("**Barrows**", confirmed_panel)
-            self.assertIn("**Ony**", confirmed_panel)
+            self.assertIn("**Hyjal (", confirmed_panel)
+            self.assertIn("**Barrows (", confirmed_panel)
+            self.assertIn("**Ony (", confirmed_panel)
             self.assertNotIn("Sign-ups (4)", confirmed_panel)
             self.assertEqual(confirmed_event["signup_open"], 1)
 

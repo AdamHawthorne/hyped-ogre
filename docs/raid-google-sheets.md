@@ -74,9 +74,7 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    acknowledgement list stays retired to avoid misleading reactions.
 7. After the raid, use
    `/raid archive number:1 wcl_url:https://www.warcraftlogs.com/reports/... notes:...`.
-   The date, WCL link and notes are stored on the raid tab. The tab is hidden
-   to keep the active Sheet tidy, **not deleted**. Use Google Sheets' hidden
-   sheets menu to view it later.
+   The date, WCL link and notes are stored on the raid tab. The tab stays visible for review. Leadership can hide it manually later.
 
 ## Deleting raids
 
@@ -143,8 +141,8 @@ anyone. Plain `warcraftlogs.com` and report subdomains such as
 not published. The bot retains the link if you subsequently complete or
 archive the raid without entering another URL in the completion form.
 
-Make B4 edits **before archiving**. Archived raid tabs are hidden and
-not monitored for subsequent Sheet edits.
+Visible completed raid tabs continue syncing WCL and notes. Manually hidden
+completed tabs are left alone until unhidden.
 
 Below the fixed headings, registrations appear under five sections:
 
@@ -367,3 +365,29 @@ Remove-Variable json,key,secret
 These Fly secrets have already been configured on the live app. No need to
 recreate or reapply them when deploying code changes. Run `/raid sync`
 in private `#ogre` to diagnose permissions or synchronisation problems.
+
+## Completion and acknowledgement updates
+
+Publish + ping selected sends a separate message in the stored raid channel.
+Ogre asks for `<:check:1566948806535159808>` and removes acknowledged members
+from the outstanding list, without removing their roster places. Older Unicode
+check reactions remain accepted for messages already posted.
+
+Confirmed instance and role headings show actual player counts. Both collecting
+and confirmed role/name lists use Discord subtext. WCL appears directly below
+Check and continues to sync both ways with the Sheet's report cell.
+
+H2:H5 uses overflow rather than wrapping. Class through Show use equal column
+widths. Confirmation and archived timestamps display readable UK dates/times.
+
+Complete Raid opens notes, WCL and loot log/link fields, then asks for confirmation.
+The loot field saves a link or short excerpt in raid notes, not a parsed Gargul
+loot import. Pending selected/bench attendance becomes Attended; recorded
+exceptions are preserved. The raid closes and the Sheet stays visible until
+leadership hides it manually. Existing manually hidden tabs are respected.
+
+Forever Roster column I shows recorded attendance in the latest four completed
+guild raids, keyed by Discord ID across characters. Three recorded attendances
+qualify. Duplicate character records never count twice; pending, absent, excused
+and future uncompleted raids earn no credit. This is an eligibility indicator;
+it does not automatically change Discord roles or in-game ranks.

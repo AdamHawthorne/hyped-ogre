@@ -89,7 +89,7 @@ async def refresh(bot, path, raid_id, guild_id):
 
 async def reaction(bot, path, payload, guild_id):
     if (payload.guild_id != guild_id or
-            str(payload.emoji) != store.ACK_EMOJI or
+            str(payload.emoji) not in (store.ACK_EMOJI, "✅") or
             (bot.user and payload.user_id == bot.user.id)):
         return False
     raid_id = store.acknowledge(

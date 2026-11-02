@@ -733,7 +733,7 @@ def raid_panel_intro(event):
         + wse_line
         + (f"\n**Check:** [View message]({event['check_message_url']})"
            if event.get("check_message_url") else "")
-        + softres_line + wcl_line
+        + wcl_line + softres_line
     )
 
 
@@ -771,17 +771,16 @@ def roster_group_heading(title):
 
 def _roster_group_text(title, players):
     """Always show muted Tanks / Healers / DPS placeholders per raid roster."""
-    lines = [roster_group_heading(title)]
+    heading = roster_group_heading(title)
+    for instance in ("Hyjal", "Barrows", "Ony"):
+        heading = heading.replace(f"**{instance}**", f"**{instance} ({len(players)})**")
+    lines = [heading]
     for label, category in (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS")):
-        lines.append(f"-# **{label}**")
-        if players:
-            matching = [
-                name for player_role, name in players
-                if player_role == category
-            ] if all(isinstance(item, tuple) for item in players) else (
-                players if category == "DPS" else []
-            )
-            lines.extend(matching)
+        matching = ([name for player_role, name in players if player_role == category]
+                    if players and all(isinstance(item, tuple) for item in players)
+                    else players if category == "DPS" else [])
+        lines.append(f"-# **{label} ({len(matching)})**")
+        lines.extend("-# " + name for name in matching)
     return "\n".join(lines)
 
 
