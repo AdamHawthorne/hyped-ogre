@@ -1,7 +1,7 @@
 # Hyped Ogre deployment
 
 Updates to `main` deploy automatically to the existing `hyped-diceman` Fly app.
-The app keeps its `diceman_data` volume at `/data` and its five SQLite databases.
+The app keeps its `diceman_data` volume at `/data` and its persistent SQLite databases.
 The boot command remains `python rollogre.py`; the bot briefly restarts per release.
 
 ## Normal update
@@ -51,7 +51,7 @@ Check the next scheduled reset, raid reminder and Twitch refresh.
 ## Persistent data and backups
 
 The preserved paths are `/data/bot.db`, `/data/raid_signup.db`,
-`/data/lfg_board.db`, `/data/countdown.db` and `/data/streams.db`.
+`/data/lfg_board.db`, `/data/countdown.db`, `/data/streams.db` and `/data/polls.db`.
 Deployment never creates, deletes, restores or replaces the volume.
 Automatic backup selection happens in `scripts/fly_release.py` using Fly's
 JSON output, not text pipelines that can cause SIGPIPE/exit 141.

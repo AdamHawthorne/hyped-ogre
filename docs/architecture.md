@@ -181,12 +181,17 @@ This is a **target**, not a description of files already migrated. Keep stable a
 
 ## Migration invariants
 
-1. **No production interruption:** GitHub branches and tests must not touch the running Fly.io machine or its volume. No deployment workflow should trigger on a structural PR without an explicit release decision.
-2. **Persistent data:** preserve `/data/bot.db`, `/data/raid_signup.db`, `/data/lfg_board.db`, `/data/countdown.db` and `/data/streams.db`. Do not recreate tables or rewrite existing records.
+1. **Release boundary:** GitHub branches and PR tests must not touch the running Fly.io machine or its volume. Main updates use the authorised automatic deployment workflow, with checks and backups before restart.
+2. **Persistent data:** preserve `/data/bot.db`, `/data/raid_signup.db`, `/data/lfg_board.db`, `/data/countdown.db`, `/data/streams.db` and the separate `/data/polls.db`. Do not recreate tables or rewrite existing records.
 3. **Discord compatibility:** preserve registered persistent component `custom_id` values, existing commands, permissions and guild/channel IDs. Old messages and buttons should continue working after a deploy.
 4. **Scheduled tasks:** keep midnight UK coin settlement, Sunday bonuses, raid reminders, Twitch monitoring, and periodic recovery behaviour idempotent; avoid duplicate loops or posts.
 5. **Third-party integrations:** preserve working Google Sheets, Warcraft Logs, Twitch and WoWSims flows, credentials and resource identifiers.
 6. **Licensing:** retain MIT attribution and the original copyright notice while separating Hyped Ogre modules from remaining inherited RollF code.
+
+The new poll extension is loaded directly as `hyped_ogre.features.polls.extension`.
+It does not use or change the legacy extension allow-list. Its ballots, final
+results, message IDs and deadlines live only in the poll database. See
+[poll behaviour and anonymity](polls.md).
 
 ## Order of work
 

@@ -18,6 +18,7 @@ DATA_PATHS = {
     "LFG_DB_PATH": "/data/lfg_board.db",
     "COUNTDOWN_DB_PATH": "/data/countdown.db",
     "STREAM_DB_PATH": "/data/streams.db",
+    "POLL_DB_PATH": "/data/polls.db",
 }
 
 
