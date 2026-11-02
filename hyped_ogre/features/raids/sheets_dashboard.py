@@ -1263,14 +1263,14 @@ def sync_once(db_path, discord_names=None):
                 # selections; new sign-ups may still be assigned and displayed.
                 approved = _approved(rows, event, include_details=True)
                 published[raid_id] = [
-                    tuple(entry[1:6]) for entry in approved
+                    tuple(entry[1:6]) + (entry[0],) for entry in approved
                     if not entry[0] or entry[0] not in unavailable.get(raid_id, ())
                 ]
             else:
                 # The collecting roster shows visible sign-ups only, based on
                 # the latest Sheet visibility flags cached by _one(). Instance
                 # assignments and selection still stay private until publish.
-                published[raid_id] = read_signup_roster(db_path, raid_id)
+                published[raid_id] = read_signup_roster(db_path, raid_id, include_identity=True)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         try:
             _sync_gear_tab(session, db_path, titles)
@@ -1357,29 +1357,31 @@ def attendance_complete(db_path, raid_id):
 def _save_public_for_one(db_path, raid_id, selected):
     """Retain class, role and spec for Discord emoji rendering."""
     desired = [
-        tuple(row[:5]) + ("",) * (5 - len(row[:5]))
+        tuple(row[:5]) + ("",) * (5 - len(row[:5])) +
+        (str(row[5] or "") if len(row) > 5 else "",)
         for row in selected
     ]
     with database(db_path) as con:
         current = con.execute(
             "SELECT name, assignment, COALESCE(class_name,''), COALESCE(role,''), "
-            "COALESCE(spec,'') FROM raid_public_roster "
+            "COALESCE(spec,''), COALESCE(discord_id,'') FROM raid_public_roster "
             "WHERE raid_id=? ORDER BY position", (raid_id,)
         ).fetchall()
         if current == desired:
             return set()
         from datetime import datetime, timezone
         instant = datetime.now(timezone.utc).isoformat()
-        con.execute(
-            "UPDATE raids SET roster_updated_at=CASE "
-            "WHEN roster_published=1 THEN ? ELSE roster_updated_at END "
-            "WHERE raid_id=?", (instant, raid_id),
-        )
+        if [row[:5] for row in current] != [row[:5] for row in desired]:
+            con.execute(
+                "UPDATE raids SET roster_updated_at=CASE "
+                "WHEN roster_published=1 THEN ? ELSE roster_updated_at END "
+                "WHERE raid_id=?", (instant, raid_id),
+            )
         con.execute("DELETE FROM raid_public_roster WHERE raid_id=?", (raid_id,))
         con.executemany(
             "INSERT INTO raid_public_roster "
-            "(raid_id, position, name, assignment, class_name, role, spec) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(raid_id, position, name, assignment, class_name, role, spec, discord_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [(raid_id, i, *entry) for i, entry in enumerate(desired)],
         )
     return {raid_id}

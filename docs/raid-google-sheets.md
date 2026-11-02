@@ -197,12 +197,18 @@ when the poster's default is changed.
 For a player to appear in Hyjal, for example: choose **Selected** (G),
 **Yes** (K, Show), and **Yes** (H, Hyjal). For Barrows, select the relevant
 team symbol in column I. Changes are noticed at the next successful ~60-second sync.
-Hyjal remains one roster headed by 🔹🔸 and Barrows has two rosters
+Hyjal remains one roster headed by 🔸🔹 and Barrows has two rosters
 headed 🔸 and 🔹. The diamond headers stay visible after players appear.
 Names have no bullet prefixes. The bot uses server custom emoji named
 `Tank`, `Healer`, `DPS`, `Ranged` and class names such as `Warrior` and
 `Mage`, when present; readable Unicode icons are the fallback.
 Class/spec/role data travels with the private selected roster, including PUGs.
+
+The private **Preview / Confirm Roster** screen groups names under the same
+instance headings: Hyjal with both diamonds, then the orange and blue Barrows
+groups. Names use small Discord subtext without repeating each player's
+assignment. Large previews continue across private messages so every selected
+name is shown. Opening the preview does not confirm the raid or change sign-ups.
 
 The columns above describe the new displayed order, not the internal
 Python/SQLite field indices. Ogre reads existing raid tabs by the original
@@ -303,10 +309,14 @@ Missing value may predate their membership. Entries are joined by the
 person's **Discord ID**, across mains/alts, rather than by character ID.
 The **current raid** is excluded from the six statuses.
 
-The raid roster is also sorted with the Discord account identified by
+The Sheet and Discord rosters are sorted with the Discord account identified by
 `OWNER_ID` first within its Tanks, Healers, Melee or Ranged section,
 before the remaining class/character order. No hidden character IDs are
-modified by this presentation choice.
+modified by this presentation choice. Discord adds
+`<:ogrecrown:1566947968760946948>` after that account's character name. The crown
+is based on the saved member ID, not a matching display name, and is never
+written into character names or Sheet cells. Existing sign-ups, notes, selections
+and attendance records are preserved when this display update rolls out.
 
 This view is bot-maintained. Don't manually edit the tab; use the
 WoWSims paste function in Discord to update equipment. Existing raid
