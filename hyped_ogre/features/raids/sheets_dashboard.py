@@ -409,7 +409,7 @@ def _header(event, body, tab):
         ["Date", when.strftime("%A, %d %B %Y"), "Status", state,
          "Start (UK)", when.strftime("%H:%M"), *coverage_cells[0]],
         ["Instances", instances, "Confirmed",
-         event.get("confirmed_at") or "", "Archived", event.get("archived_at") or "",
+         _uk_timestamp(event.get("confirmed_at")), "Archived", _uk_timestamp(event.get("archived_at")),
          *coverage_cells[1]],
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
          event.get("archive_notes") or "", "", "", *coverage_cells[2]],
@@ -619,6 +619,15 @@ def _paint_sections(session, sid, rows):
                       "userEnteredFormat.verticalAlignment,"
                       "userEnteredFormat.textFormat.bold"}},
     ])
+    for col in range(2, 11):
+        requests.append({"updateDimensionProperties": {
+            "range": {"sheetId": sid, "dimension": "COLUMNS", "startIndex": col, "endIndex": col + 1},
+            "properties": {"pixelSize": 110}, "fields": "pixelSize"}})
+    requests.append({"repeatCell": {
+        "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5,
+                  "startColumnIndex": 7, "endColumnIndex": 8},
+        "cell": {"userEnteredFormat": {"wrapStrategy": "OVERFLOW_CELL"}},
+        "fields": "userEnteredFormat.wrapStrategy"}})
     # Old dropdowns can linger after a layout migration. Clear the entire
     # management area and reapply only the actual selection controls.
     requests.append({"setDataValidation": {"range": {
@@ -857,14 +866,6 @@ def _one(session, db_path, event, names, titles):
                     "UPDATE raids SET raid_notes_sheet_synced=? WHERE raid_id=?",
                     (event.get("archive_notes") or "", event["raid_id"]),
                 )
-    if event.get("archived_at"):
-        if not titles[title].get("hidden"):
-            raid_sheets._json(
-                session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
-                json={"requests": [{"updateSheetProperties": {
-                    "properties": {"sheetId": sid, "hidden": True},
-                    "fields": "hidden"}}]},
-            )
     return changed, full
 
 
@@ -921,10 +922,29 @@ def _permanent_write(session, tab, row_number, values):
                       json={"values": [values]})
 
 
+def _permanent_write_cell(session, tab, cell, value):
+    url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
+        f"'{tab}'!{cell}", safe="'!:")
+    raid_sheets._json(session, "PUT", url, params={"valueInputOption": "RAW"},
+                      json={"values": [[value]]})
+
+
 def _attendance_formula(row_number, status):
     return (f'=SUMPRODUCT((\'Forever Attendance\'!$C$6:$C$1000=$B{row_number})*'
             f'(IFERROR(DATEVALUE(\'Forever Attendance\'!$B$6:$B$1000),0)>=TODAY()-90)*'
             f'(\'Forever Attendance\'!$J$6:$J$1000="{status}"))')
+
+
+def rolling_attendance(raids, attendance):
+    """Credit recorded attendance across the last four completed guild raids."""
+    window = sorted((event for event in raids.values() if event.get("archived_at")),
+                    key=lambda event: (datetime.fromisoformat(event["raid_at"]).timestamp(), event["raid_id"]), reverse=True)[:4]
+    completed_ids = {str(event["raid_id"]) for event in window}
+    attended = {}
+    for entry in attendance:
+        if len(entry) > 9 and str(entry[0]) in completed_ids and entry[9] == "Attended":
+            attended.setdefault(str(entry[2]), set()).add(str(entry[0]))
+    return window, attended
 
 
 def _sync_permanent(session, db_path, discord_names, raid_rosters):
@@ -939,6 +959,9 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
     attendance_map = {(str(row[0]), str(row[2])): (i + 6, row)
                       for i, row in enumerate(old_attendance[1:])
                       if len(row) > 2 and str(row[0]).isdigit() and str(row[2]).isdigit()}
+    window, attended = rolling_attendance(raids, old_attendance[1:])
+    if not old_roster or len(old_roster[0]) < 9 or old_roster[0][8] != "Last 4 completed raids":
+        _permanent_write_cell(session, "Forever Roster", "I5", "Last 4 completed raids")
     roster_next = len(old_roster) + 5
     attendance_next = len(old_attendance) + 5
     for character in characters:
@@ -961,7 +984,7 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
         values = [cid, did, name, character["name"], character["class_name"],
                   character["spec"], character["role"],
                   "Main" if character["is_main"] else "Alt",
-                  "", gear_date, ratio, *counts,
+                  f"{len(attended.get(did, set()))}/{len(window)} · " + ("Eligible" if len(attended.get(did, set())) >= 3 else "Not eligible"), gear_date, ratio, *counts,
                   old[14] if len(old) > 14 else ""]
         # Formulas recalculate in Sheets; avoid rewriting unchanged profiles.
         if not previous or old[:10] != [str(v) for v in values[:10]]:

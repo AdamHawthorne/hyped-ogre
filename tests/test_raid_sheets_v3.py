@@ -108,7 +108,7 @@ class RaidTabsTests(unittest.TestCase):
                                  ["textFormat"]["bold"], False)
                 headers = [
                     req["range"]["startRowIndex"] for req in fills[1:]
-                    if req["cell"]["userEnteredFormat"]["textFormat"]["bold"]
+                    if req["cell"]["userEnteredFormat"].get("textFormat", {}).get("bold")
                 ]
                 self.assertEqual(
                     [i for i in headers if i >= 7],

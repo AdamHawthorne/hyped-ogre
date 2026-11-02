@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from cogs.raid_schedule import database
 
-ACK_EMOJI = "✅"
+ACK_EMOJI = "<:check:1566948806535159808>"
 
 
 def announcement(path, raid_id):
@@ -129,7 +129,7 @@ def mark_refreshed(path, raid_id):
 def render(raid_id, awaiting, total, panel_url=None):
     """Compact public text, with no mass mentions and no name removed from roster."""
     intro = (f"**<Hyped> Raid #{raid_id} | Roster announced**\n"
-             "Ogre picked raid team! React ✅ below to tell Ogre you seen roster. "
+             f"Ogre picked raid team! React {ACK_EMOJI} below to tell Ogre you seen roster. "
              "Ogre cross your name off this list. Raid spot stay yours.\n\n")
     if awaiting:
         mentions = "\n".join(f"<@{int(member_id)}>" for member_id, _ in awaiting)
