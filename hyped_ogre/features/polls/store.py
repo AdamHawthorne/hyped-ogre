@@ -142,6 +142,16 @@ class PollStore:
         finally:
             con.close()
 
+    def route_admin_channel(self, guild_id, channel_id):
+        """Rehome saved control cards without changing votes or public messages."""
+        if guild_id <= 0 or channel_id <= 0:
+            raise PollError("Choose a valid server and private poll control channel.")
+        with self.connection(write=True) as con:
+            return con.execute(
+                "UPDATE polls SET admin_channel_id=?,admin_message_id=NULL,admin_dirty=1,public_dirty=1,revision=revision+1 WHERE guild_id=? AND admin_channel_id<>?",
+                (channel_id, guild_id, channel_id),
+            ).rowcount
+
     @staticmethod
     def _row(con, guild_id, poll_id):
         row = con.execute(

@@ -96,9 +96,15 @@ def render(poll, *, private=False, results=False):
         colour=ACCENT,
     )
     result.set_thumbnail(url=IMAGE)
-    result.set_footer(
-        text=f"Poll #{poll['id']} · Anonymous · {marker(poll['id'], 'results' if results else 'admin' if private else 'public')}"
-    )
+    if private:
+        result.set_footer(
+            text=f"Poll #{poll['id']} · Anonymous · {marker(poll['id'], 'results' if results else 'admin')}"
+        )
+    elif results and poll["public_message_id"]:
+        result.url = (
+            f"https://discord.com/channels/{poll['guild_id']}/"
+            f"{poll['public_channel_id']}/{poll['public_message_id']}"
+        )
     return result
 
 
@@ -253,7 +259,7 @@ class PollEditor(discord.ui.Modal):
             label="Options: one per line (2–10)",
             style=discord.TextStyle.paragraph,
             max_length=809,
-            default="\n".join(poll["options"]) if poll else "Yes\nNo",
+            default="\n".join(poll["options"]) if poll else "Yes\nNo\nAbstain",
         )
         self.details = discord.ui.TextInput(
             label="Additional details (optional)",
