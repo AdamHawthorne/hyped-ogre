@@ -1,7 +1,7 @@
 # VS Code and GitHub workflow
 
 Use VS Code to edit and check code, GitHub pull requests to review changes,
-GitHub Actions to verify them, and the manual Fly workflow to release them.
+GitHub Actions to verify them and deploy updates to `main` onto Fly.
 
 ## Set up VS Code on Windows
 
@@ -74,23 +74,28 @@ git pull --ff-only
 7. Review the diff and wait for the Linux, Windows and security checks to
    pass before merging.
 
-Safety checks run on PRs and on pushes to `main`. A branch without a PR
-does not automatically run this workflow; open a draft PR early or run
-**Hyped Ogre safety checks > Run workflow** on that branch. New commits to
-the same PR cancel its older safety run. The Linux job includes Docker and
-runtime checks; the Windows job checks the ordinary development commands.
-The POSIX-only Fly shell fixtures run on Linux and are skipped on Windows.
+Safety checks run on PRs. The deployment workflow calls the same checks for
+each `main` push, without starting a second standalone safety run. A branch
+without a PR can be checked with **Hyped Ogre safety checks > Run workflow**.
+New commits to the same PR cancel its older safety run. The Linux job includes
+Docker and runtime checks; the Windows job checks the development commands.
+Deployment guards are tested offline on both platforms.
 
 ## Release a reviewed change
 
-After merging, check that `main`'s safety checks pass. Merging updates the
-repository; the bot continues running the previously deployed release.
+Push to `main`, or merge a PR into it. **Deploy Hyped Ogre** automatically
+runs the Linux/Windows checks, Docker build and runtime smoke tests, records
+the existing volume, recent backup and rollback image, then updates Fly.
+The bot briefly restarts as part of deployment. A failed check stops the release.
 
-Use **Actions > Deploy Hyped Ogre (manual only) > Run workflow** when you
-are ready to release. That workflow requires the exact reviewed `main`
-commit SHA, the live volume ID, a completed snapshot, a working rollback
-image and the confirmation phrase. Follow [operations](operations.md) for
-the backup, release and live verification steps.
+For a manual retry, open **Actions > Deploy Hyped Ogre > Run workflow** and
+select `main`. There are no SHA, snapshot or confirmation fields to fill in.
+The historical `deploy-manual.yml` filename remains so saved links still work.
+
+`git pull` downloads code to your PC and does not deploy. A feature-branch
+push or an unmerged PR also does not deploy. After each main update, open
+the deployment run to check the result and test a harmless Discord interaction.
+See [operations](operations.md) for backup and recovery details.
 
 Local tasks and PR checks do not use `FLY_API_TOKEN`. Keep that deployment
 secret in GitHub Actions. Keep `.env`, databases and private credentials

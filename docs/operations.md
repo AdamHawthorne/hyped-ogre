@@ -1,137 +1,94 @@
-# Hyped Ogre operational safety
+# Hyped Ogre deployment
 
-## Current deployment
+Updates to `main` deploy automatically to the existing `hyped-diceman` Fly app.
+The app keeps its `diceman_data` volume at `/data` and its five SQLite databases.
+The boot command remains `python rollogre.py`; the bot briefly restarts per release.
 
-- GitHub repository: `AdamHawthorne/hyped-ogre`
-- Fly.io application: `hyped-diceman`
-- New Docker entry point after the next release: `python rollogre.py`
-- Database mount: `diceman_data` at `/data`
-- Timezone: `Europe/London`
+## Normal update
 
-**Deployment is manual only.** Merging the entrypoint rename does not restart the bot. The running Fly machine continues using its previous image until an explicitly authorised release.
+1. Commit and push a change to `main`, or merge a reviewed PR into `main`.
+2. Open **GitHub > Actions > Deploy Hyped Ogre**.
+3. The workflow runs the shared Linux/Windows tests, builds Docker and checks
+   the actual runtime. Checks run once for this main commit, before deployment.
+4. It finds the existing Machine and attached `diceman_data` volume, records
+   the current image for rollback and selects a completed snapshot no older
+   than one hour. Rapid test pushes reuse that recent snapshot. If needed it
+   requests a new snapshot and waits up to three minutes for completion.
+5. It runs `flyctl deploy -a hyped-diceman --remote-only --ha=false`, then
+   verifies that the same Machine is started with the same volume mounted.
 
-## Inspect production (read-only)
+The workflow uses the existing `FLY_API_TOKEN` secret in the `production`
+environment/repository. Never put the token into source or chat. A missing
+secret, failed test, unexpected mount/database path or unavailable completed
+backup stops the release. Jobs are serialised, and an in-progress deployment
+is not cancelled by a newer push. A queued superseded push may be replaced
+by the newest queued push.
 
-From PowerShell, after installing and authenticating the Fly CLI:
+The historical workflow filename is still `deploy-manual.yml`, keeping saved
+links valid. The workflow title is **Deploy Hyped Ogre**. Use **Run workflow**
+with `main` for a manual retry; there are no five input fields. Starting it on
+another branch skips deployment. PR checks and ordinary feature-branch pushes
+do not deploy. `git pull` only updates your PC's working copy.
 
-```powershell
-cd "C:\Users\Adam\hyped-ogre"
-fly status -a hyped-diceman
-fly logs -a hyped-diceman
-```
+The workflow summary records the source commit, Machine/volume evidence,
+completed snapshot and previous image. Fly status is not proof that every
+Discord interaction works; test a harmless command after a release.
 
-These commands inspect status and logs; they do not deploy. Verify the bot responds normally in Discord and that important buttons remain usable.
-
-## Before any deployment
-
-1. Confirm the branch and the exact commit to deploy.
-2. Ensure automated checks, including Docker build, pass.
-3. Make and verify a restorable backup of the live Fly volume databases; a Git repository is **not** a backup of production SQLite data.
-4. Record the previous working image/release for rollback.
-5. Confirm Fly secrets, the `/data` mount and expected app configuration are unchanged.
-6. Schedule the cutover away from UK midnight, planned raids and other sensitive guild activity.
-7. Deploy only after authorisation, then verify status, logs, Discord interactions and existing records.
-
-## Rollback
-
-If a structural release breaks the bot, restore the previous working application image while **retaining the live `/data` volume**. Do not casually revert the database if new valid data was written. If a migration changed the schema, use the tested rollback or forward-repair procedure for that migration.
-
-
-## Rollogre release procedure
-
-The executable is renamed to `rollogre.py`, but the complete bot and its
-Discord commands remain in `hyped_ogre/bot.py`. The Docker `COPY` and
-`CMD`, safety workflow, tests, docs and local commands change together.
-
-**Unchanged:** Fly app `hyped-diceman`, region `lhr`, volume
-`diceman_data` at `/data`, the five existing SQLite paths, Discord bot
-identity, slash commands, message/component IDs, background jobs and secrets.
-Legacy RollF licensing, static CSS and historical log filenames are not part
-of the executable rename.
-
-A code merge alone does not deploy anything.
-
-### Prepare a manual GitHub deployment
-
-1. Use `fly auth login` to sign into your existing Fly account. Generate an
-   app-scoped, short-lived deploy token (from your project directory) with
-   `fly tokens create deploy -a hyped-diceman -x 720h`. **Never commit,
-   paste into chat, or display this secret in a workflow log.**
-2. Add the token as `FLY_API_TOKEN` in GitHub repository **Settings >
-   Secrets and variables > Actions**, or as a secret of the `production`
-   environment. Configure environment protection and required reviewers
-   where supported by your account.
-3. Verify the **main** branch safety workflow is green and copy the full
-   40-character reviewed commit SHA. For this first migration deployment,
-   schedule a quiet time away from UK midnight, a raid and other timed
-   announcements. Check there is only one intended bot Machine.
-4. Inspect production without changing it:
+## Verify the live bot
 
 ```powershell
 fly status -a hyped-diceman
 fly volumes list -a hyped-diceman
 fly releases --image -a hyped-diceman
-fly secrets list -a hyped-diceman
+fly logs -a hyped-diceman
 ```
 
-Record the exact volume ID (`vol_...`) for **diceman_data** and the
-previous working release image from `fly releases --image`. Ensure the
-volume is attached and the existing five SQLite files are present.
+Confirm one intended bot Machine is started, the expected volume remains
+attached and the bot responds in Discord. Test `/stats` and existing panels
+without spending real gamble coins or creating duplicate announcements.
+Check the next scheduled reset, raid reminder and Twitch refresh.
 
-5. **Deliberately request a fresh Fly snapshot** of that volume, then
-   verify the snapshot reaches `created` status. Fly snapshots are
-   asynchronous, so recording a scheduled snapshot is not enough.
+## Persistent data and backups
+
+The preserved paths are `/data/bot.db`, `/data/raid_signup.db`,
+`/data/lfg_board.db`, `/data/countdown.db` and `/data/streams.db`.
+Deployment never creates, deletes, restores or replaces the volume.
+Automatic backup selection happens in `scripts/fly_release.py` using Fly's
+JSON output, not text pipelines that can cause SIGPIPE/exit 141.
+
+Fly snapshots are block-level recovery points with separate retention. For
+long-term recovery also keep a tested off-platform copy made with SQLite's
+online backup API, including committed WAL transactions. GitHub code is not
+a backup of the bot's live databases. Before schema/data migrations, prepare
+and test a migration-specific backup and recovery plan.
+
+To request an extra snapshot manually:
 
 ```powershell
 fly volumes snapshots create <volume-id> -a hyped-diceman
 fly volumes snapshots list <volume-id> -a hyped-diceman
 ```
 
-Record the completed `vs_...` snapshot ID. Fly snapshots are block-level
-recovery points. For long-term recovery, also maintain a tested off-platform
-copy using SQLite's consistent backup API; do not copy a live SQLite database
-file without accounting for WAL transactions. The workflow will **not**
-create, restore or delete the persistent volume.
+Wait for the requested snapshot to show `created` before relying on it.
 
-6. Open **GitHub > Actions > Deploy Hyped Ogre (manual only) > Run workflow**.
-   Select `main`; provide the full commit SHA, volume ID, completed snapshot
-   ID, previous working image and the exact phrase `DEPLOY HYPED OGRE`.
-   It fails closed if the SHA, image, volume or completed snapshot checks fail.
+## Failure and rollback
 
-The workflow reruns Python regressions and Docker launcher smoke checks
-before calling `flyctl deploy -a hyped-diceman --remote-only --ha=false`.
-GitHub Actions installs the CLI executable as `flyctl`; the shorter `fly`
-command used in a local terminal may be an alias and is not available there.
-Volume, snapshot and release listings are saved to temporary files before
-matching. This prevents `grep -q` from closing a streaming Fly command early
-under `pipefail` (exit 141), while preserving CLI failures. Missing backup
-evidence or a failed Fly command still stops the workflow before deployment.
-It is not triggered by a PR, a push or a merge. Do not run a second
-production bot with the same Discord token.
+If checks or the backup guard fail, the deployment step is skipped and the
+existing bot stays on its current image. Fix the cause, push/merge the change,
+and the new main commit starts a fresh run automatically. Rerunning an old
+workflow uses its old commit, so prefer the new run for code fixes.
 
-### Verify the release
-
-Check `fly status -a hyped-diceman`, `fly logs -a hyped-diceman`,
-`fly volumes list -a hyped-diceman` and
-`fly releases --image -a hyped-diceman`. Confirm the same persistent volume
-is attached and one bot instance is connected to Discord. Test `/stats`
-and harmless interactions on existing roll, raid, LFG, Forever, countdown,
-stream and suggestions panels. Avoid spending real gamble coins or posting
-duplicate announcements just to test the bot. Then check the next reminder,
-Twitch refresh and UK midnight roll settlement.
-
-If the new bot fails, preserve the logs. You can restore the **old code**
-with the recorded working Fly image:
+If deployment itself fails, inspect its logs and the Fly state before making
+more changes. The run summary contains the previous working image. To restore
+that code while retaining live data:
 
 ```powershell
 fly deploy -a hyped-diceman --image <previous-working-image> --ha=false
 ```
 
-Do not delete `/data`. Code rollback is not a database rollback and does
-not automatically revert schema changes or recently written data. Restoring
-the snapshot is a separate, potentially destructive decision and should
-never be done casually.
+Code rollback does not undo database writes or schema changes. Do not restore
+a volume snapshot casually over new valid data. No automatic database restore
+or automatic code rollback is performed by this workflow.
 
 References: [Fly volume snapshots](https://fly.io/docs/volumes/snapshots/),
-[Fly release images](https://fly.io/docs/blueprints/using-the-fly-docker-registry/)
-and [Fly GitHub Actions setup](https://fly.io/docs/launch/continuous-deployment-with-github-actions/).
+[Fly GitHub Actions](https://fly.io/docs/launch/continuous-deployment-with-github-actions/).

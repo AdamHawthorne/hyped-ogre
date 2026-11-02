@@ -68,7 +68,7 @@ py -3.13 -m venv .venv
 Open the repository folder in VS Code, select the `.venv` interpreter and
 install the recommended extensions. Press **Ctrl+Shift+B** to run dependency,
 syntax and test checks. Individual tests are available in the Testing view.
-The Fly runner's Bash tests run in Linux CI and are skipped on Windows.
+The deployment guard is covered by offline tests on both Windows and Linux.
 
 See the [VS Code and GitHub workflow guide](docs/development.md) for setup,
 branching, pull requests and deployment. **Do not run a second local
@@ -80,7 +80,8 @@ production bot using the same Discord token while Fly.io is serving the guild.**
 - Use short-lived `feature/*`, `fix/*` or `refactor/*` branches for changes; features are **folders/modules**, not permanent branches.
 - Run syntax checks, unit tests and Docker build checks before merging.
 - GitHub checks PRs, changes merged to `main`, and manually requested safety runs. The same PR update no longer starts both a branch-push safety run and a PR safety run.
-- A merge does **not** deploy to Fly.io. Deployment uses the separate **Deploy Hyped Ogre (manual only)** workflow.
+- Every push or merged PR to `main` runs the shared Linux/Windows checks and Docker smoke tests, then automatically deploys to the existing Fly app. Feature-branch pushes and PR checks do not deploy.
+- **Actions > Deploy Hyped Ogre > Run workflow**, using `main`, provides a manual retry with no input fields. The workflow records a recent completed snapshot and the previous image automatically.
 - Don't deploy structural migrations without a verified database backup, health checks and a rollback plan.
 
 See [architecture](docs/architecture.md) and [operational safety](docs/operations.md).

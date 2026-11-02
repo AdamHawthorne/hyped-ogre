@@ -19,7 +19,7 @@
       "windows": {
         "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
       },
-      "args": ["-m", "compileall", "-q", "rollogre.py", "cogs", "hyped_ogre", "tests"],
+      "args": ["-m", "compileall", "-q", "rollogre.py", "cogs", "hyped_ogre", "tests", "scripts"],
       "options": {"cwd": "${workspaceFolder}"},
       "problemMatcher": []
     },
