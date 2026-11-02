@@ -296,6 +296,39 @@ jobs:
           print("Legacy Discord extensions load relocated feature source successfully")
           '
 
+      - name: Verify anonymous poll extension and persistent grey controls in runtime image
+        run: |
+          docker run --rm -e HYPED_GUILD_ID=77 --entrypoint python hyped-ogre-test -c '
+          import asyncio, os, tempfile
+          from pathlib import Path
+          import discord
+          from discord.ext import commands
+          from hyped_ogre.features.polls.ui import IMAGE, PollEditor, public_view, render
+          async def check():
+              with tempfile.TemporaryDirectory() as tmp:
+                  os.environ["POLL_DB_PATH"] = str(Path(tmp) / "polls.db")
+                  async with commands.Bot(command_prefix="test_", intents=discord.Intents.none()) as bot:
+                      await bot.load_extension("hyped_ogre.features.polls.extension")
+                      cog = bot.get_cog("PollsCog")
+                      ident = cog.store.create(77, 99, 10, "Raid Sunday?")
+                      cog.store.configure(77, ident, "public_channel_id", 20)
+                      cog.store.open(77, ident)
+                      cog.store.vote(77, ident, 123, 0)
+                      poll = cog.store.get(77, ident)
+                      controls = public_view(poll)
+                      assert controls.is_persistent()
+                      assert all(c.item.style == discord.ButtonStyle.secondary for c in controls.children)
+                      assert render(poll).thumbnail.url == IMAGE
+                      assert len(PollEditor(cog, 99).children) == 4
+                      cog.store.close(77, ident)
+                      assert cog.store.get(77, ident)["counts"] == [1, 0]
+                      with cog.store.connection() as con:
+                          assert con.execute("SELECT COUNT(*) FROM ballots").fetchone()[0] == 0
+                      await bot.unload_extension("hyped_ogre.features.polls.extension")
+          asyncio.run(check())
+          print("Anonymous polls, isolated storage and restart-safe controls validated")
+          '
+
       - name: Verify renamed executable reaches configuration guard without Discord token
         run: |
           set +e
