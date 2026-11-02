@@ -133,7 +133,7 @@ class WoWSimsPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def test_public_raid_panel_describes_current_requirement(self):
         labels = {
             "missing": "Required if character has no export",
-            "fresh": "Fresh export required for this raid",
+            "fresh": "Fresh export required",
             "optional": "Optional",
         }
         for policy, label in labels.items():

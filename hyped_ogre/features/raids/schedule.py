@@ -721,7 +721,7 @@ def raid_panel_intro(event):
     wse_policy = event.get("wowsims_policy") or "missing"
     wse_label = {
         "missing": "Required if character has no export",
-        "fresh": "Fresh export required for this raid",
+        "fresh": "Fresh export required",
         "optional": "Optional",
     }.get(wse_policy, "Required if character has no export")
     wse_line = (f"\n**WoWSims:** {wse_label} · "
