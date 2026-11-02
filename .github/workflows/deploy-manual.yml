@@ -1,29 +1,10 @@
-name: Deploy Hyped Ogre (manual only)
+name: Deploy Hyped Ogre
 
-# No push, pull_request, release or schedule trigger. Never auto-deploy.
+# A main push includes a merged PR. Keep the filename for saved workflow links.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      commit_sha:
-        description: "Reviewed 40-character main commit SHA"
-        required: true
-        type: string
-      volume_id:
-        description: "Existing diceman_data Fly volume ID (vol_...)"
-        required: true
-        type: string
-      snapshot_id:
-        description: "Completed Fly snapshot ID (vs_...)"
-        required: true
-        type: string
-      rollback_image:
-        description: "Previously working Fly release image reference"
-        required: true
-        type: string
-      confirmation:
-        description: "Type DEPLOY HYPED OGRE"
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -33,110 +14,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/safety.yml
+
   deploy:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     environment: production
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Require reviewed SHA, mounted volume and operator approval
-        env:
-          EXPECTED_SHA: ${{ inputs.commit_sha }}
-          VOLUME_ID: ${{ inputs.volume_id }}
-          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
-          ROLLBACK_IMAGE: ${{ inputs.rollback_image }}
-          CONFIRMATION: ${{ inputs.confirmation }}
-        run: |
-          set -euo pipefail
-          test "$CONFIRMATION" = "DEPLOY HYPED OGRE"
-          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$EXPECTED_SHA" = "$(git rev-parse HEAD)"
-          [[ "$VOLUME_ID" =~ ^vol_[A-Za-z0-9]+$ ]]
-          [[ "$SNAPSHOT_ID" =~ ^vs_[A-Za-z0-9]+$ ]]
-          [[ "$ROLLBACK_IMAGE" =~ ^registry[.]fly[.]io/hyped-diceman(@sha256:[0-9a-f]{64}|:[A-Za-z0-9_.-]+)$ ]]
-          grep -Fq 'app = "hyped-diceman"' fly.toml
-          grep -Fq 'source = "diceman_data"' fly.toml
-          grep -Fq 'destination = "/data"' fly.toml
-          grep -Fq 'CMD ["python", "rollogre.py"]' Dockerfile
-          echo "Reviewed commit and production mount configuration confirmed"
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
-
-      - name: Run offline tests again on the exact release commit
-        run: |
-          python -m compileall -q rollogre.py cogs hyped_ogre tests
-          python -m pip install -r requirements.txt
-          python -m pip check
-          python -m unittest discover -s tests -v
-
-      - name: Verify Docker command and no-token startup
-        run: |
-          set -euo pipefail
-          docker build -t hyped-ogre-release-check .
-          test "$(docker image inspect --format '{{json .Config.Cmd}}' hyped-ogre-release-check)" = '["python","rollogre.py"]'
-          set +e
-          docker run --rm --entrypoint python \
-            -e DISCORD_TOKEN= -e HYPED_GUILD_ID=0 \
-            -e ROLL_CHANNEL_ID=0 -e HIGH_ROLLER_ROLE_ID=0 \
-            hyped-ogre-release-check rollogre.py > /tmp/rollogre-startup.log 2>&1
-          status=$?
-          set -e
-          test "$status" -ne 0
-          grep -q 'Missing required configuration:' /tmp/rollogre-startup.log
-          echo "Launcher exits safely without production credentials"
-
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Check previously working image and completed volume snapshot
+      - uses: superfly/flyctl-actions/setup-flyctl@98172f70657cb3e15db199af139be99bd3e61200
+        with:
+          version: '0.5.1'
+      - name: Verify existing volume and record backup and rollback image
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          VOLUME_ID: ${{ inputs.volume_id }}
-          SNAPSHOT_ID: ${{ inputs.snapshot_id }}
-          ROLLBACK_IMAGE: ${{ inputs.rollback_image }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$FLY_API_TOKEN" ]]; then
-            echo "FLY_API_TOKEN secret is missing; refusing deployment"
-            exit 1
-          fi
-          command -v flyctl >/dev/null || { echo "flyctl CLI missing from runner PATH"; exit 1; }
-          flyctl version
-          # Read each listing fully before matching: grep -q can otherwise
-          # close a Fly output pipe early and cause SIGPIPE (exit 141).
-          checks_dir="$(mktemp -d)"
-          trap 'rm -rf "$checks_dir"' EXIT
-          flyctl volumes list -a hyped-diceman > "$checks_dir/volumes.txt"
-          volume_row="$(grep -F -- "$VOLUME_ID" "$checks_dir/volumes.txt" || true)"
-          if ! grep -Fq 'diceman_data' <<< "$volume_row"; then
-            echo "Expected diceman_data volume not found"
-            exit 1
-          fi
-          flyctl volumes snapshots list "$VOLUME_ID" -a hyped-diceman > "$checks_dir/snapshots.txt"
-          snapshot_row="$(grep -F -- "$SNAPSHOT_ID" "$checks_dir/snapshots.txt" || true)"
-          if ! grep -Eq '[[:space:]]created([[:space:]]|$)' <<< "$snapshot_row"; then
-            echo "Verified completed Fly snapshot not found"
-            exit 1
-          fi
-          flyctl releases --image -a hyped-diceman > "$checks_dir/releases.txt"
-          if ! grep -Fq -- "$ROLLBACK_IMAGE" "$checks_dir/releases.txt"; then
-            echo "Previously working rollback image not found"
-            exit 1
-          fi
-          flyctl status -a hyped-diceman
-          echo "Persistent volume, completed snapshot and rollback image verified"
-
-      - name: Deploy reviewed bot image without adding spare Machines
+        run: python scripts/fly_release.py prepare "$RUNNER_TEMP/hyped-release.json"
+      - name: Deploy checked commit to the existing app
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy -a hyped-diceman --remote-only --ha=false
-
-      - name: Record final Fly release and status
+      - name: Verify the existing volume and running Machine
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          flyctl status -a hyped-diceman
-          flyctl releases --image -a hyped-diceman
-          echo "Manual Discord checks and next UK reset verification are still required"
+        run: python scripts/fly_release.py verify "$RUNNER_TEMP/hyped-release.json"

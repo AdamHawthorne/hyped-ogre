@@ -228,12 +228,16 @@ class WinnerMessageTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResetTests(unittest.IsolatedAsyncioTestCase):
+    # Tuesday settles Monday's ordinary one-coin prize, regardless of when CI runs.
+    reset_at = datetime(2026, 11, 3, 0, 2, tzinfo=UK)
+    expected_prize = 1
+
     async def asyncSetUp(self):
         self.con = sqlite3.connect(':memory:', isolation_level=None)
         self.con.execute('CREATE TABLE rolls (user_id, username, value, rolled_at, actor_type)')
         self.con.execute('CREATE TABLE daily_reset_posts (roll_date PRIMARY KEY, channel_id, message_id)')
         ensure_coin_schema(self.con)
-        now = datetime.now(UK)
+        now = self.reset_at
         stamp = int((now - timedelta(days=1)).replace(hour=12).timestamp())
         self.con.execute("INSERT INTO rolls VALUES (1, 'winner', 99, ?, 'user')", (stamp,))
         self.message = SimpleNamespace(id=100, author=SimpleNamespace(id=999), edit=AsyncMock(), components=[])
@@ -244,7 +248,8 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
                 yield message
         self.history_messages = []
         self.channel.history = history
-        self.ns = dict(asyncio=asyncio, datetime=datetime, timedelta=timedelta, TZ=UK,
+        clock = SimpleNamespace(now=lambda timezone: self.reset_at.astimezone(timezone))
+        self.ns = dict(asyncio=asyncio, datetime=clock, timedelta=timedelta, TZ=UK,
                        json=json, discord=discord, DAILY_POST_LOCK=asyncio.Lock(),
                        HYPED_GUILD_ID=9, ROLL_CHANNEL_ID=55,
                        bot=SimpleNamespace(get_channel=lambda _: self.channel,
@@ -262,7 +267,7 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         post = self.ns['post_daily_reset_message']
         await asyncio.gather(post(), post())
         await post()
-        self.assertEqual(coin_total(self.con, 9, 1), 1)
+        self.assertEqual(coin_total(self.con, 9, 1), self.expected_prize)
         self.channel.send.assert_awaited_once()
         self.assertEqual(self.message.edit.await_count, 0)
         self.assertEqual(self.ns["announce_coin_winner"].await_count, 3)
@@ -270,27 +275,27 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
     async def test_send_failure_keeps_one_award_and_retry_can_post(self):
         self.channel.send.side_effect = discord.Forbidden(SimpleNamespace(status=403, reason='Denied'), 'Denied')
         self.assertIsNone(await self.ns['post_daily_reset_message']())
-        self.assertEqual(coin_total(self.con, 9, 1), 1)
+        self.assertEqual(coin_total(self.con, 9, 1), self.expected_prize)
         self.assertEqual(self.con.execute('SELECT COUNT(*) FROM daily_reset_posts').fetchone()[0], 0)
         self.channel.send.side_effect = None
         self.assertTrue(await self.ns['post_daily_reset_message']())
-        self.assertEqual(coin_total(self.con, 9, 1), 1)
+        self.assertEqual(coin_total(self.con, 9, 1), self.expected_prize)
 
     async def test_existing_legacy_daily_message_is_upgraded_in_place(self):
-        day = datetime.now(UK).date().isoformat()
+        day = self.reset_at.date().isoformat()
         self.con.execute('INSERT INTO daily_reset_posts VALUES (?, 55, 100)', (day,))
         await self.ns['post_daily_reset_message']()
         self.channel.send.assert_not_awaited()
         self.message.edit.assert_not_awaited()
         await self.ns['post_daily_reset_message'](refresh_existing=True)
         self.assertEqual(self.message.edit.call_args.kwargs['embeds'], [])
-        self.assertEqual(coin_total(self.con, 9, 1), 1)
+        self.assertEqual(coin_total(self.con, 9, 1), self.expected_prize)
 
     async def test_recover_sent_message_after_missing_database_write(self):
         marker = "Hyped Rolls · Daily Reset"
         component = SimpleNamespace(to_dict=lambda: {'content': marker})
         self.message.components = [component]
-        self.message.created_at = datetime.now(UK)
+        self.message.created_at = self.reset_at
         self.history_messages = [self.message]
         await self.ns['post_daily_reset_message']()
         self.channel.send.assert_not_awaited()
@@ -330,6 +335,13 @@ class ResetTests(unittest.IsolatedAsyncioTestCase):
         interaction = SimpleNamespace(guild_id=9, channel_id=88, response=AsyncMock())
         await self.ns['daily_roll_action'](interaction)
         self.ns['perform_roll'].assert_not_awaited()
+
+
+class SundayResetTests(ResetTests):
+    """Repeat every restart/retry guard for the two-coin Sunday settlement."""
+
+    reset_at = datetime(2026, 11, 2, 0, 2, tzinfo=UK)
+    expected_prize = 2
 
 
 class LeaderboardRequesterTests(unittest.TestCase):

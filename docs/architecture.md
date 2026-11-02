@@ -116,7 +116,8 @@ has no `__file__`-relative resources or `sys.argv` parsing.
 at module scope. Static source/AST regression tests now target the
 canonical module, and the compatibility wrapper is checked independently.
 
-Merging this repository change does not deploy or restart the Fly.io bot.
+Main updates now use the automatic deployment workflow described in
+[operations](operations.md); a successful release briefly restarts the Fly bot.
 
 ## Live Discord extension source relocation
 
