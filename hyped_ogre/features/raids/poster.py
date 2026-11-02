@@ -10,6 +10,7 @@ from cogs.raid_schedule import (
     raid_panel_when,
     list_raids, parse_uk_datetime, read_raid, save_raid,
     validate_softres_url, validate_banner_url, set_softres_url,
+    roster_groups, roster_group_heading,
 )
 
 UK = ZoneInfo("Europe/London")
@@ -32,6 +33,28 @@ ANNOUNCEMENTS = {
     "none": "To be confirmed",
     "custom": "Choose exact announcement date & time…",
 }
+
+
+def roster_preview_pages(event, selected, *, limit=1650):
+    """Instance headings once, small-text names, and no silently omitted players."""
+    members = [(entry[1], entry[2], "", "", "", entry[0]) for entry in selected]
+    lines = [f"**Raid #{event['raid_id']} · Confirm roster?**"]
+    for title, players in roster_groups(event, members):
+        lines.extend(["", roster_group_heading(title)])
+        lines.extend("-# " + name for name in players)
+        if not players:
+            lines.append("-# No selected players")
+    pages, page = [], ""
+    for line in lines:
+        candidate = page + ("\n" if page else "") + line
+        if len(candidate) > limit and page:
+            pages.append(page)
+            page = line
+        else:
+            page = candidate
+    if page:
+        pages.append(page)
+    return pages
 
 
 def next_sunday_date(raids=(), now=None):
@@ -959,11 +982,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     "No visible selected players found. Check Selection, Show on Discord and instance assignments in the Sheet.",
                     ephemeral=True)
                 return
-            lines = [f"**{i}. {discord.utils.escape_markdown(entry[1])}** — {discord.utils.escape_markdown(entry[2])}"
-                     for i, entry in enumerate(selected, 1)]
-            preview = f"**Raid #{event['raid_id']} · Confirm roster?**\n" + "\n".join(lines)
-            if len(preview) > 1900:
-                preview = preview[:1850] + "\n…"
+            pages = roster_preview_pages(event, selected)
             from cogs import raid_acknowledgements as raid_ack
             announced = bool(raid_ack.announcement(self.cog.raid_db_path(),
                                                     event["raid_id"]))
@@ -971,8 +990,11 @@ class RaidPosterView(discord.ui.LayoutView):
                     if announced else
                     "Publish without a ping, or ping each selected guild member once. "
                     "They react ✅ to acknowledge; Ogre removes them from the outstanding list.")
+            for page in pages[:-1]:
+                await interaction.followup.send(
+                    page, ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             await interaction.followup.send(
-                preview + "\n\n" + note +
+                pages[-1] + "\n\n" + note +
                 "\nSign-ups stay open and Sheet selections remain editable.",
                 view=RaidRosterPreview(
                     self.cog, self.owner_id, event["raid_id"], selected,
@@ -980,7 +1002,7 @@ class RaidPosterView(discord.ui.LayoutView):
                     poster_message=getattr(interaction, "message", None),
                     poster_draft=self.draft,
                 ),
-                ephemeral=True)
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
         confirm_roster.callback = preview_roster
         async def open_manage(interaction):

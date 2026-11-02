@@ -5,6 +5,7 @@ synchronisation is separate: the Google Sheet does not authorise a Fly bot.
 """
 import sqlite3
 import re
+import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -19,6 +20,7 @@ RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
 ACCENT = 0xA87535  # Keep the private raid poster setup colour.
 RAID_PANEL_ACCENT = 0xB84A3A  # Public raid panel side colour.
 DEFAULT_CHECK_CHANNEL_ID = 1563663258047619123
+CREATOR_CROWN = "<:ogrecrown:1566947968760946948>"
 _UNCHANGED = object()  # Older /raid setup calls must keep poster-specific settings.
 RAID_COLUMNS = {
     "instance_1": "TEXT",
@@ -155,7 +157,7 @@ def ensure_raid_fields(path):
             existing_columns = {
                 row[1] for row in con.execute(f"PRAGMA table_info({table})")
             }
-            for column in ("class_name", "role", "spec"):
+            for column in ("class_name", "role", "spec", "discord_id"):
                 if column not in existing_columns:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
@@ -505,18 +507,20 @@ def confirmed_roster(path, number, unavailable=(), *, include_details=False):
             if not member_id or member_id not in unavailable]
 
 
-def read_public_roster(path, raid_id, *, include_details=False):
+def read_public_roster(path, raid_id, *, include_details=False, include_identity=False):
     """Confirmed team entries; optional class/role metadata for emojis."""
     with database(path) as con:
         columns = ("name, assignment, class_name, role, spec"
-                   if include_details else "name, assignment")
+                   if include_details or include_identity else "name, assignment")
+        if include_identity:
+            columns += ", COALESCE(discord_id,'')"
         return con.execute(
             f"SELECT {columns} FROM raid_public_roster "
             "WHERE raid_id=? ORDER BY position", (raid_id,)
         ).fetchall()
 
 
-def read_signup_roster(path, raid_id):
+def read_signup_roster(path, raid_id, *, include_identity=False):
     """Read live public sign-ups while respecting each player's visibility.
 
     The Sheet's Show on Discord flag is cached per raid signup after sync.
@@ -526,10 +530,11 @@ def read_signup_roster(path, raid_id):
     roster confirmation. One character per Discord member/night.
     """
     with database(path) as con:
+        identity = ", CAST(c.discord_id AS TEXT) " if include_identity else " "
         return con.execute(
             "SELECT c.name, '' AS assignment, "
             "COALESCE(c.class_name, ''), COALESCE(c.role, ''), "
-            "COALESCE(c.spec, '') "
+            "COALESCE(c.spec, '')" + identity +
             "FROM signups AS s JOIN characters AS c "
             "ON c.character_id=s.character_id AND c.discord_id=s.discord_id "
             "JOIN raids AS r ON r.raid_id=s.raid_id "
@@ -560,14 +565,27 @@ def signup_role_group(klass, spec, role):
     return "Ranged"
 
 
+def _ordered_roster(public_roster):
+    """Match Sheet owner/class/name ordering when member identity is available."""
+    entries = list(public_roster)
+    if not any(len(entry) > 5 for entry in entries):
+        return entries  # Preserve the historical tuple-only helper API.
+    owner = os.getenv("OWNER_ID", "0").strip()
+    return sorted(entries, key=lambda entry: (
+        0 if owner not in ("", "0") and len(entry) > 5 and str(entry[5]) == owner else 1,
+        (entry[2] or "").casefold() if len(entry) > 2 else "", entry[0].casefold(),
+    ))
+
+
 def signup_role_groups(public_roster, *, emoji_map=None):
     """Four public sign-up categories; no instance or selection disclosure."""
     groups = {label: [] for label in ("Tanks", "Melee", "Ranged", "Healers")}
-    for entry in public_roster:
+    for entry in _ordered_roster(public_roster):
         name = entry[0]
         klass, role, spec = (tuple(entry[2:5]) + ("", "", ""))[:3]
         display = roster_name_with_emojis(
-            name, klass, role, spec, emoji_map=emoji_map
+            name, klass, role, spec, emoji_map=emoji_map,
+            member_id=entry[5] if len(entry) > 5 else "",
         )
         if display:
             groups[signup_role_group(klass, spec, role)].append(display)
@@ -589,14 +607,16 @@ def _split_from_tokens(tokens):
     return "🔸"  # Default Barrows group when a specific split is not supplied.
 
 
-def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None):
+def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None, *, member_id=""):
     """Show fixed custom Discord emoji markup; preserve existing API."""
     name = discord.utils.escape_mentions(discord.utils.escape_markdown(name))
     if not name:
         return ""
     klass = (klass or "").strip().title()
     role = combat_role((role or "").strip().title(), klass, spec)
-    return " ".join(part for part in (guild_emoji(klass), name) if part)
+    owner = os.getenv("OWNER_ID", "0").strip()
+    crown = CREATOR_CROWN if owner not in ("", "0") and str(member_id) == owner else ""
+    return " ".join(part for part in (guild_emoji(klass), name, crown) if part)
 
 
 def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
@@ -625,11 +645,12 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
 
     groups = {title: [] for title in group_titles}
     pending = []
-    for entry in public_roster:
+    for entry in _ordered_roster(public_roster):
         name, assignment = entry[:2]
         klass, role, spec = (tuple(entry[2:5]) + ("", "", ""))[:3]
         clean_name = roster_name_with_emojis(
-            name, klass, role, spec, emoji_map=emoji_map
+            name, klass, role, spec, emoji_map=emoji_map,
+            member_id=entry[5] if len(entry) > 5 else "",
         )
         if not clean_name:
             continue
@@ -737,18 +758,20 @@ def raid_roster_status(event):
     return "**Roster confirmed:** To be confirmed"
 
 
+def roster_group_heading(title):
+    """Use the same instance/diamond headings in previews and public rosters."""
+    if title.startswith("Barrows · 10-player "):
+        return f"**Barrows** {title[-1]}"
+    if title == "Hyjal · 20-player":
+        return "**Hyjal** 🔸🔹"
+    if title == "Ony · 40-player":
+        return "**Ony**"
+    return f"**{title}**"
+
+
 def _roster_group_text(title, players):
     """Always show muted Tanks / Healers / DPS placeholders per raid roster."""
-    if title.startswith("Barrows · 10-player "):
-        heading = f"**Barrows** {title[-1]}"
-    elif title == "Hyjal · 20-player":
-        heading = "**Hyjal** 🔹🔸"
-    elif title == "Ony · 40-player":
-        heading = "**Ony**"
-    else:
-        heading = f"**{title}**"
-
-    lines = [heading]
+    lines = [roster_group_heading(title)]
     for label, category in (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS")):
         lines.append(f"-# **{label}**")
         if players:
