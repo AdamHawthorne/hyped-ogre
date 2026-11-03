@@ -1491,8 +1491,18 @@ def attendance_set(db_path, raid_id, member_id, outcome, minutes=0):
 
 
 def attendance_complete(db_path, raid_id):
-    """Fill only Pending/empty records; preserve officer-entered exceptions."""
+    """Fill Pending/empty selected records, never a reported absent member."""
     candidates = attendance_candidates(db_path, raid_id)
+    # Check the authoritative saved absence state as well as Sheets. Even if
+    # the raid tab has not refreshed yet, do not silently mark Absent as
+    # Attended during completion.
+    with database(db_path) as con:
+        unavailable = {str(row[0]) for row in con.execute(
+            "SELECT discord_id FROM raid_absences WHERE raid_id=? "
+            "UNION SELECT discord_id FROM signups "
+            "WHERE raid_id=? AND availability='Unavailable'",
+            (raid_id, raid_id),
+        )}
     session = raid_sheets._session()
     try:
         existing = _permanent_read(session, "Forever Attendance")
@@ -1501,6 +1511,8 @@ def attendance_complete(db_path, raid_id):
     finally:
         session.close()
     for member in candidates:
+        if str(member[16]) in unavailable:
+            continue
         old = keyed.get((str(raid_id), member[16]), [])
         if len(old) <= 9 or old[9] in ("", "Pending"):
             attendance_set(db_path, raid_id, member[16], "Attended")
