@@ -1840,6 +1840,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Unable to refresh revealed roster for Raid #%s in channel %s",
                                    raid_id, channel_id)
+            if changed:
+                # Keep Ogre's separate V1 announcement aligned with later
+                # leadership Sheet changes, without publishing a new ping.
+                # The existing acknowledgement maintenance worker refreshes
+                # these posts with AllowedMentions.none().
+                with database(RAID_DB) as con:
+                    con.executemany(
+                        "UPDATE raid_ack_announcements SET needs_refresh=1 "
+                        "WHERE raid_id=? AND retracted_at IS NULL "
+                        "AND deleted_at IS NULL",
+                        [(raid_id,) for raid_id in changed],
+                    )
             return counts, changed
 
     async def on_register(self, interaction):
