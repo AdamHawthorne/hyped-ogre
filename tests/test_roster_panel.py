@@ -39,7 +39,14 @@ class RosterDataTests(unittest.TestCase):
             for n in (1, 2, 3, 6):
                 con.execute("INSERT INTO attendance (raid_id,discord_id,character_id,status) VALUES (?,?,?,?)",
                             (n,42,self.cid,'Attended'))
-        self.assertEqual([r['attendance'] for r in roster.rows(self.path)], ['50%', '50%'])
+        values = roster.rows(self.path)
+        self.assertEqual([r['attendance'] for r in values], ['50%'])
+        self.assertEqual([r['name'] for r in values], ['Snore'])
+        self.assertEqual(len(raid.member_characters(42, self.path)), 2)
+        alt_id = next(r[0] for r in raid.member_characters(42, self.path) if r[1] == 'Alt')
+        raid.set_main_character(42, alt_id, self.path)
+        self.assertEqual([r['name'] for r in roster.rows(self.path)], ['Alt'])
+        self.assertEqual(roster.rows(self.path)[0]['attendance'], '50%')
 
     def test_complete_item_metadata_is_numeric_and_empty_data_is_na(self):
         self.assertEqual(roster.rows(self.path)[0]['ilvl'], 'N/A')
@@ -114,17 +121,19 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embeds),1)
         self.assertEqual(embeds[0].title,'<Hyped> Roster')
         self.assertEqual(embeds[0].description,'Ogre keep track. You add or update.')
-        heading=[f.name for f in embeds[0].fields if not f.inline]
-        self.assertEqual(heading,['Tanks (10)','Healers (10)','DPS (10)'])
+        heading=[f.name for f in embeds[0].fields[::3]]
+        self.assertEqual(heading,['Tanks (10)','Healers (10)','Melee (0)','Ranged (10)'])
+        self.assertTrue(all(f.inline for f in embeds[0].fields))
+        self.assertEqual(embeds[0].thumbnail.url, 'https://i.vgy.me/asI88C.png')
         content=str(embeds[0].to_dict())
         self.assertNotIn('WCL',content)
         self.assertIn('<:Mage:',content)
         for row in data:
             self.assertEqual(content.count(row['name']),1)
             self.assertIn(f"<@{row['discord_id']}>",content)
-        for i in range(0,len(embeds[0].fields),4):
-            fields=embeds[0].fields[i+1:i+4]
-            self.assertEqual([f.name for f in fields],['Character','Attendance','iLvl'])
+        for i in range(0,len(embeds[0].fields),3):
+            fields=embeds[0].fields[i:i+3]
+            self.assertEqual([f.name for f in fields[1:]],['Attendance','iLvl'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)),1)
 
     def test_large_roster_keeps_all_rows_within_discord_limits(self):
@@ -142,8 +151,24 @@ class LayoutTests(unittest.TestCase):
 
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
         embed=roster.render([])[0]
-        self.assertEqual([f.name for f in embed.fields if not f.inline],['Tanks (0)','Healers (0)','DPS (0)'])
+        self.assertEqual([f.name for f in embed.fields[::3]],
+                         ['Tanks (0)','Healers (0)','Melee (0)','Ranged (0)'])
         self.assertNotIn('0%',str(embed.to_dict()))
+
+    def test_dps_groups_use_primary_spec_and_omit_alts(self):
+        survival = dict(self.row(1), class_name='Hunter', spec='Survival', off_role='Tank')
+        marksman = dict(self.row(2), class_name='Hunter', spec='Marksmanship')
+        elemental = dict(self.row(3), class_name='Shaman', spec='Elemental')
+        enhancement = dict(self.row(4), class_name='Shaman', spec='Enhancement')
+        alt = dict(self.row(5), is_main=False)
+        embed = roster.render([survival, marksman, elemental, enhancement, alt])[0]
+        self.assertEqual(embed.fields[6].name, 'Melee (2)')
+        self.assertIn(survival['name'], embed.fields[6].value)
+        self.assertIn(enhancement['name'], embed.fields[6].value)
+        self.assertEqual(embed.fields[9].name, 'Ranged (2)')
+        self.assertIn(marksman['name'], embed.fields[9].value)
+        self.assertIn(elemental['name'], embed.fields[9].value)
+        self.assertNotIn(alt['name'], str(embed.to_dict()))
 
 
 class PanelActionsTests(unittest.IsolatedAsyncioTestCase):

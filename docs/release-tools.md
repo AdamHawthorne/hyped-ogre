@@ -9,7 +9,12 @@ as Ogre's owner, server owner or Leadership. Discord's default command
 visibility is Manage Server; allow Leadership to use the posting command in
 Server Settings > Integrations rather than widening their server permissions.
 
-The board is a persistent standard embed grouped into Tanks, Healers and DPS.
+The board is a persistent standard embed showing main characters only, grouped
+into Tanks, Healers, Melee and Ranged. Survival Hunters are Melee. Alts remain
+available in character management and still grant classroom access.
+Each role name is the first column heading, alongside Attendance and iLvl,
+without a separate spacer heading. The supplied guild image is a right-hand
+thumbnail. Discord controls inline-field wrapping, particularly on mobile.
 Its aligned fields show character and Discord member, attendance percentage,
 and saved WoWSims item level. The four buttons are **Add**, **Manage**,
 **WoWSims** and **Remove / absent**. All member actions open privately.
