@@ -266,6 +266,46 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.current("tanks").view_channel)
         self.assertFalse(self.current("tanks").attach_files)
 
+    async def test_category_resync_removing_member_entries_is_repaired_after_restart(self):
+        self.character()
+        await self.cog.sync_access(self.guild)
+        for key in ("tanks", "warriors"):
+            # Discord Sync Now copies the category's role overwrites and
+            # removes the individual members Ogre had previously added.
+            self.wire[CHANNEL_IDS[key]]["permission_overwrites"] = copy.deepcopy(
+                self.wire[config.CATEGORY_ID]["permission_overwrites"])
+        restarted = extension.ClassroomsCog(self.bot, path=self.path)
+        result = await restarted.sync_access(self.guild)
+        self.assertEqual((result.added, result.errors), (2, []))
+        for key in ("tanks", "warriors"):
+            self.assertTrue(self.current(key).view_channel)
+            self.assertTrue(self.current(key).send_messages)
+            self.assertTrue(self.current(key).read_message_history)
+        self.assertEqual(len(self.store.snapshot(config.GUILD_ID)[1]), 2)
+        self.assertEqual((await restarted.sync_access(self.guild)).added, 0)
+
+    async def test_missing_entry_without_qualifying_character_is_not_restored(self):
+        ident = self.character()
+        await self.cog.sync_access(self.guild)
+        raid.delete_character(PLAYER, ident, str(self.path))
+        for key in ("tanks", "warriors"):
+            self.wire[CHANNEL_IDS[key]]["permission_overwrites"] = copy.deepcopy(
+                self.wire[config.CATEGORY_ID]["permission_overwrites"])
+        result = await self.cog.sync_access(self.guild)
+        self.assertEqual((result.added, result.errors), (0, []))
+        self.assertIsNone(self.current("tanks").view_channel)
+        self.assertEqual(self.store.snapshot(config.GUILD_ID)[1], {})
+
+    async def test_explicit_member_deny_and_existing_empty_override_survive_reset_repair(self):
+        self.character()
+        await self.cog.sync_access(self.guild)
+        self.put(CHANNEL_IDS["tanks"], PLAYER, view_channel=False)
+        self.put(CHANNEL_IDS["warriors"], PLAYER)
+        result = await self.cog.sync_access(self.guild)
+        self.assertEqual((result.added, result.blocked, result.errors), (0, 2, []))
+        self.assertFalse(self.current("tanks").view_channel)
+        self.assertIsNone(self.current("warriors").view_channel)
+
     async def test_crash_after_discord_grant_before_journal_ack_recovers_after_restart(self):
         self.character()
         with patch.object(self.cog.store, "grant_applied", side_effect=sqlite3.OperationalError("crash")):

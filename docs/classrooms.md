@@ -55,8 +55,11 @@ for Ogre and no new privileged gateway intent is needed for this feature.
 
 After setup, the channels intentionally become **unsynced** because each has
 its own members. Do not click **Sync Now** afterwards: it replaces individual
-channel permissions. Make future baseline changes per channel or repeat
-`/classrooms setup`, which preserves existing member overwrites.
+channel permissions, including manual exceptions Ogre does not own. If it has
+already happened, Ogre restores still-eligible registered access on the next
+automatic pass, or run `/classrooms sync` immediately. Make future baseline
+changes per channel or repeat `/classrooms setup`, which preserves existing
+member overwrites.
 
 The bot's existing **Manage Channels** permission can remain for other bot
 features. This feature changes overwrites on existing channels using
@@ -119,11 +122,15 @@ retry, including an uncertain write that may have reached Discord.
 
 Pre-existing manual allows remain manual. Explicit member denies are
 respected; existing unrelated permissions and Leadership role access are
-preserved. If a moderator changes an active Ogre-owned allow to deny or
-inherit, the next sync leaves that decision in place and reports it as a
-manual restriction. A manual member allow can therefore keep access even
-after character removal. Status totals describe character eligibility,
-not every possible administrator/manual permission exception.
+preserved. If a moderator edits an existing member overwrite from an active
+Ogre-owned allow to deny or inherit, the next sync leaves that decision in
+place and reports it as a manual restriction. If the entire member overwrite
+has disappeared, Ogre rechecks the current register and restores eligible
+access from the empty baseline. This recovers category permission resets;
+use an explicit member View Channel deny to block registered access.
+A manual member allow can keep access even after character removal. Status
+totals describe character eligibility, not every possible administrator/manual
+permission exception.
 
 Pause freezes existing permissions; reverting code also leaves permissions
 in place. Neither is a bulk access-removal operation. Keep the two journal
