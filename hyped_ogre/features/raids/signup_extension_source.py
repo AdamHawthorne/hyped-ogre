@@ -1411,7 +1411,14 @@ class RaidCompletionConfirm(discord.ui.View):
         try:
             # Capture newly declared absences before completing and hiding
             # the raid tab, including members omitted from confirmed teams.
-            await self.cog.sync_raid_sheets()
+            try:
+                await self.cog.sync_raid_sheets()
+            except Exception as exc:
+                # Preserve the established completion behaviour during a
+                # temporary Sheets sync outage. Attendance completion itself
+                # still validates the Sheet before archiving.
+                LOGGER.warning("Raid #%s pre-completion absence sync delayed: %s",
+                               self.raid_id, exc)
             count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
                                             RAID_DB, self.raid_id)
             raid_status(RAID_DB, self.raid_id, "archive",
