@@ -126,7 +126,7 @@ class GambleDatabaseTests(unittest.TestCase):
         self.award()
         self.assertTrue(self.free_roll(20))
         result = self.gamble(extra=88)
-        self.assertEqual(result["best"], 88)
+        self.assertEqual(result["best"], 20)
         self.assertTrue(result["stake_returned"])
         self.assertEqual(result["balance"], 1)
         self.assertEqual(self.con.execute("""
@@ -134,10 +134,10 @@ class GambleDatabaseTests(unittest.TestCase):
         """).fetchall(), [("user", 20), ("gamble", 88)])
         self.assertEqual(self.con.execute(
             "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
-        ).fetchone(), (108, 2, 88))
+        ).fetchone(), (20, 1, 20))
         self.assertEqual(self.con.execute(
             "SELECT score,rolls FROM daily_scores WHERE user_id=101"
-        ).fetchone(), (108, 2))
+        ).fetchone(), (20, 1))
         self.assertEqual(coin_total(self.con, 9, 101), 1)
 
     def test_existing_free_roll_only_gets_one_extra_roll(self):
@@ -145,7 +145,7 @@ class GambleDatabaseTests(unittest.TestCase):
         self.assertTrue(self.free_roll(33))
         outcome = self.gamble(extra=90)
         self.assertEqual(outcome["base"], 33)
-        self.assertEqual(outcome["best"], 90)
+        self.assertEqual(outcome["best"], 33)
         self.assertEqual(
             self.con.execute("SELECT COUNT(*) FROM rolls").fetchone()[0], 2)
         self.assertFalse(self.writer(
@@ -233,11 +233,13 @@ class GambleDatabaseTests(unittest.TestCase):
         count = settle_completed_days(
             self.con, 9, datetime(2026, 11, 2, 0, 2, tzinfo=UK))
         self.assertEqual(count, 1)
-        self.assertEqual(day_award(self.con, 9, "2026-11-01")["user_id"], 101)
-        self.assertEqual(day_award(self.con, 9, "2026-11-01")["winning_roll"], 99)
+        # 101 gambled 99 but their official free roll was 80. Player 102
+        # earned the Sunday prize with an original roll of 90.
+        self.assertEqual(day_award(self.con, 9, "2026-11-01")["user_id"], 102)
+        self.assertEqual(day_award(self.con, 9, "2026-11-01")["winning_roll"], 90)
         self.assertEqual(day_award(self.con, 9, "2026-11-01")["coins_awarded"], 2)
-        self.assertEqual(coin_total(self.con, 9, 101), 2)
-        self.assertEqual(coin_total(self.con, 9, 102), 0)
+        self.assertEqual(coin_total(self.con, 9, 101), 0)
+        self.assertEqual(coin_total(self.con, 9, 102), 2)
         self.assertEqual(settle_completed_days(
             self.con, 9, datetime(2026, 11, 2, 8, 0, tzinfo=UK)), 0)
 
