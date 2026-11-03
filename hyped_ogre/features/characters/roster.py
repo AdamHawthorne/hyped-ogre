@@ -71,11 +71,15 @@ def render(characters):
     three-column block from exactly the same rows; never truncate a roster.
     """
     def new_embed(first):
-        result = discord.Embed(title="<Hyped> Roster" if first else "<Hyped> Roster (continued)",
-                               description="Ogre keep track. You add or update.\n\u200b" if first else None,
-                               colour=0xB84A3A)
+        # A thumbnail reserves width beside the role fields on desktop.
+        # The author icon keeps the guild mark beside the heading without
+        # narrowing the character / attendance / level columns.
+        result = discord.Embed(
+            title=None if first else "<Hyped> Roster (continued)",
+            colour=0xB84A3A,
+        )
         if first:
-            result.set_thumbnail(url=ROSTER_IMAGE)
+            result.set_author(name="<Hyped> Roster", icon_url=ROSTER_IMAGE)
         return result
 
     embeds = [new_embed(True)]
