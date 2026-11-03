@@ -1778,6 +1778,15 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def sheet_sync_loop(self):
         await self.bot.wait_until_ready()
+        # One silent startup edit repairs older V2 panels that still point to
+        # the manual Check message. No new announcements or member pings.
+        for event in active_panels(RAID_DB):
+            if event.get("roster_published") and not event.get("archived_at"):
+                try:
+                    await self.refresh_saved_panel(event["raid_id"])
+                except (discord.HTTPException, sqlite3.Error, ValueError) as exc:
+                    LOGGER.warning("Raid #%s confirmation link update delayed: %s",
+                                   event["raid_id"], exc)
         while True:
             try:
                 await self.sync_raid_sheets()
