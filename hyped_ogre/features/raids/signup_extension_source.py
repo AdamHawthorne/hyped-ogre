@@ -69,6 +69,18 @@ def is_test_member(interaction):
     return interaction.guild_id == GUILD_ID
 
 
+def notify_classrooms(interaction, owner_id):
+    """Queue access reconciliation after a committed shared character edit.
+
+    Dispatch is non-blocking: the Discord response and saved profile do not
+    depend on the availability of classroom permissions. The classroom worker
+    also scans the register every minute to recover missed events or restarts.
+    """
+    dispatch = getattr(getattr(interaction, "client", None), "dispatch", None)
+    if callable(dispatch):
+        dispatch("classroom_character_changed", interaction.guild_id, owner_id)
+
+
 async def refresh_player_signup_panel(interaction, raid_id):
     """Refresh a public sign-up list after a player edits their attendance.
 
@@ -877,6 +889,7 @@ class CharacterManageView(discord.ui.LayoutView):
                 await interaction.response.send_message(
                     f"Ogre couldn't set Main: {exc}", ephemeral=True)
                 return
+            notify_classrooms(interaction, self.owner_id)
             await interaction.response.edit_message(
                 view=CharacterManageView(self.owner_id, self.character_id, character)
             )
@@ -941,6 +954,7 @@ class ConfirmCharacterDeleteView(discord.ui.LayoutView):
             except (ValueError, sqlite3.Error) as exc:
                 await interaction.response.send_message(f"Ogre can't delete: {exc}", ephemeral=True)
                 return
+            notify_classrooms(interaction, owner_id)
             await interaction.response.edit_message(
                 view=CharacterActionView(owner_id, purpose="update"),
             )
@@ -993,6 +1007,7 @@ class CharacterNameModal(discord.ui.Modal):
                 f"Ogre couldn't save character: {exc}", ephemeral=True
             )
             return
+        notify_classrooms(interaction, self.owner_id)
         name = discord.utils.escape_markdown(self.name.value.strip())
         if self.signup_raid_id is not None:
             try:
@@ -1208,6 +1223,7 @@ async def apply_profile_update(interaction, owner_id, character_id,
             f"Ogre couldn't update character: {exc}", ephemeral=True
         )
         return
+    notify_classrooms(interaction, owner_id)
     view = ProfileUpdatedView(name, class_name, spec, role)
     if return_to_editor:
         latest = next((row for row in member_characters(owner_id)
