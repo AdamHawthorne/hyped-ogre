@@ -15,10 +15,10 @@ fields: character / Discord member, Attendance, and Lvl. Level uses the last
 saved WoWSims export as a snapshot, not a live in-game level, and shows N/A
 when no valid export level exists. Within each role, mains are ordered by
 highest saved level, then highest attendance, then alphabetically, with
-unknown values last. One spacer line below the introduction keeps the
-first table row clear of the right-hand thumbnail. The panel has no
-explanatory footer.
-The four buttons are **Add**,
+unknown values last. The guild mark is displayed as a compact icon
+beside the roster heading (embed author icon), without a right-hand thumbnail
+or introductory description that would reduce room for the three columns.
+The panel has no explanatory footer. The four buttons are **Add**,
 **Manage**, **WoWSims** and **Remove / absent**. All member actions open privately.
 Repeating `/postcharacters` refreshes the saved message; a confirmed missing
 message can be recreated. A normal guild roster fits in one embed. If Discord's
