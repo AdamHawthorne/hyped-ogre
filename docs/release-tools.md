@@ -10,11 +10,11 @@ visibility is Manage Server; allow Leadership to use the posting command in
 Server Settings > Integrations rather than widening their server permissions.
 
 The board is a persistent standard embed grouped into Tanks, Healers,
-Melee and Ranged, listing only main characters. Each role has two inline
-fields: character / Discord member, and a compact "Lvl · Att. · iLvl" summary.
-Level displays a dash until a separately verified character level is made
-available; the bot does not infer current character level from an old WoWSims
-export. The panel has no explanatory footer. The four buttons are **Add**,
+Melee and Ranged, listing only main characters. Each role has three inline
+fields: character / Discord member, Attendance, and Lvl. Level uses the last
+saved WoWSims export as a snapshot, not a live in-game level, and shows N/A
+when no valid export level exists. The panel has no explanatory footer.
+The four buttons are **Add**,
 **Manage**, **WoWSims** and **Remove / absent**. All member actions open privately.
 Repeating `/postcharacters` refreshes the saved message; a confirmed missing
 message can be recreated. A normal guild roster fits in one embed. If Discord's
@@ -24,9 +24,10 @@ Automatic updates run every minute and never ping displayed members.
 
 Attendance is calculated per Discord member across the last four completed
 guild raids. Bench completion is recorded as attended; Attended, Late and AFK
-receive credit. Item level is displayed only when every equipped item's level
-can be resolved from the saved WoWSims export. Missing or partial data shows
-`N/A`; no live armory data or character level is substituted for item level.
+receive credit. The roster currently displays the snapshot character level instead
+of item level. The item level is still calculated for other gear workflows
+only when every equipped item's level can be resolved from saved WoWSims gear.
+Missing or partial gear data shows `N/A`; no live armory data is inferred.
 
 WCL is omitted until a Warcraft Logs connection and verified Forever
 character/realm/zone identity are available.
