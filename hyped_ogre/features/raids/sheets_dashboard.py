@@ -774,6 +774,8 @@ def _one(session, db_path, event, names, titles):
     else:
         original = matches[0]
         sid = titles[original]["sheetId"]
+        if event.get("archived_at"):
+            title = original
         if original != title and not event.get("archived_at"):
             raid_sheets._json(
                 session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
@@ -915,6 +917,31 @@ def _permanent_read(session, tab):
     return raid_sheets._json(session, "GET", url).get("values", [])
 
 
+def _hide_archived(session, titles, raids):
+    """Hide completed raid tabs, preserving history and one visible worksheet."""
+    hidden = set()
+    for raid_id, event in raids.items():
+        if not event.get("archived_at"):
+            continue
+        matches = [(title, props) for title, props in titles.items()
+                   if title.startswith(f"Raid #{raid_id} - ") and not props.get("hidden")]
+        if len(matches) == 1:
+            hidden.add(matches[0][0])
+    if not hidden:
+        return
+    if not any(not props.get("hidden") and name not in hidden for name, props in titles.items()):
+        # Google Sheets requires at least one visible worksheet. Keep one
+        # archive visible rather than failing completion or deleting history.
+        hidden.discard(sorted(hidden)[0])
+    if hidden:
+        raid_sheets._json(session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+            json={"requests": [{"updateSheetProperties": {
+                "properties": {"sheetId": titles[name]["sheetId"], "hidden": True}, "fields": "hidden"
+            }} for name in sorted(hidden)]})
+        for name in hidden:
+            titles[name]["hidden"] = True
+
+
 def _permanent_write(session, tab, row_number, values):
     url = f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/" + quote(
         f"'{tab}'!A{row_number}:O{row_number}", safe="'!:")
@@ -954,6 +981,8 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
     gear_by_id = {str(g["character_id"]): g for g in gear}
     old_roster = _permanent_read(session, "Forever Roster")
     old_attendance = _permanent_read(session, "Forever Attendance")
+    from hyped_ogre.features.raids.attendance import mirror_rows
+    mirror_rows(db_path, old_attendance[1:])
     roster_map = {str(row[0]): (i + 6, row) for i, row in enumerate(old_roster[1:])
                   if row and str(row[0]).isdigit()}
     attendance_map = {(str(row[0]), str(row[2])): (i + 6, row)
@@ -1305,6 +1334,7 @@ def sync_once(db_path, discord_names=None):
         # Once an active raid tab exists, hide (never delete) old management tabs.
         if any(name.startswith("Raid #") for name in titles):
             _hide_legacy(session, titles)
+        _hide_archived(session, titles, raids)
         changed = set(metadata_changed)
         for raid_id, selected in published.items():
             changed.update(_save_public_for_one(db_path, raid_id, selected))
@@ -1355,6 +1385,8 @@ def attendance_set(db_path, raid_id, member_id, outcome, minutes=0):
                   "Yes" if outcome == "Excused" else "No",
                   old[13] if len(old) > 13 else "", now]
         _permanent_write(session, "Forever Attendance", row_number, values)
+        from hyped_ogre.features.raids.attendance import mirror_rows
+        mirror_rows(db_path, [values])
         return member[1]
     finally:
         session.close()

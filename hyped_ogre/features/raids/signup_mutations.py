@@ -6,10 +6,14 @@ function. Do not open another connection or import Discord here. Keeping
 the same SQL ordering protects existing player signups and absent records.
 """
 
+from . import activity
+
 
 def record_signup(con, raid_id, discord_id, character_id, path, note,
                   requirement_for_signup, now_iso):
     """Save the one-character signup, preserving policy checks and prior notes."""
+    if not getattr(con, "in_transaction", False):
+        con.execute("BEGIN IMMEDIATE")
     event = con.execute(
         "SELECT signup_open, archived_at FROM raids WHERE raid_id=?",
         (raid_id,),
@@ -45,6 +49,10 @@ def record_signup(con, raid_id, discord_id, character_id, path, note,
     ).fetchone()
     if not character:
         raise ValueError("Choose one of your own saved characters.")
+    previous = con.execute("SELECT note FROM signups WHERE raid_id=? AND discord_id=?",
+                           (raid_id, discord_id)).fetchone()
+    was_absent = con.execute("SELECT 1 FROM raid_absences WHERE raid_id=? AND discord_id=?",
+                             (raid_id, discord_id)).fetchone() is not None
     con.execute("""
         INSERT INTO signups(raid_id, discord_id, character_id, availability, note, submitted_at)
         VALUES (?, ?, ?, 'Available', ?, ?)
@@ -66,10 +74,19 @@ def record_signup(con, raid_id, discord_id, character_id, path, note,
         "DELETE FROM raid_absences WHERE raid_id=? AND discord_id=?",
         (raid_id, discord_id),
     )
+    current = con.execute("SELECT note FROM signups WHERE raid_id=? AND discord_id=?",
+                          (raid_id, discord_id)).fetchone()[0] or ""
+    before = (previous[0] or "") if previous else ""
+    if was_absent:
+        activity.enqueue(con, raid_id, discord_id, "available", current, now_iso())
+    elif current != before:
+        activity.enqueue(con, raid_id, discord_id, "note", current, now_iso())
 
 
 def record_absence(con, raid_id, discord_id, note, timestamp):
     """Save an absent state, preserving prior character and signup note."""
+    if not getattr(con, "in_transaction", False):
+        con.execute("BEGIN IMMEDIATE")
     event = con.execute(
         "SELECT raid_id, archived_at FROM raids WHERE raid_id=?", (raid_id,),
     ).fetchone()
@@ -77,6 +94,8 @@ def record_absence(con, raid_id, discord_id, note, timestamp):
         raise ValueError("Raid no longer exists.")
     if event[1]:
         raise ValueError("Archived raids are read-only.")
+    previous = con.execute("SELECT note FROM raid_absences WHERE raid_id=? AND discord_id=?",
+                           (raid_id, discord_id)).fetchone()
     con.execute("""
         INSERT INTO raid_absences(raid_id, discord_id, note, signed_off_at)
         VALUES (?, ?, ?, ?)
@@ -89,3 +108,5 @@ def record_absence(con, raid_id, discord_id, note, timestamp):
         "WHERE raid_id=? AND discord_id=?",
         (raid_id, discord_id),
     )
+    if previous is None or (previous[0] or "") != (note or ""):
+        activity.enqueue(con, raid_id, discord_id, "absent", note, timestamp)

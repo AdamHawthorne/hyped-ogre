@@ -14,6 +14,8 @@ from contextlib import closing, contextmanager
 import discord
 from discord import app_commands
 from discord.ext import commands
+from hyped_ogre.features.lfg import live as live_plans
+from hyped_ogre.features.lfg.live_ui import LivePlanButton, RemoveLivePlan
 
 from .lfg_sort import listing_board_key, is_solo_or_sorted, is_open_lfm
 from .lfg_pagination import board_chunks
@@ -169,6 +171,7 @@ def init_db():
         if "character_id" not in columns:
             db.execute("ALTER TABLE lfg_listings ADD COLUMN character_id INTEGER")
         lfg_dungeons.init_requests(db)
+        live_plans.initialise(db)
 
         # Pre-launch plans persist until a member updates or removes them.
         db.execute("UPDATE lfg_listings SET board_day='launch'")
@@ -181,6 +184,14 @@ def get_board(channel_id):
             "SELECT * FROM lfg_boards WHERE channel_id=?",
             (channel_id,),
         ).fetchone()
+
+
+def board_mode(channel_id):
+    try:
+        with database() as db:
+            return live_plans.mode(db, channel_id)
+    except sqlite3.OperationalError:
+        return "launch"
 
 
 def current_listing(channel_id, user_id):
@@ -219,6 +230,9 @@ def board_entries(channel_id):
             visible_requests.append(dict(
                 row, dungeons=", ".join(dungeons), _kind="dungeon"
             ))
+    if board_mode(channel_id) == "live":
+        with database() as db:
+            return visible_requests + [dict(r, _kind="live") for r in live_plans.listings(db, channel_id)]
     return visible_requests + [
         dict(row, _kind="launch") for row in entries(channel_id)
     ]
@@ -1501,6 +1515,7 @@ class BoardLayout(discord.ui.LayoutView):
         self.cog = cog
         self.channel_id = channel_id
         self.preview = preview
+        live_mode = not preview and board_mode(channel_id) == "live"
         # The obsolete page_index argument is accepted for saved-board
         # compatibility only. There are no public Next/Previous controls.
         self.page_index = 0
@@ -1514,8 +1529,9 @@ class BoardLayout(discord.ui.LayoutView):
         if not continuation:
             heading = discord.ui.Section(
                 discord.ui.TextDisplay(
-                    "## <Hyped> LFG-LFM Board\n"
-                    "**Ogre help find launch groups and dungeon runs.**"
+                    "## <Hyped> LFG-LFM Board\n" +
+                    ("**Ogre help find levelling, dungeon and PvP groups.**" if live_mode
+                     else "**Ogre help find launch groups and dungeon runs.**")
                     + ("\n-# DEMO PREVIEW · First seven fictional plans only"
                        if preview and len(roster) > len(visible) else
                        "\n-# DEMO PREVIEW · Nothing saved" if preview else "")
@@ -1536,13 +1552,25 @@ class BoardLayout(discord.ui.LayoutView):
                 ))
             else:
                 self.add_item(discord.ui.ActionRow(
-                    AddUpdateButton(cog, channel_id),
+                    LivePlanButton(cog, channel_id) if live_mode else AddUpdateButton(cog, channel_id),
                     CharactersButton(),
                     DungeonButton(cog, channel_id),
                     RemoveDungeonButton(cog, channel_id),
-                    RemoveButton(cog, channel_id),
+                    RemoveLivePlan(cog, channel_id) if live_mode else RemoveButton(cog, channel_id),
                 ))
         for row in visible:
+            if isinstance(row, dict) and row.get("_kind") == "live":
+                character = shared_character(row["user_id"], row["character_id"])
+                title = (f"{safe(character[1])} · {character[2]} / {character[3]} · {character[4]}"
+                         if character else "Character needs updating")
+                lines = [f"**{title}**", f"-# **Activity:** {safe(row['activity'])}",
+                         f"-# **Available:** {safe(row['availability'])}",
+                         f"-# **Looking for:** {safe(row['looking_for']) or 'Flexible'}"]
+                if row["notes"]:
+                    lines.append(f"-# **Notes:** {safe(row['notes'])}")
+                lines.append(contact_line(row, preview=preview))
+                self.add_item(discord.ui.Container(discord.ui.TextDisplay("\n".join(lines)), accent_color=ACCENT))
+                continue
             if isinstance(row, dict) and row.get("_kind") == "dungeon":
                 character = shared_character(row["user_id"], row["character_id"])
                 if character is None:
@@ -1652,8 +1680,9 @@ class LFGPreview(commands.Cog):
             ids = {
                 row[0] for row in db.execute(
                     "SELECT channel_id FROM lfg_listings WHERE user_id=? "
-                    "UNION SELECT channel_id FROM lfg_dungeon_requests WHERE user_id=?",
-                    (member_id, member_id),
+                    "UNION SELECT channel_id FROM lfg_dungeon_requests WHERE user_id=? "
+                    "UNION SELECT channel_id FROM lfg_live_plans WHERE user_id=?",
+                    (member_id, member_id, member_id),
                 )
             }
         for channel_id in ids:
@@ -1827,6 +1856,34 @@ class LFGPreview(commands.Cog):
                 "Saved member plans are untouched; check Fly logs.",
                 ephemeral=True,
             )
+
+    @app_commands.command(name="lfg-mode", description="Switch the board between launch plans and everyday groups")
+    @app_commands.guilds(discord.Object(id=int(os.environ["HYPED_GUILD_ID"])))
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.choices(mode=[app_commands.Choice(name="Launch plans", value="launch"),
+                               app_commands.Choice(name="Everyday groups", value="live")])
+    async def change_mode(self, interaction: discord.Interaction, mode: str):
+        if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
+            await interaction.response.send_message("This board belongs to Hyped.", ephemeral=True)
+            return
+        from hyped_ogre.features.classrooms.config import LEADERSHIP_ROLE_ID
+        if (interaction.user.id not in (int(os.getenv("OWNER_ID") or 0), interaction.guild.owner_id)
+                and not any(r.id == LEADERSHIP_ROLE_ID for r in interaction.user.roles)):
+            await interaction.response.send_message("Leadership manages the board mode.", ephemeral=True)
+            return
+        if not get_board(interaction.channel_id):
+            await interaction.response.send_message("Post the board here with /postlfglfm first.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        with database() as db:
+            live_plans.set_mode(db, interaction.channel_id, mode)
+        try:
+            await self.refresh(interaction.channel_id)
+        except (discord.HTTPException, sqlite3.Error, RuntimeError):
+            await interaction.followup.send("Board mode saved. Ogre couldn't refresh it yet; retry /postlfglfm here.", ephemeral=True)
+            return
+        await interaction.followup.send(f"Ogre switched to **{mode}** mode. Saved launch and group plans are kept.", ephemeral=True)
 
     @app_commands.command(
         name="postlfglfm",

@@ -6,7 +6,7 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import discord
 from discord import app_commands
@@ -88,6 +88,9 @@ async def refresh_player_signup_panel(interaction, raid_id):
     permission error or unavailable bot client never discards the saved signup.
     """
     client = getattr(interaction, "client", None)
+    dispatch = getattr(client, "dispatch", None)
+    if callable(dispatch):
+        dispatch("raid_activity_changed", interaction.guild_id)
     getter = getattr(client, "get_cog", None)
     cog = getter("RaidPrototype") if callable(getter) else None
     if cog is None:
@@ -165,6 +168,17 @@ def set_character_race(discord_id, character_id, race, path=RAID_DB):
             con, discord_id, character_id, race, RACE_CLASSES
         )
 
+
+def character_offspec(discord_id, character_id, path=RAID_DB):
+    try:
+        with database(path) as con:
+            row = con.execute("SELECT off_spec,off_role FROM characters "
+                              "WHERE discord_id=? AND character_id=?",
+                              (discord_id, character_id)).fetchone()
+        return row if row else ("", "")
+    except sqlite3.OperationalError:
+        return "", ""
+
 async def refresh_lfg_for_member(interaction, owner_id):
     """Keep LFG entries current when the shared character profile changes."""
     bot = getattr(interaction, "client", None)
@@ -210,8 +224,8 @@ def delete_character(discord_id, character_id, path=RAID_DB):
             "LFG_DB_PATH",
             "/data/lfg_board.db" if os.path.isdir("/data") else "lfg_board.db")
         if path == RAID_DB and os.path.isfile(lfg_path):
-            with sqlite3.connect(lfg_path, timeout=10) as lfg_db:
-                for table in ("lfg_dungeon_requests", "lfg_listings"):
+            with closing(sqlite3.connect(lfg_path, timeout=10)) as lfg_db:
+                for table in ("lfg_dungeon_requests", "lfg_listings", "lfg_live_plans"):
                     exists = lfg_db.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                         (table,)).fetchone()
@@ -220,7 +234,7 @@ def delete_character(discord_id, character_id, path=RAID_DB):
                             "LIMIT 1", (discord_id, character_id)).fetchone():
                         raise ValueError(
                             "This character is used on the LFG board. "
-                            "Remove its dungeon request or update its launch plan first.")
+                            "Remove its LFG request or update the plan first.")
         # Gear belongs exclusively to this character, unlike raid history.
         for table in ("gear_exports", "gear_images"):
             con.execute(f"DELETE FROM {table} WHERE character_id=?", (character_id,))
@@ -835,11 +849,13 @@ class CharacterManageView(discord.ui.LayoutView):
         _, name, class_name, spec, role, _ = character
         is_main = character_id in main_character_ids(owner_id)
         race = character_race(owner_id, character_id)
+        off_spec, off_role = character_offspec(owner_id, character_id)
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {guild_emoji(class_name)} {discord.utils.escape_markdown(name)}\n"
                 f"{class_name} / {spec} · {guild_emoji(combat_role(role, class_name, spec))} {role}\n"
-                f"**Race:** {race or 'Not set'} · **{'Main' if is_main else 'Alt'}**"
+                f"**Race:** {race or 'Not set'} · **{'Main' if is_main else 'Alt'}**\n"
+                f"**Off-spec:** {off_spec + ' · ' + off_role if off_spec else 'Not set'}"
             ), accent_color=ACCENT,
         ))
         buttons = discord.ui.ActionRow()
@@ -850,6 +866,19 @@ class CharacterManageView(discord.ui.LayoutView):
         main = discord.ui.Button(label="Set Main",
                                  style=discord.ButtonStyle.success, disabled=is_main)
         delete = discord.ui.Button(label="Delete", style=discord.ButtonStyle.danger)
+        off_spec_button = discord.ui.Button(label="Off-spec", style=discord.ButtonStyle.secondary)
+
+        async def off_spec_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message("That character isn't yours.", ephemeral=True)
+                return
+            from hyped_ogre.features.characters.offspec_ui import OffspecView
+            await interaction.response.send_message(
+                f"Choose an off-spec for **{discord.utils.escape_markdown(name)}**. "
+                "Your main spec stays the one used for raid sign-ups.",
+                view=OffspecView(self.owner_id, self.character_id, class_name), ephemeral=True)
+
+        off_spec_button.callback = off_spec_callback
 
         async def edit_callback(interaction):
             if not is_test_member(interaction) or interaction.user.id != self.owner_id:
@@ -910,6 +939,7 @@ class CharacterManageView(discord.ui.LayoutView):
         main.callback = main_callback
         delete.callback = delete_callback
         buttons.add_item(edit)
+        buttons.add_item(off_spec_button)
         buttons.add_item(wowsims)
         buttons.add_item(main)
         buttons.add_item(delete)

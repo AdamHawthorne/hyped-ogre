@@ -221,6 +221,35 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.current("priests").view_channel)
         self.assertTrue(self.current("healers").view_channel)
 
+    async def test_offspec_adds_tank_and_dps_for_same_paladin_and_removes_only_offspec_access(self):
+        from hyped_ogre.features.characters import profiles
+        ident = self.character("Paladin", "Paladin", "Retribution", "DPS")
+        with self.store.connection() as con:
+            profiles.set_offspec(con, PLAYER, ident, "Paladin", "Protection", "Tank")
+        await self.cog.sync_access(self.guild)
+        for key in ("paladins", "dps", "tanks"):
+            self.assertTrue(self.current(key).view_channel)
+        with self.store.connection() as con:
+            profiles.set_offspec(con, PLAYER, ident, "Paladin", "", "")
+        await self.cog.sync_access(self.guild)
+        self.assertIsNone(self.current("tanks").view_channel)
+        self.assertTrue(self.current("dps").view_channel)
+
+    async def test_class_change_clears_old_offspec_and_its_channel_access(self):
+        from hyped_ogre.features.characters import profiles
+        ident = self.character("Healer", "Paladin", "Holy", "Healer")
+        with self.store.connection() as con:
+            profiles.set_offspec(con, PLAYER, ident, "Paladin", "Protection", "Tank")
+        await self.cog.sync_access(self.guild)
+        self.assertTrue(self.current("tanks").view_channel)
+        raid.update_character_profile(PLAYER, ident, "Mage", "Frost", "DPS", str(self.path))
+        await self.cog.sync_access(self.guild)
+        self.assertIsNone(self.current("tanks").view_channel)
+        self.assertIsNone(self.current("healers").view_channel)
+        self.assertTrue(self.current("dps").view_channel)
+        with self.store.connection() as con:
+            self.assertEqual(profiles.offspec(con, PLAYER, ident)[1:], ("", ""))
+
     async def test_feral_dps_does_not_get_tank_and_invalid_role_cannot_get_healer(self):
         self.character("Cat", "Druid", "Feral", "DPS")
         # Simulate a legacy/manual inconsistent row, bypassing registration validation.

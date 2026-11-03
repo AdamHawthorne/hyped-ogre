@@ -96,6 +96,18 @@ def ensure_signup_schema_on_connection(con):
     if "race" not in {row[1] for row in con.execute("PRAGMA table_info(characters)")}:
         con.execute("ALTER TABLE characters ADD COLUMN race TEXT NOT NULL DEFAULT ''")
 
+    # Main/Alt identifies the character; off-spec belongs to that same character.
+    columns = {row[1] for row in con.execute("PRAGMA table_info(characters)")}
+    for name in ("off_spec", "off_role"):
+        if name not in columns:
+            con.execute(f"ALTER TABLE characters ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+
+    con.execute("""CREATE TABLE IF NOT EXISTS raid_activity_events (
+        event_id INTEGER PRIMARY KEY, raid_id INTEGER NOT NULL,
+        discord_id INTEGER NOT NULL, kind TEXT NOT NULL, note TEXT NOT NULL,
+        created_at TEXT NOT NULL, delivered_message_id INTEGER
+    )""")
+
     # Historic registrations allowed separate realm/casing variants of
     # one character. Consolidate those on startup without losing any
     # sign-ups, attendance references or saved SimC snapshots.

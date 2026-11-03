@@ -14,6 +14,12 @@ to `dps` (including Survival Hunter and Feral DPS). Tank/healer mains with a
 DPS alt qualify too. Access remains until no registered character qualifies.
 Duplicate qualifying characters only produce one permission entry.
 
+An off-spec on the same character also qualifies for its saved role. For
+example, Retribution/DPS main spec plus Protection/Tank off-spec gives both
+DPS and Tanks. Edit this under Characters > select character > Off-spec;
+Main/Alt still identifies the character, and the primary role remains the raid
+signup role. See [release tools](release-tools.md) for the character hub.
+
 ## Audit findings and required permissions
 
 The 2026-11-03 audit already has the category and all eleven text channels

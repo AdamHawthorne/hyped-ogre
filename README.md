@@ -7,13 +7,18 @@
 - **Daily rolls:** one free roll per UK day, a gold-coin ledger, Sunday double-coin awards, a once-per-day coin gamble, statistics and a High Roller role
 - **Raids:** signups, saved characters, roster management, attendance, Warcraft Logs links, and Google Sheets integration
 - **Characters and equipment:** saved characters, class/role handling and WoWSims export support
-- **Classrooms:** private class, tank and healer chats with direct member access from registered mains and alts. See the [classroom setup guide](docs/classrooms.md).
+- **Character hub:** private `/characters` editing anywhere, a persistent `/postcharacters` board, and main-spec/off-spec classroom access
+- **Raid activity:** private Leadership alerts for absence and note changes, with a durable retry queue
+- **Classrooms:** private class and role chats with direct member access from registered mains, alts and off-specs. See the [classroom setup guide](docs/classrooms.md).
 - **LFG/LFM:** dungeon and group-planning panels
 - **Streams:** Twitch registration and stream notifications
 - **Polls:** private `/poll create` setup, anonymous single/multiple-choice votes, optional live counts, deadlines, private results and deliberate publication. See the [poll guide](docs/polls.md).
 - **Guild utilities:** Forever role panels, countdowns, suggestions, flameboard and Ogre messaging
 
 Feature behaviour is covered by regression tests in `tests/`.
+
+See [release tools](docs/release-tools.md) for the character hub, live LFG mode,
+Leadership notifications, attendance mirroring and live verification steps.
 
 ## Runtime and persistence
 
