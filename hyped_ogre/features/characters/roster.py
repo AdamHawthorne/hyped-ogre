@@ -1,11 +1,14 @@
-"""Compact role-grouped roster embeds with no hidden/paginated characters."""
+"""Compact role-grouped roster embeds for main characters only."""
 
 import sqlite3
 
 import discord
 from cogs import raid_signup as raid
 from cogs.emojis import markup
+from hyped_ogre.features.raids.schedule import signup_role_group
 from . import equipment, items
+
+ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
 
 FOOTER = ("Attendance: per player, last 4 completed raids; bench counts. "
           "iLvl: saved WoWSims gear. N/A: no attendance history or incomplete gear data.")
@@ -52,15 +55,19 @@ def render(characters):
         result = discord.Embed(title="<Hyped> Roster" if first else "<Hyped> Roster (continued)",
                                description="Ogre keep track. You add or update." if first else None,
                                colour=0xB84A3A)
+        if first:
+            result.set_thumbnail(url=ROSTER_IMAGE)
         result.set_footer(text=FOOTER)
         return result
 
     embeds = [new_embed(True)]
-    roles = (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS"))
-    for label, role in roles:
-        members = sorted((r for r in characters if
-                          (r['role'] if r['role'] in ('Tank', 'Healer') else 'DPS') == role),
-                         key=lambda r: (not r['is_main'], r['name'].casefold(), r['character_id']))
+    roles = ("Tanks", "Healers", "Melee", "Ranged")
+    for label in roles:
+        members = sorted(
+            (r for r in characters if r["is_main"] and
+             signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
+            key=lambda r: (r["name"].casefold(), r["character_id"]),
+        )
         blocks, block, length = [], [], 0
         for row in members:
             name = f"{markup(row['class_name'])} {safe_name(row['name'])} / <@{row['discord_id']}>"
@@ -73,17 +80,16 @@ def render(characters):
         if block:
             blocks.append(block)
         if not blocks:
-            blocks = [[("No registered characters", "N/A", "N/A")]]
+            blocks = [[("No mains registered", "N/A", "N/A")]]
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = ("Character", "Attendance", "iLvl")
-            addition = len(heading) + 1 + sum(map(len, values)) + sum(map(len, names))
+            names = (heading, "Attendance", "iLvl")
+            addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
-            if len(embed.fields) + 4 > 25 or len(embed) + addition > 5900:
+            if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
                 embed = new_embed(False)
                 embeds.append(embed)
-            embed.add_field(name=heading, value="\u200b", inline=False)
             for name, value in zip(names, values):
                 embed.add_field(name=name, value=value, inline=True)
     return embeds
