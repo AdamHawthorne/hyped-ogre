@@ -15,6 +15,9 @@ from .roster import rows, render
 from .absence_ui import AbsenceActions
 
 LOG = logging.getLogger(__name__)
+CHARACTERS_MESSAGE = "Add yer name to mighty Hyped roster!"
+
+
 class HubView(discord.ui.View):
     def __init__(self, cog, channel_id):
         super().__init__(timeout=None)
@@ -45,7 +48,7 @@ class HubView(discord.ui.View):
             return
         await cog.on_gear(interaction)
 
-    @discord.ui.button(label="Remove / absent", style=discord.ButtonStyle.danger,
+    @discord.ui.button(label="Remove / Absent", style=discord.ButtonStyle.danger,
                        custom_id="hyped_characters:absence:v2")
     async def absence(self, interaction, button):
         await interaction.response.send_message(
@@ -109,7 +112,9 @@ class CharacterHub(commands.Cog):
         embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
         # Refresh the anchor first. A missing anchor is handled by /postcharacters.
         await channel.get_partial_message(message_id).edit(
-            embed=embeds[0], view=HubView(self, channel_id), allowed_mentions=discord.AllowedMentions.none())
+            content=CHARACTERS_MESSAGE,
+            embed=embeds[0], view=HubView(self, channel_id),
+            allowed_mentions=discord.AllowedMentions.none())
         await self.sync_parts(channel, embeds[1:])
         with raid.database(raid.RAID_DB) as con:
             con.execute("UPDATE character_panels SET page_index=0 WHERE channel_id=?", (channel_id,))
@@ -186,8 +191,10 @@ class CharacterHub(commands.Cog):
                     saved = None
             if saved is None:
                 embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
-                message = await channel.send(embed=embeds[0], view=HubView(self, channel.id),
-                                             allowed_mentions=discord.AllowedMentions.none())
+                message = await channel.send(
+                    content=CHARACTERS_MESSAGE,
+                    embed=embeds[0], view=HubView(self, channel.id),
+                    allowed_mentions=discord.AllowedMentions.none())
                 with raid.database(raid.RAID_DB) as con:
                     con.execute("INSERT INTO character_panels (guild_id,channel_id,message_id,page_index) "
                                 "VALUES (?,?,?,0) ON CONFLICT(channel_id) DO UPDATE SET "
