@@ -29,6 +29,7 @@ from cogs.roll_coins import (
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.roll_gamble import gamble_once, GambleError
 from cogs.ogre_voice import pick as ogre_say
+from hyped_ogre.features.startup_greeting import StartupGreeting
 from cogs.emojis import markup as guild_emoji, roll_dice_markup, roll_dice_emoji
 import logging
 import json
@@ -1017,6 +1018,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="diceman_", intents=intents)
+startup_greeting = StartupGreeting(HYPED_GUILD_ID)
 roll_reactions = RollReactions(bot, ROLL_CHANNEL_ID, db, today_range, log_error, HYPED_GUILD_ID)
 
 async def fetch_guild_member(guild: discord.Guild, user_id: int):
@@ -2159,6 +2161,9 @@ async def on_ready():
     )
 
     print(f"{BOT_NAME} online & ready.")
+    # Posts a single private wake-up line on each bot process start. The
+    # guarded sender ignores later on_ready calls caused by gateway reconnects.
+    await startup_greeting.announce_once(bot)
 
 # ---------------- DAILY BOT ROLL ----------------
 
