@@ -166,6 +166,14 @@ def ensure_raid_fields(path):
         # Older confirmations used to close registration; migrate active raids.
         con.execute("UPDATE raids SET signup_open=1 "
                     "WHERE roster_published=1 AND archived_at IS NULL")
+        # Upgrade existing active reaction posts to the V1 grid on restart.
+        # Editing uses AllowedMentions.none() and never sends another ping.
+        con.execute(
+            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+            "WHERE deleted_at IS NULL AND retracted_at IS NULL "
+            "AND raid_id IN (SELECT raid_id FROM raids "
+            "WHERE archived_at IS NULL AND roster_published=1)"
+        )
         for table in ("raid_confirmed_roster", "raid_public_roster"):
             existing_columns = {
                 row[1] for row in con.execute(f"PRAGMA table_info({table})")
