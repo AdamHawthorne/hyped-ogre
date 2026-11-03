@@ -6,9 +6,10 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import ExitStack, closing
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import discord
 from discord.ext import commands
@@ -364,12 +365,12 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
 
     async def test_read_only_commands_leave_register_and_sheet_data_unchanged(self):
         self.character()
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con:
             before = list(con.iterdump())
         interaction = SimpleNamespace(guild=self.guild, response=SimpleNamespace(defer=AsyncMock()),
                                       followup=SimpleNamespace(send=AsyncMock()))
         await self.cog.status.callback(self.cog, interaction)
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con:
             self.assertEqual(list(con.iterdump()), before)
         interaction.followup.send.assert_awaited_once()
         self.assertIn("Registered accounts", interaction.followup.send.call_args.args[0])
@@ -415,7 +416,6 @@ class ClassroomLifecycleTests(unittest.IsolatedAsyncioTestCase):
             wrappers = {name: getattr(raid, name) for name in (
                 "save_character", "member_characters", "main_character_ids", "character_race",
                 "update_character_profile", "delete_character")}
-            from contextlib import ExitStack
             with ExitStack() as stack:
                 stack.enter_context(patch.object(raid, "GUILD_ID", config.GUILD_ID))
                 for name, original in wrappers.items():
@@ -460,7 +460,7 @@ class ClassroomStoreTests(unittest.TestCase):
             sqlite3.connect(empty).close()
             with self.assertRaises(sqlite3.OperationalError):
                 ClassroomStore(empty).initialise()
-            with sqlite3.connect(empty) as con:
+            with closing(sqlite3.connect(empty)) as con:
                 self.assertEqual(con.execute("SELECT name FROM sqlite_master").fetchall(), [])
 
     def test_additive_schema_does_not_mutate_existing_rows_and_journal_is_scoped(self):
@@ -468,12 +468,12 @@ class ClassroomStoreTests(unittest.TestCase):
             path = str(Path(tmp) / "raid_signup.db")
             raid.create_schema(path)
             raid.save_character(PLAYER, "Snore", "Warrior", "Protection", "Tank", path)
-            with sqlite3.connect(path) as con:
+            with closing(sqlite3.connect(path)) as con:
                 before = list(con.iterdump())
             store = ClassroomStore(path)
             store.initialise()
             store.initialise()
-            with sqlite3.connect(path) as con:
+            with closing(sqlite3.connect(path)) as con:
                 after = list(con.iterdump())
             self.assertTrue(all(line in after for line in before))
             self.assertFalse(store.enabled(config.GUILD_ID))
