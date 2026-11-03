@@ -1606,9 +1606,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def announce_roster(self, raid_id, selected=None):
         async with self._ack_lock:
-            return await raid_announcer.announce(
+            link = await raid_announcer.announce(
                 self.bot, RAID_DB, raid_id, GUILD_ID, selected=selected
             )
+        # The reaction message ID exists only after posting it. Refresh the
+        # V2 sign-up panel so "Confirm raid spot" points to that actual post.
+        # A temporary Discord edit failure must not cause a duplicate ping.
+        try:
+            await self.refresh_saved_panel(raid_id)
+        except (discord.HTTPException, sqlite3.Error, ValueError) as exc:
+            LOGGER.warning("Raid #%s confirmation link refresh delayed: %s",
+                           raid_id, exc)
+        return link
 
     async def cleanup_completed_announcement(self, raid_id):
         """Remove only the roster acknowledgement ping after archiving.
@@ -1945,6 +1954,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         return {name.casefold(): guild_emoji(name) for name in EMOJI_IDS}
 
     def make_panel(self, event):
+        # Some callers pass a raw Sheets snapshot without the computed link.
+        # Reload the authoritative saved announcement before building V2.
+        event = read_raid(RAID_DB, event["raid_id"]) or event
+
         async def signup(interaction):
             await self.on_signup(interaction, event["raid_id"])
 
