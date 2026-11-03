@@ -81,7 +81,7 @@ async def refresh(bot, path, raid_id, guild_id):
             if bot.user is None or message.author.id != bot.user.id:
                 raise ValueError("Saved acknowledgement is not authored by Ogre.")
             await message.delete()
-        store.mark_refreshed(path, raid_id)
+        store.mark_deleted(path, raid_id)
         return
     entries = store.members(path, raid_id)
     waiting = [(member_id, name) for member_id, name, acked in entries
