@@ -253,6 +253,8 @@ def delete_character(discord_id, character_id, path=RAID_DB):
                     "UPDATE characters SET is_main=1 WHERE discord_id=? AND character_id=?",
                     (discord_id, next_character[0]),
                 )
+        from hyped_ogre.features.characters.availability import enqueue
+        enqueue(con, discord_id, "character_removed", character[0])
         return character[0]
 
 

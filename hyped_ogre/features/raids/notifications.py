@@ -1,4 +1,4 @@
-"""Private Leadership pings for committed absence and signup-note changes."""
+"""Private Leadership pings for committed raid and roster changes."""
 
 import asyncio
 import logging
@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands, tasks
 
 from . import activity
+from hyped_ogre.features.characters import availability
 from hyped_ogre.features.classrooms.config import BOT_ROLE_ID, GUILD_ID, LEADERSHIP_ROLE_ID
 
 LOG = logging.getLogger(__name__)
@@ -33,13 +34,13 @@ class RaidNotifications(commands.Cog):
     def read_pending():
         from cogs import raid_signup as raid
         with raid.database(raid.RAID_DB) as con:
-            return activity.pending(con)
+            return [dict(e, scope="raid") for e in activity.pending(con)] + availability.pending(con)
 
     @staticmethod
-    def record(event_id, message_id):
+    def record(event_id, message_id, scope="raid"):
         from cogs import raid_signup as raid
         with raid.database(raid.RAID_DB) as con:
-            activity.delivered(con, event_id, message_id)
+            (availability if scope == "character" else activity).delivered(con, event_id, message_id)
 
     async def flush(self):
         from cogs import raid_signup as raid
@@ -76,31 +77,43 @@ class RaidNotifications(commands.Cog):
                             recent[embed.footer.text] = message.id
             count = 0
             for event in events:
-                marker = f"Raid activity #{event['event_id']}"
+                scope = event.get("scope", "raid")
+                marker = f"{'Character' if scope == 'character' else 'Raid'} activity #{event['event_id']}"
                 if marker in recent:
-                    await asyncio.to_thread(self.record, event["event_id"], recent[marker])
+                    await asyncio.to_thread(self.record, event["event_id"], recent[marker], scope)
                     continue
-                raid_event = await asyncio.to_thread(raid.read_raid, raid.RAID_DB, event["raid_id"])
-                if raid_event is None:
-                    # A deleted raid should not emit a stale leadership ping.
-                    await asyncio.to_thread(self.record, event["event_id"], 0)
-                    continue
-                name = {"absent": "marked absent", "available": "returned to attending"}.get(
-                    event["kind"], "updated their sign-up note")
                 note = discord.utils.escape_mentions(discord.utils.escape_markdown(event["note"]))
-                text = f"<@{event['discord_id']}> {name}.\n**Note:** {note or 'No note'}"
-                if raid_event.get("panel_channel_id") and raid_event.get("panel_message_id"):
-                    text += (f"\n[Open raid](https://discord.com/channels/{GUILD_ID}/"
-                             f"{raid_event['panel_channel_id']}/{raid_event['panel_message_id']})")
-                embed = discord.Embed(title=f"Raid #{event['raid_id']} · Attendance update",
-                                      description=text, colour=0xB84A3A)
+                if scope == "character":
+                    name = {"long_absence": "reported a long-term absence",
+                            "returned": "cleared their long-term absence",
+                            "character_removed": "removed a character"}[event["kind"]]
+                    text = f"<@{event['discord_id']}> {name}.\n**Details:** {note or 'No note'}"
+                    if event["kind"] in ("long_absence", "returned"):
+                        text += "\nExisting raid sign-ups and attendance have not been changed."
+                    title = "<Hyped> Roster update"
+                else:
+                    raid_event = await asyncio.to_thread(raid.read_raid, raid.RAID_DB, event["raid_id"])
+                    if raid_event is None:
+                        # A deleted raid should not emit a stale leadership ping.
+                        await asyncio.to_thread(self.record, event["event_id"], 0, scope)
+                        continue
+                    name = {"absent": "marked absent", "available": "returned to attending"}.get(
+                        event["kind"], "updated their sign-up note")
+                    text = f"<@{event['discord_id']}> {name}.\n**Note:** {note or 'No note'}"
+                    if raid_event.get("panel_channel_id") and raid_event.get("panel_message_id"):
+                        text += (f"\n[Open raid](https://discord.com/channels/{GUILD_ID}/"
+                                 f"{raid_event['panel_channel_id']}/{raid_event['panel_message_id']})")
+                    title = f"Raid #{event['raid_id']} · Attendance update"
+                embed = discord.Embed(title=title, description=text, colour=0xB84A3A)
                 embed.set_footer(text=marker)
+                update_type = "roster" if scope == "character" else "raid"
                 message = await channel.send(
-                    content=f"<@&{LEADERSHIP_ROLE_ID}> Ogre has a raid update.", embed=embed,
-                    nonce=f"raidactivity{event['event_id']}",
+                    content=f"<@&{LEADERSHIP_ROLE_ID}> Ogre has a {update_type} update.",
+                    embed=embed,
+                    nonce=f"{scope}activity{event['event_id']}",
                     allowed_mentions=discord.AllowedMentions(
                         everyone=False, users=False, roles=[leader], replied_user=False))
-                await asyncio.to_thread(self.record, event["event_id"], message.id)
+                await asyncio.to_thread(self.record, event["event_id"], message.id, scope)
                 recent[marker] = message.id
                 count += 1
             return count
@@ -111,14 +124,23 @@ class RaidNotifications(commands.Cog):
             try:
                 await self.flush()
             except (ValueError, sqlite3.Error, discord.HTTPException):
-                LOG.warning("Leadership raid update delayed; saved event will retry.")
+                LOG.warning("Leadership update delayed; saved event will retry.")
+
+    @commands.Cog.listener()
+    async def on_classroom_character_changed(self, guild_id, member_id):
+        """A successful removal already emits this event after its commit."""
+        if guild_id == GUILD_ID:
+            try:
+                await self.flush()
+            except (ValueError, sqlite3.Error, discord.HTTPException):
+                LOG.warning("Leadership roster update delayed; saved event will retry.")
 
     @tasks.loop(seconds=30)
     async def maintenance(self):
         try:
             await self.flush()
         except (ValueError, sqlite3.Error, discord.HTTPException):
-            LOG.warning("Leadership raid notifications delayed; saved events will retry.")
+            LOG.warning("Leadership notifications delayed; saved events will retry.")
 
     @maintenance.before_loop
     async def before_maintenance(self):

@@ -108,6 +108,9 @@ def ensure_signup_schema_on_connection(con):
         created_at TEXT NOT NULL, delivered_message_id INTEGER
     )""")
 
+    from hyped_ogre.features.characters.availability import initialise
+    initialise(con)
+
     # Historic registrations allowed separate realm/casing variants of
     # one character. Consolidate those on startup without losing any
     # sign-ups, attendance references or saved SimC snapshots.

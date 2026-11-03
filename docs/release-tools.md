@@ -9,20 +9,32 @@ as Ogre's owner, server owner or Leadership. Discord's default command
 visibility is Manage Server; allow Leadership to use the posting command in
 Server Settings > Integrations rather than widening their server permissions.
 
-The board is a persistent, paginated message with an **Update characters**
-button. Repeating the command refreshes the saved message; a confirmed missing
-message can be recreated. Transient API failures do not discard profiles.
+The board is a persistent standard embed grouped into Tanks, Healers and DPS.
+Its aligned fields show character and Discord member, attendance percentage,
+and saved WoWSims item level. The four buttons are **Add**, **Manage**,
+**WoWSims** and **Remove / absent**. All member actions open privately.
+Repeating `/postcharacters` refreshes the saved message; a confirmed missing
+message can be recreated. A normal guild roster fits in one embed. If Discord's
+limits are reached, Ogre adds visible continuation messages rather than hiding
+characters behind pagination. Transient API failures do not discard profiles.
 Automatic updates run every minute and never ping displayed members.
 
-It displays character Main/Alt, primary spec/role, off-spec/role, account
-attendance across the last four completed guild raids and a saved WoWSims
-item-level estimate. Partial item-metadata coverage is labelled. No live
-armory data or character level is substituted for item level.
+Attendance is calculated per Discord member across the last four completed
+guild raids. Bench completion is recorded as attended; Attended, Late and AFK
+receive credit. Item level is displayed only when every equipped item's level
+can be resolved from the saved WoWSims export. Missing or partial data shows
+`N/A`; no live armory data or character level is substituted for item level.
 
-Top parses are explicitly pending a Warcraft Logs connection. Numeric parse
-fetching and a verified Forever character/realm/zone identity are not part of
-this release. Do not present the board's placeholder as a completed rankings
-integration.
+WCL is omitted until a Warcraft Logs connection and verified Forever
+character/realm/zone identity are available.
+
+**Remove / absent** lets a member report a long-term absence, clear it when
+they return, or select one of their characters for the existing two-step
+removal flow. Long-term absence details stay private and do not alter raid
+sign-ups or attendance. Character removal remains blocked while the character
+has raid history or a public LFG plan. Successful absence/return/removal
+changes queue a durable private Leadership alert; repeat forms do not duplicate
+alerts.
 
 ## Off-spec and classroom access
 
