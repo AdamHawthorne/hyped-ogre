@@ -1339,13 +1339,45 @@ def _sync_gear_tab(session, db_path, titles):
     _GEAR_TAB_SNAPSHOT[sid] = stamp
 
 
+def _append_reported_absences(raid_rosters, raids, signups, absences, discord_names):
+    """Include saved absences even when a completed raid tab is hidden.
+
+    This also repairs older Pending entries for members who marked Absent
+    before the attendance import was corrected. It never invents a raid spot
+    or changes selected rosters.
+    """
+    signups_by_member = {
+        (str(s["raid_id"]), str(s["discord_id"])): s for s in signups
+    }
+    already = {
+        (str(raid_id), str(row[16])) for raid_id, players in raid_rosters.items()
+        for row in players if len(row) > 16
+    }
+    for absence in absences:
+        raid_id, member_id = absence["raid_id"], str(absence["discord_id"])
+        event = raids.get(raid_id)
+        key = (str(raid_id), member_id)
+        if (not event or not event.get("panel_message_id") or key in already):
+            continue
+        signup = signups_by_member.get(key, {})
+        row = [""] * len(COLUMNS)
+        row[0] = (discord_names or {}).get(int(member_id), member_id)
+        row[1] = signup.get("character") or ""
+        row[2] = signup.get("class_name") or ""
+        row[4] = signup.get("role") or ""
+        row[8], row[9] = "Absent", "Not selected"
+        row[16], row[17] = member_id, str(signup.get("character_id") or "")
+        raid_rosters.setdefault(raid_id, []).append(row)
+        already.add(key)
+
+
 def sync_once(db_path, discord_names=None):
     """Synchronise only posted raids into one private tab each."""
     if not raid_sheets.configured():
         raise RuntimeError("Google Sheets credentials are not configured.")
     session = raid_sheets._session()
     try:
-        _, raids, _, absences, _ = raid_sheets._raid_snapshot(db_path)
+        _, raids, signups, absences, _ = raid_sheets._raid_snapshot(db_path)
         titles = _list_tabs(session)
         counts, published = {"raid_tabs": 0}, {}
         metadata_changed = set()
@@ -1387,6 +1419,8 @@ def sync_once(db_path, discord_names=None):
                 # the latest Sheet visibility flags cached by _one(). Instance
                 # assignments and selection still stay private until publish.
                 published[raid_id] = read_signup_roster(db_path, raid_id, include_identity=True)
+        _append_reported_absences(raid_rosters, raids, signups, absences,
+                                  discord_names)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         try:
             _sync_gear_tab(session, db_path, titles)
