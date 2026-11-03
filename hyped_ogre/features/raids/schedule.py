@@ -490,6 +490,11 @@ def raid_status(path, number, mode, *, confirmed_entries=(), notes=None, wcl_url
                 "signup_open=0 WHERE raid_id=?",
                 (now, notes or "", validate_wcl_url(wcl_url) or "", number),
             )
+            # Schedule deletion of only the separate roster acknowledgement
+            # announcement. Retain its DB record for audit and retry; the
+            # original sign-up V2 panel must never be deleted on completion.
+            con.execute("UPDATE raid_ack_announcements SET needs_refresh=1 "
+                        "WHERE raid_id=?", (number,))
     return read_raid(path, number)
 
 
