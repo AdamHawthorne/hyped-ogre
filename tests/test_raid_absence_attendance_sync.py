@@ -80,6 +80,18 @@ class AbsenceAttendanceTests(unittest.TestCase):
                 self.assertEqual(writes, [])
                 self.assertEqual(cells, [])
 
+    def test_completion_skips_stale_selected_rows_for_reported_absences(self):
+        raid.save_absence(1, 42, "Unavailable", self.path)
+        selected = self.player_row(absent=False)
+        with patch.object(sheets, "attendance_candidates",
+                          return_value=[selected]), \
+             patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \
+             patch.object(sheets, "_permanent_read",
+                          return_value=[[""] * 15]), \
+             patch.object(sheets, "attendance_set") as set_attendance:
+            sheets.attendance_complete(self.path, 1)
+        set_attendance.assert_not_called()
+
     def test_existing_completed_raid_pending_is_backfilled_from_absence(self):
         signup = {
             "raid_id": 1, "discord_id": 42, "character_id": self.cid,
