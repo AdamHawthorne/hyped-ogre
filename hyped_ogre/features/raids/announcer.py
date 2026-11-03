@@ -84,6 +84,9 @@ async def refresh(bot, path, raid_id, guild_id):
     if message.content != content:
         await message.edit(content=content,
                            allowed_mentions=discord.AllowedMentions.none())
+    # Keep the Sheet tick in the same retry boundary as the public message.
+    # A configured but temporarily unavailable Sheet leaves needs_refresh set.
+    await asyncio.to_thread(raid_sheets_v3.sync_acknowledgements, path, raid_id)
     store.mark_refreshed(path, raid_id)
 
 

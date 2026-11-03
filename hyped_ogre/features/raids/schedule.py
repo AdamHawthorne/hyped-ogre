@@ -731,7 +731,7 @@ def raid_panel_intro(event):
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n"
         + "**Instances:** " + ", ".join(instances)
         + wse_line
-        + (f"\n**Check:** [View message]({event['check_message_url']})"
+        + (f"\n**Required:** [Confirm raid spot]({event['check_message_url']})"
            if event.get("check_message_url") else "")
         + wcl_line + softres_line
     )
@@ -763,7 +763,7 @@ def roster_group_heading(title):
     if title.startswith("Barrows · 10-player "):
         return f"**Barrows** {title[-1]}"
     if title == "Hyjal · 20-player":
-        return "**Hyjal** 🔸🔹"
+        return "**Hyjal** 🔹🔸"
     if title == "Ony · 40-player":
         return "**Ony**"
     return f"**{title}**"

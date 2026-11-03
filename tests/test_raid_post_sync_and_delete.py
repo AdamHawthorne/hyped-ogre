@@ -110,7 +110,7 @@ class RaidSyncPermissionTests(unittest.IsolatedAsyncioTestCase):
         }
         intro = schedule.raid_panel_intro(event)
         self.assertLess(intro.index("**WoWSims:**"),
-                        intro.index("**Check:**"))
+                        intro.index("**Required:**"))
 
 
 class RaidDeleteSyncTests(unittest.IsolatedAsyncioTestCase):

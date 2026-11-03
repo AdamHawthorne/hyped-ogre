@@ -2004,7 +2004,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             try:
                 ping_message = await channel.send(
                     content=(f"{mentions} Ogre got raid sign-ups ready!"
-                             + (f" Check: {event['check_message_url']}"
+                             + (f" Required: {event['check_message_url']}"
                                 if event.get("check_message_url") else "")),
                     allowed_mentions=discord.AllowedMentions(
                         everyone=False, users=False, roles=roles),
