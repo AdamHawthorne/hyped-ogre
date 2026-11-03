@@ -41,10 +41,10 @@ class AbsenceAttendanceTests(unittest.TestCase):
             row[0], row[2], row[4], row[9] = "1", "42", str(self.cid), existing
             attendance.append(row)
         with patch.object(sheets.raid_sheets, "_raid_snapshot",
-                          return_value=([], {1: self.event}, [], [], [])), \\
+                          return_value=([], {1: self.event}, [], [], [])), \
              patch.object(sheets, "_permanent_read",
-                          side_effect=[[["header"] * 15], attendance]), \\
-             patch.object(sheets, "_permanent_write") as write, \\
+                          side_effect=[[["header"] * 15], attendance]), \
+             patch.object(sheets, "_permanent_write") as write, \
              patch.object(sheets, "_permanent_write_cell") as cell:
             sheets._sync_permanent(self.session, self.path, {}, {1: [player]})
         return write.call_args_list, cell.call_args_list
@@ -80,14 +80,14 @@ class AbsenceAttendanceTests(unittest.TestCase):
         absent = self.player_row(absent=True)
         absent[17] = ""  # member might not yet have chosen a character
         with patch.object(sheets.raid_sheets, "_raid_snapshot",
-                          return_value=([], {1: self.event}, [], [], [])), \\
-             patch.object(sheets.raid_sheets, "configured", return_value=True), \\
-             patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \\
-             patch.object(sheets, "_list_tabs", return_value={}), \\
-             patch.object(sheets, "_one", return_value=(1, [[""] * 20] * 7 + [absent])), \\
-             patch.object(sheets, "_sync_permanent") as permanent, \\
-             patch.object(sheets, "_sync_gear_tab"), \\
-             patch.object(sheets, "_hide_legacy"), \\
+                          return_value=([], {1: self.event}, [], [], [])), \
+             patch.object(sheets.raid_sheets, "configured", return_value=True), \
+             patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \
+             patch.object(sheets, "_list_tabs", return_value={}), \
+             patch.object(sheets, "_one", return_value=(1, [[""] * 20] * 7 + [absent])), \
+             patch.object(sheets, "_sync_permanent") as permanent, \
+             patch.object(sheets, "_sync_gear_tab"), \
+             patch.object(sheets, "_hide_legacy"), \
              patch.object(sheets, "_hide_archived"):
             sheets.sync_once(self.path)
         captured = permanent.call_args.args[3]
@@ -157,6 +157,37 @@ class CompletedAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
             await announcer.refresh(self.bot, self.path, 1, 99)
         self.message.delete.assert_not_awaited()
         self.assertEqual(ack.dirty_announcements(self.path), [1])
+
+
+class CompletionWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_confirm_syncs_absences_before_archiving_and_cleans_ack(self):
+        from cogs import raid_signup as signup
+        calls = []
+        cog = SimpleNamespace(
+            allowed=lambda _interaction: True,
+            sync_raid_sheets=AsyncMock(side_effect=lambda: calls.append("sync")),
+            cleanup_completed_announcement=AsyncMock(
+                side_effect=lambda _raid_id: calls.append("ack")),
+            refresh_saved_panel=AsyncMock(side_effect=lambda _raid_id: calls.append("panel")),
+        )
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(defer=AsyncMock()),
+            edit_original_response=AsyncMock(),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        view = signup.RaidCompletionConfirm(cog, 1, "", "")
+        button = next(b for b in view.children
+                      if isinstance(b, discord.ui.Button)
+                      and b.label == "Confirm completion")
+        with patch.object(signup.raid_sheets_v3, "attendance_complete",
+                          side_effect=lambda *_: calls.append("attendance") or 3), \
+             patch.object(signup, "raid_status",
+                          side_effect=lambda *_args, **_kw: calls.append("archive")), \
+             patch.object(signup, "refresh_management_poster", new_callable=AsyncMock):
+            await button.callback(interaction)
+        self.assertEqual(calls, ["sync", "attendance", "archive", "ack", "sync", "panel"])
+        cog.cleanup_completed_announcement.assert_awaited_once_with(1)
+        self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
 
 
 if __name__ == "__main__":
