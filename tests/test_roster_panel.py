@@ -104,46 +104,76 @@ class RosterDataTests(unittest.TestCase):
 
 
 class LayoutTests(unittest.TestCase):
-    def row(self,n,role='DPS'):
-        return dict(character_id=n,discord_id=100000000000000000+n,name=f'Character{n:04}',
-                    class_name='Mage',role=role,is_main=True,attendance='75%',ilvl='67.5')
+    def row(self, n, role='DPS', klass='Mage', spec='Frost', is_main=True):
+        return dict(character_id=n, discord_id=100000000000000000+n,
+                    name=f'Character{n:04}', class_name=klass, spec=spec,
+                    role=role, is_main=is_main, attendance='75%', ilvl='67.5')
 
-    def test_grouping_columns_and_every_character_in_one_guild_sized_embed(self):
-        data=[self.row(n,('Tank','Healer','DPS')[n%3]) for n in range(30)]
-        embeds=roster.render(data)
-        self.assertEqual(len(embeds),1)
-        self.assertEqual(embeds[0].title,'<Hyped> Roster')
-        self.assertEqual(embeds[0].description,'Ogre keep track. You add or update.')
-        heading=[f.name for f in embeds[0].fields if not f.inline]
-        self.assertEqual(heading,['Tanks (10)','Healers (10)','DPS (10)'])
-        content=str(embeds[0].to_dict())
-        self.assertNotIn('WCL',content)
-        self.assertIn('<:Mage:',content)
+    def test_grouping_columns_and_every_main_in_one_guild_sized_embed(self):
+        specs = (('Tank', 'Warrior', 'Protection'),
+                 ('Healer', 'Priest', 'Holy'),
+                 ('DPS', 'Rogue', 'Combat'),
+                 ('DPS', 'Mage', 'Frost'))
+        data = [self.row(n, *specs[n % 4]) for n in range(40)]
+        embeds = roster.render(data)
+        self.assertEqual(len(embeds), 1)
+        self.assertEqual(embeds[0].title, '<Hyped> Roster')
+        self.assertEqual(embeds[0].description, 'Ogre keep track. You add or update.')
+        self.assertEqual(embeds[0].thumbnail.url, roster.ROSTER_IMAGE)
+        self.assertEqual([f.name for f in embeds[0].fields[::3]],
+                         ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
+        content = str(embeds[0].to_dict())
+        self.assertNotIn('WCL', content)
         for row in data:
-            self.assertEqual(content.count(row['name']),1)
-            self.assertIn(f"<@{row['discord_id']}>",content)
-        for i in range(0,len(embeds[0].fields),4):
-            fields=embeds[0].fields[i+1:i+4]
-            self.assertEqual([f.name for f in fields],['Character','Attendance','iLvl'])
-            self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)),1)
+            self.assertEqual(content.count(row['name']), 1)
+            self.assertIn(f"<@{row['discord_id']}>", content)
+        for i in range(0, len(embeds[0].fields), 3):
+            fields = embeds[0].fields[i:i+3]
+            self.assertEqual([f.name for f in fields[1:]], ['Attendance', 'iLvl'])
+            self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
+        self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
-    def test_large_roster_keeps_all_rows_within_discord_limits(self):
-        data=[self.row(n) for n in range(400)]
-        embeds=roster.render(data)
-        self.assertGreater(len(embeds),1)
-        content=str([e.to_dict() for e in embeds])
+    def test_melee_and_ranged_follow_raid_signup_role_classification(self):
+        data = [self.row(1, 'DPS', 'Hunter', 'Survival'),
+                self.row(2, 'DPS', 'Hunter', 'Beast Mastery'),
+                self.row(3, 'DPS', 'Druid', 'Feral'),
+                self.row(4, 'Tank', 'Druid', 'Feral')]
+        fields = roster.render(data)[0].fields
+        groups = {fields[i].name: fields[i].value for i in range(0, len(fields), 3)}
+        self.assertIn('Character0001', groups['Melee (2)'])
+        self.assertIn('Character0003', groups['Melee (2)'])
+        self.assertIn('Character0002', groups['Ranged (1)'])
+        self.assertIn('Character0004', groups['Tanks (1)'])
+
+    def test_alts_are_hidden_even_when_registered(self):
+        main = self.row(1, 'Tank', 'Warrior', 'Protection')
+        alt = self.row(2, 'DPS', 'Rogue', 'Combat', is_main=False)
+        embed = roster.render([alt, main])[0]
+        content = str(embed.to_dict())
+        self.assertIn('Character0001', content)
+        self.assertNotIn('Character0002', content)
+        self.assertEqual([f.name for f in embed.fields[::3]],
+                         ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
+
+    def test_large_roster_keeps_all_mains_within_discord_limits(self):
+        data = [self.row(n) for n in range(400)]
+        embeds = roster.render(data)
+        self.assertGreater(len(embeds), 1)
+        content = str([e.to_dict() for e in embeds])
         for row in data:
-            self.assertEqual(content.count(row['name']),1)
+            self.assertEqual(content.count(row['name']), 1)
         for embed in embeds:
-            self.assertLessEqual(len(embed),6000)
-            self.assertLessEqual(len(embed.fields),25)
+            self.assertLessEqual(len(embed), 6000)
+            self.assertLessEqual(len(embed.fields), 25)
             for field in embed.fields:
-                self.assertLessEqual(len(field.value.encode('utf-16-le'))//2,1024)
+                self.assertLessEqual(len(field.value.encode('utf-16-le'))//2, 1024)
 
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
-        embed=roster.render([])[0]
-        self.assertEqual([f.name for f in embed.fields if not f.inline],['Tanks (0)','Healers (0)','DPS (0)'])
-        self.assertNotIn('0%',str(embed.to_dict()))
+        embed = roster.render([])[0]
+        self.assertEqual([f.name for f in embed.fields[::3]],
+                         ['Tanks (0)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
+        self.assertIn('No mains registered', str(embed.to_dict()))
+        self.assertNotIn('0%', str(embed.to_dict()))
 
 
 class PanelActionsTests(unittest.IsolatedAsyncioTestCase):
