@@ -129,6 +129,16 @@ def mark_refreshed(path, raid_id):
                     "WHERE raid_id=?", (raid_id,))
 
 
+def mark_deleted(path, raid_id):
+    """Record completed-raid Discord cleanup without losing ack history."""
+    with database(path) as con:
+        con.execute(
+            "UPDATE raid_ack_announcements SET deleted_at=COALESCE(deleted_at, ?), "
+            "needs_refresh=0 WHERE raid_id=?",
+            (datetime.now(timezone.utc).isoformat(), raid_id),
+        )
+
+
 def render(raid_id, awaiting, total, panel_url=None):
     """Compact public text, with no mass mentions and no name removed from roster."""
     intro = (f"**<Hyped> Raid #{raid_id} | Roster announced**\n"
