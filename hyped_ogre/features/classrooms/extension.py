@@ -30,7 +30,7 @@ class SyncResult:
         text = (f"Ogre updated classrooms: {self.added} member/channel grants, "
                 f"{self.removed} removals, {self.blocked} manual restrictions kept.")
         if self.errors:
-            text += "\nNeeds attention:\n" + "\n".join(self.errors[:11])
+            text += "\nNeeds attention:\n" + "\n".join(self.errors[:len(CHANNELS)])
         return text
 
 
