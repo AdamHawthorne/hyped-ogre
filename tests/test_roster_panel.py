@@ -118,9 +118,11 @@ class LayoutTests(unittest.TestCase):
         data = [self.row(n, *specs[n % 4]) for n in range(40)]
         embeds = roster.render(data)
         self.assertEqual(len(embeds), 1)
-        self.assertEqual(embeds[0].title, '<Hyped> Roster')
-        self.assertEqual(embeds[0].description, 'Ogre keep track. You add or update.\n\u200b')
-        self.assertEqual(embeds[0].thumbnail.url, roster.ROSTER_IMAGE)
+        self.assertIsNone(embeds[0].title)
+        self.assertIsNone(embeds[0].description)
+        self.assertEqual(embeds[0].author.name, '<Hyped> Roster')
+        self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
+        self.assertIsNone(embeds[0].thumbnail.url)
         self.assertIsNone(embeds[0].footer.text)
         self.assertEqual([f.name for f in embeds[0].fields[::3]],
                          ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
@@ -136,6 +138,18 @@ class LayoutTests(unittest.TestCase):
             self.assertTrue(all(v == '75%' for v in fields[1].value.splitlines()))
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
+
+    def test_icon_in_author_does_not_change_three_column_roster_layout(self):
+        players = [self.row(n) for n in range(30)]
+        embed = roster.render(players)[0]
+        self.assertEqual(embed.to_dict()['author']['icon_url'], roster.ROSTER_IMAGE)
+        self.assertNotIn('thumbnail', embed.to_dict())
+        self.assertNotIn('description', embed.to_dict())
+        self.assertNotIn('title', embed.to_dict())
+        self.assertEqual(len(embed.fields) % 3, 0)
+        self.assertEqual([f.name for f in embed.fields[:3]],
+                         ['Tanks (0)', 'Attendance', 'Lvl'])
+        self.assertLessEqual(len(embed), 6000)
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
         data = [self.row(1, 'DPS', 'Hunter', 'Survival'),
