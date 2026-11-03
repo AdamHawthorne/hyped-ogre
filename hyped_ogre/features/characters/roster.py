@@ -46,6 +46,24 @@ def safe_name(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(value))
 
 
+def roster_sort_key(record):
+    """Highest saved level, then attendance, then name; unknown values last."""
+    level = record.get("level")
+    if not (isinstance(level, int) and not isinstance(level, bool)
+            and 1 <= level <= 60):
+        level = -1
+    attendance = record.get("attendance")
+    percent = -1.0
+    if isinstance(attendance, str) and attendance.endswith("%"):
+        try:
+            percent = float(attendance[:-1])
+        except ValueError:
+            pass
+    if not 0 <= percent <= 100:
+        percent = -1.0
+    return (-level, -percent, record["name"].casefold(), record["character_id"])
+
+
 def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
@@ -54,7 +72,7 @@ def render(characters):
     """
     def new_embed(first):
         result = discord.Embed(title="<Hyped> Roster" if first else "<Hyped> Roster (continued)",
-                               description="Ogre keep track. You add or update." if first else None,
+                               description="Ogre keep track. You add or update.\n\u200b" if first else None,
                                colour=0xB84A3A)
         if first:
             result.set_thumbnail(url=ROSTER_IMAGE)
@@ -66,7 +84,7 @@ def render(characters):
         members = sorted(
             (r for r in characters if r["is_main"] and
              signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
-            key=lambda r: (r["name"].casefold(), r["character_id"]),
+            key=roster_sort_key,
         )
         blocks, block, length = [], [], 0
         for row in members:

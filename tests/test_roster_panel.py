@@ -119,7 +119,7 @@ class LayoutTests(unittest.TestCase):
         embeds = roster.render(data)
         self.assertEqual(len(embeds), 1)
         self.assertEqual(embeds[0].title, '<Hyped> Roster')
-        self.assertEqual(embeds[0].description, 'Ogre keep track. You add or update.')
+        self.assertEqual(embeds[0].description, 'Ogre keep track. You add or update.\n\u200b')
         self.assertEqual(embeds[0].thumbnail.url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].footer.text)
         self.assertEqual([f.name for f in embeds[0].fields[::3]],
@@ -158,6 +158,39 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('Character0002', content)
         self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
+
+    def test_sort_by_level_then_attendance_descending_and_name_for_ties(self):
+        # All players remain in the same category, including those without data.
+        players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 10)]
+        updates = [
+            ('Level39', 39, '90%'),
+            ('Level60Low', 60, '25%'),
+            ('Level60High', 60, '100%'),
+            ('Level60MissingAtt', 60, 'N/A'),
+            ('Level39High', 39, '100%'),
+            ('UnknownHighAtt', None, '100%'),
+            ('UnknownMissingAtt', None, 'N/A'),
+            ('Level60TieZ', 60, '50%'),
+            ('Level60TieA', 60, '50%'),
+        ]
+        for player, (name, level, attendance) in zip(players, updates):
+            player.update(name=name, level=level, attendance=attendance)
+        embed = roster.render(players)[0]
+        ordered = [
+            'Level60High', 'Level60TieA', 'Level60TieZ', 'Level60Low',
+            'Level60MissingAtt', 'Level39High', 'Level39',
+            'UnknownHighAtt', 'UnknownMissingAtt',
+        ]
+        character_lines = embed.fields[0].value.splitlines()
+        for index, name in enumerate(ordered):
+            self.assertIn(name + ' /', character_lines[index])
+        self.assertEqual(embed.fields[1].value.splitlines(),
+                         ['100%', '50%', '50%', '25%', 'N/A', '100%',
+                          '90%', '100%', 'N/A'])
+        self.assertEqual(embed.fields[2].value.splitlines(),
+                         ['60', '60', '60', '60', '60', '39', '39', 'N/A', 'N/A'])
+        self.assertEqual(len(embed.fields), 12)
+        self.assertIsNone(embed.footer.text)
 
     def test_level_uses_validated_saved_profile_value_or_na(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
