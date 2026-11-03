@@ -80,6 +80,30 @@ class AbsenceAttendanceTests(unittest.TestCase):
                 self.assertEqual(writes, [])
                 self.assertEqual(cells, [])
 
+    def test_existing_completed_raid_pending_is_backfilled_from_absence(self):
+        signup = {
+            "raid_id": 1, "discord_id": 42, "character_id": self.cid,
+            "character": "Snore", "class_name": "Warrior", "role": "Tank",
+        }
+        event = schedule.raid_status(self.path, 1, "archive")
+        collected = {}
+        sheets._append_reported_absences(
+            collected, {1: event}, [signup],
+            [{"raid_id": 1, "discord_id": 42}], {42: "Snore"},
+        )
+        self.assertEqual(len(collected[1]), 1)
+        self.assertEqual(collected[1][0][8], "Absent")
+        writes, cells = self.permanent(collected[1][0], existing="Pending")
+        self.assertEqual(writes, [])
+        self.assertEqual([c.args[1:] for c in cells],
+                         [("Forever Attendance", "J6", "Absent")])
+        # Retry never generates a second row.
+        sheets._append_reported_absences(
+            collected, {1: event}, [signup],
+            [{"raid_id": 1, "discord_id": 42}], {},
+        )
+        self.assertEqual(len(collected[1]), 1)
+
     def test_absence_only_player_is_carried_to_permanent_attendance(self):
         # An absent member need not have an existing selected raid spot.
         absent = self.player_row(absent=True)
