@@ -175,6 +175,41 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.current("tanks").is_empty())
         self.assertEqual(self.store.snapshot(config.GUILD_ID)[1], {})
 
+    async def test_tank_main_with_ranged_and_melee_alts_keeps_dps_until_last_dps_removed(self):
+        self.character()
+        ranged = self.character("Mage Alt", "Mage", "Fire", "DPS")
+        melee = self.character("Warrior Alt", "Warrior", "Fury", "DPS")
+        result = await self.cog.sync_access(self.guild)
+        self.assertEqual((result.added, result.errors), (4, []))
+        self.assertTrue(self.current("dps").view_channel)
+        self.assertTrue(self.current("tanks").view_channel)
+        raid.delete_character(PLAYER, ranged, str(self.path))
+        await self.cog.sync_access(self.guild)
+        self.assertTrue(self.current("dps").view_channel)
+        raid.delete_character(PLAYER, melee, str(self.path))
+        await self.cog.sync_access(self.guild)
+        self.assertIsNone(self.current("dps").view_channel)
+        self.assertTrue(self.current("tanks").view_channel)
+        self.assertTrue(self.current("warriors").view_channel)
+
+    async def test_ranged_melee_and_survival_profiles_share_dps_and_role_change_removes_it(self):
+        profiles = (
+            ("Mage", "Fire"), ("Warrior", "Fury"), ("Rogue", "Combat"),
+            ("Druid", "Feral"), ("Hunter", "Survival"), ("Shaman", "Elemental"),
+        )
+        for klass, spec in profiles:
+            with self.subTest(klass=klass, spec=spec):
+                ident = self.character("Damage", klass, spec, "DPS")
+                await self.cog.sync_access(self.guild)
+                self.assertTrue(self.current("dps").view_channel)
+                self.assertIsNone(self.current("tanks").view_channel)
+                self.assertIsNone(self.current("healers").view_channel)
+        raid.update_character_profile(PLAYER, ident, "Shaman", "Restoration", "Healer", str(self.path))
+        await self.cog.sync_access(self.guild)
+        self.assertIsNone(self.current("dps").view_channel)
+        self.assertTrue(self.current("healers").view_channel)
+        self.assertTrue(self.current("shamans").view_channel)
+
     async def test_profile_change_revokes_previous_class_and_role_without_gear_requirement(self):
         ident = self.character()
         await self.cog.sync_access(self.guild)

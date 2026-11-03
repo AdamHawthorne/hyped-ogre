@@ -23,6 +23,7 @@ BOT_ROLE_ID = 1563306351294288047
 CHANNELS = (
     Classroom("tanks", 1566964199391760434, role="Tank"),
     Classroom("healers", 1566964285630844999, role="Healer"),
+    Classroom("dps", 1566979883068948551, role="DPS"),
     Classroom("druids", 1566964559770689556, class_name="Druid"),
     Classroom("hunters", 1566964591697600652, class_name="Hunter"),
     Classroom("mages", 1566964617207353364, class_name="Mage"),

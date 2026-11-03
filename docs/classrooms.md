@@ -9,7 +9,10 @@ created or assigned. WoWSims, raid attendance, roster selection and the
 For example, Protection Warrior + Restoration Shaman gives access to
 `warriors`, `shamans`, `tanks` and `healers`. Feral DPS gives `druids` without
 `tanks`; Feral Tank gives both. A healer class playing DPS does not get
-`healers`. Duplicate qualifying characters only produce one permission entry.
+`healers`. Any registered DPS character, melee or ranged, also gives access
+to `dps` (including Survival Hunter and Feral DPS). Tank/healer mains with a
+DPS alt qualify too. Access remains until no registered character qualifies.
+Duplicate qualifying characters only produce one permission entry.
 
 ## Audit findings and required permissions
 
@@ -21,16 +24,19 @@ override the category/channel `@everyone` denial. Leadership is above Bot;
 channel permission updates do not require promoting/demoting Leadership or
 moving Bot above Leadership.
 
+The `dps` channel (`1566979883068948551`) was added after the audit. It uses
+the same private baseline, bringing the configured text-channel total to twelve.
+
 Before enabling the feature:
 
 1. Open **forever-classrooms > Edit Category > Permissions**. Keep
    **@everyone > View Channel = Deny**. Add **Bot**, allowing **View Channel**,
    **Send Messages**, **Read Message History** and **Manage Permissions**
    (the channel UI name for **Manage Roles**).
-2. **Before the first setup only**, sync all eleven classroom text channels
+2. **Before the first setup only**, sync all twelve classroom text channels
    to that category, or add the same Bot permissions to each channel.
    Most are currently unsynced. Adding Bot only to the category will not fix
-   those unsynced channels. Check Tanks, Healers and all nine class channels.
+   those unsynced channels. Check Tanks, Healers, DPS and all nine class channels.
 3. Deploy this change, then run **`/classrooms setup`** as Ogre's configured
    owner or the Discord server owner. This validates every destination, keeps
    `@everyone` hidden, explicitly allows Bot and Leadership to view, send and
