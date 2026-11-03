@@ -118,8 +118,11 @@ class RaidAcknowledgementTests(unittest.TestCase):
             ack.record_announcement(path, 1, 123, 456, [("42", "Snore")])
             archived = schedule.raid_status(path, 1, "archive")
             self.assertEqual(archived["signup_open"], 0)
-            self.assertEqual(ack.acknowledge(path, 123, 456, 42), 1)
-            self.assertEqual(ack.pending(path, 1), [])
+            # The stored acknowledgement is retained for audit, but completed
+            # raids no longer collect reactions. Cleanup is durable/retryable.
+            self.assertEqual(ack.dirty_announcements(path), [1])
+            self.assertIsNone(ack.acknowledge(path, 123, 456, 42))
+            self.assertEqual(ack.pending(path, 1), [("42", "Snore")])
 
     def test_legacy_confirmed_raid_migrates_to_open(self):
         with tempfile.TemporaryDirectory() as tmp:
