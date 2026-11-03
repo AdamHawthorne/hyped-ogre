@@ -365,7 +365,7 @@ class RaidMemberFlowTests(unittest.IsolatedAsyncioTestCase):
             buttons = {b.label: b for b in view.walk_children()
                        if isinstance(b, discord.ui.Button)}
             self.assertEqual(list(buttons), [
-                "Class / Spec / Race", "Update WoWSims",
+                "Class / Spec / Race", "Off-spec", "Update WoWSims",
                 "Set Main", "Delete", "Back",
             ])
             self.assertNotIn("Race", buttons)

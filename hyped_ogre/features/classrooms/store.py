@@ -34,7 +34,7 @@ class ClassroomStore:
     def initialise(self):
         with self.connection() as con:
             # Validate the canonical register before adding our own two tables.
-            con.execute("SELECT discord_id,class_name,spec,role FROM characters LIMIT 0")
+            con.execute("SELECT discord_id,class_name,spec,role,off_spec,off_role FROM characters LIMIT 0")
             con.execute("""CREATE TABLE IF NOT EXISTS classroom_settings (
                 guild_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0
             )""")
@@ -62,21 +62,25 @@ class ClassroomStore:
         with self.connection() as con:
             con.execute("BEGIN")
             characters = con.execute(
-                "SELECT discord_id,class_name,spec,role FROM characters"
+                "SELECT discord_id,class_name,spec,role,off_spec,off_role FROM characters"
             ).fetchall()
             rows = con.execute(
                 "SELECT channel_id,discord_id,owned_permissions,pending "
                 "FROM classroom_grants WHERE guild_id=?", (guild_id,)
             ).fetchall()
         desired = {channel.channel_id: set() for channel in CHANNELS}
-        for ident, klass, spec, role in characters:
+        for ident, klass, spec, role, off_spec, off_role in characters:
             ident = int(ident)
             if ident <= 0:
                 continue
             valid_roles = CLASS_SPECS.get(klass, {}).get(spec, ())
+            off_roles = CLASS_SPECS.get(klass, {}).get(off_spec, ())
             for channel in CHANNELS:
                 if (channel.class_name and channel.class_name == klass) or (
-                    channel.role and channel.role == role and role in valid_roles
+                    channel.role and (
+                        (channel.role == role and role in valid_roles) or
+                        (channel.role == off_role and off_role in off_roles)
+                    )
                 ):
                     desired[channel.channel_id].add(ident)
         journal = {}
