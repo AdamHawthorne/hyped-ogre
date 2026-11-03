@@ -10,10 +10,6 @@ from . import equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
 
-FOOTER = ("Attendance: per player, last 4 completed raids; bench counts. "
-          "iLvl: saved WoWSims gear. N/A: no attendance history or incomplete gear data.")
-
-
 def rows(path):
     with raid.database(path) as con:
         con.row_factory = sqlite3.Row
@@ -49,7 +45,7 @@ def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
     Inline columns are client-controlled and may stack on mobile. Build each
-    three-column block from exactly the same rows; never truncate a roster.
+    two-column block from exactly the same rows; never truncate a roster.
     """
     def new_embed(first):
         result = discord.Embed(title="<Hyped> Roster" if first else "<Hyped> Roster (continued)",
@@ -57,7 +53,6 @@ def render(characters):
                                colour=0xB84A3A)
         if first:
             result.set_thumbnail(url=ROSTER_IMAGE)
-        result.set_footer(text=FOOTER)
         return result
 
     embeds = [new_embed(True)]
@@ -75,19 +70,22 @@ def render(characters):
             if block and (length + len(name) + 1 > 1000 or len(block) >= 10):
                 blocks.append(block)
                 block, length = [], 0
-            block.append((name, row['attendance'], row['ilvl']))
+            level = row.get("level")
+            level_text = str(level) if isinstance(level, int) and 1 <= level <= 60 else "—"
+            stats = f"{level_text} · {row['attendance']} · {row['ilvl']}"
+            block.append((name, stats))
             length += len(name) + 1
         if block:
             blocks.append(block)
         if not blocks:
-            blocks = [[("No mains registered", "N/A", "N/A")]]
+            blocks = [[("No mains registered", "— · N/A · N/A")]]
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
-            values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "Attendance", "iLvl")
+            values = ["\n".join(row[col] for row in block) for col in range(2)]
+            names = (heading, "Lvl · Att. · iLvl")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
-            if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
+            if len(embed.fields) + 2 > 25 or len(embed) + addition > 5900:
                 embed = new_embed(False)
                 embeds.append(embed)
             for name, value in zip(names, values):
