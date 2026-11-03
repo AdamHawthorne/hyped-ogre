@@ -75,11 +75,11 @@ def render(characters):
         # The author icon keeps the guild mark beside the heading without
         # narrowing the character / attendance / level columns.
         result = discord.Embed(
-            title=None if first else "<Hyped> Roster (continued)",
+            title=None if first else "Characters (continued)",
             colour=0xB84A3A,
         )
         if first:
-            result.set_author(name="<Hyped> Roster", icon_url=ROSTER_IMAGE)
+            result.set_author(name="Characters", icon_url=ROSTER_IMAGE)
         return result
 
     embeds = [new_embed(True)]
@@ -101,7 +101,7 @@ def render(characters):
             level_text = (str(level) if isinstance(level, int)
                           and not isinstance(level, bool)
                           and 1 <= level <= 60 else "N/A")
-            block.append((name, row["attendance"], level_text))
+            block.append((name, level_text, row["attendance"]))
             length += len(name) + 1
         if block:
             blocks.append(block)
@@ -110,7 +110,7 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "Attendance", "Lvl")
+            names = (heading, "Lvl", "Attendance")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
             if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:

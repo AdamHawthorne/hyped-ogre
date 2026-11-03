@@ -120,7 +120,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embeds), 1)
         self.assertIsNone(embeds[0].title)
         self.assertIsNone(embeds[0].description)
-        self.assertEqual(embeds[0].author.name, '<Hyped> Roster')
+        self.assertEqual(embeds[0].author.name, 'Characters')
         self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].thumbnail.url)
         self.assertIsNone(embeds[0].footer.text)
@@ -133,10 +133,10 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Attendance', 'Lvl'])
+            self.assertEqual([f.name for f in fields[1:]], ['Lvl', 'Attendance'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
-            self.assertTrue(all(v == '75%' for v in fields[1].value.splitlines()))
-            self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
+            self.assertTrue(all(v == 'N/A' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == '75%' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
     def test_icon_in_author_does_not_change_three_column_roster_layout(self):
@@ -148,7 +148,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('title', embed.to_dict())
         self.assertEqual(len(embed.fields) % 3, 0)
         self.assertEqual([f.name for f in embed.fields[:3]],
-                         ['Tanks (0)', 'Attendance', 'Lvl'])
+                         ['Tanks (0)', 'Lvl', 'Attendance'])
         self.assertLessEqual(len(embed), 6000)
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
@@ -199,22 +199,22 @@ class LayoutTests(unittest.TestCase):
         for index, name in enumerate(ordered):
             self.assertIn(name + ' /', character_lines[index])
         self.assertEqual(embed.fields[1].value.splitlines(),
+                         ['60', '60', '60', '60', '60', '39', '39', 'N/A', 'N/A'])
+        self.assertEqual(embed.fields[2].value.splitlines(),
                          ['100%', '50%', '50%', '25%', 'N/A', '100%',
                           '90%', '100%', 'N/A'])
-        self.assertEqual(embed.fields[2].value.splitlines(),
-                         ['60', '60', '60', '60', '60', '39', '39', 'N/A', 'N/A'])
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
     def test_level_uses_validated_saved_profile_value_or_na(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
-        self.assertEqual(fields[2].value, 'N/A')
+        self.assertEqual(fields[1].value, 'N/A')
         main['level'] = 43
-        self.assertEqual(roster.render([main])[0].fields[2].value, '43')
+        self.assertEqual(roster.render([main])[0].fields[1].value, '43')
         for invalid in (999, None, True, 0, -1):
             main['level'] = invalid
-            self.assertEqual(roster.render([main])[0].fields[2].value, 'N/A')
+            self.assertEqual(roster.render([main])[0].fields[1].value, 'N/A')
 
     def test_thirty_distinct_guild_players_fit_one_embed(self):
         specs = (('Tank', 'Warrior', 'Protection'),
@@ -232,7 +232,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embed.fields), 12)
         for index in range(0, len(embed.fields), 3):
             fields = embed.fields[index:index+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Attendance', 'Lvl'])
+            self.assertEqual([f.name for f in fields[1:]], ['Lvl', 'Attendance'])
             self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
         content = str(embed.to_dict())
         for player in players:
@@ -281,7 +281,7 @@ class PanelActionsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(view.is_persistent())
         self.assertEqual([(b.label,b.style) for b in view.children],
                          [('Add',discord.ButtonStyle.success),('Manage',discord.ButtonStyle.secondary),
-                          ('WoWSims',discord.ButtonStyle.secondary),('Remove / absent',discord.ButtonStyle.danger)])
+                          ('WoWSims',discord.ButtonStyle.secondary),('Remove / Absent',discord.ButtonStyle.danger)])
         interaction=self.interaction()
         await view.children[0].callback(interaction)
         self.assertIsInstance(interaction.response.send_message.call_args.kwargs['view'],raid.ClassPickerView)
