@@ -539,6 +539,40 @@ def ensure_indexes():
 
             print("Backfilled user_scores from rolls table")
 
+        # A previous version counted gamble attempts in these cached score
+        # tables. Correct the cached aggregates from canonical free rolls on
+        # startup without deleting any roll, gamble or coin award history.
+        con.execute("""
+        UPDATE user_scores SET
+            score = COALESCE((
+                SELECT SUM(r.value) FROM rolls AS r
+                WHERE r.user_id=user_scores.user_id AND r.actor_type='user'
+            ), 0),
+            rolls = COALESCE((
+                SELECT COUNT(*) FROM rolls AS r
+                WHERE r.user_id=user_scores.user_id AND r.actor_type='user'
+            ), 0),
+            best = COALESCE((
+                SELECT MAX(r.value) FROM rolls AS r
+                WHERE r.user_id=user_scores.user_id AND r.actor_type='user'
+            ), 0)
+        """)
+        con.execute("""
+        UPDATE daily_scores SET
+            score = COALESCE((
+                SELECT SUM(r.value) FROM rolls AS r
+                WHERE r.user_id=daily_scores.user_id
+                  AND r.roll_date=daily_scores.roll_date
+                  AND r.actor_type='user'
+            ), 0),
+            rolls = COALESCE((
+                SELECT COUNT(*) FROM rolls AS r
+                WHERE r.user_id=daily_scores.user_id
+                  AND r.roll_date=daily_scores.roll_date
+                  AND r.actor_type='user'
+            ), 0)
+        """)
+
 def today_range():
     now = datetime.now(TZ)
     start = datetime(now.year, now.month, now.day, tzinfo=TZ)
@@ -616,7 +650,9 @@ def insert_roll(user_id, username, value, actor_type, *, timestamp=None):
                 con.execute("RELEASE insert_roll")
                 return False
 
-        if actor_type in ('user', 'gamble'):
+        # Gambles are recorded in rolls for the coin ledger, but only the
+        # daily free roll contributes to competitive and lifetime scores.
+        if actor_type == 'user':
             con.execute("""
             INSERT INTO user_scores (user_id, score, rolls, best)
             VALUES (?, ?, 1, ?)
@@ -730,7 +766,7 @@ def get_user_stats(user_id: int):
                 SUM(CASE WHEN value = 100 THEN 1 ELSE 0 END) AS perfects
             FROM rolls
             WHERE user_id = ?
-            AND actor_type IN ('user', 'gamble')
+            AND actor_type = 'user'
             """,
             (user_id,)
         ).fetchone()
@@ -742,7 +778,7 @@ def get_user_stats(user_id: int):
                 SELECT value
                 FROM rolls
                 WHERE user_id = ?
-                  AND actor_type IN ('user', 'gamble')
+                  AND actor_type = 'user'
                 ORDER BY rolled_at DESC
                 LIMIT 10
             )
@@ -768,7 +804,7 @@ def get_user_stats(user_id: int):
             SELECT MIN(rolled_at)
             FROM rolls
             WHERE user_id = ?
-            AND actor_type IN ('user', 'gamble')
+            AND actor_type = 'user'
         """, (user_id,)).fetchone()[0]
 
     return {
@@ -789,7 +825,7 @@ def calculate_streaks(user_id: int):
             SELECT DISTINCT roll_date
             FROM rolls
             WHERE user_id = ?
-              AND actor_type IN ('user', 'gamble')
+              AND actor_type = 'user'
             ORDER BY roll_date
         """, (user_id,)).fetchall()
 
@@ -842,7 +878,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
             SELECT COUNT(*), SUM(value), MAX(value)
             FROM rolls
             WHERE user_id = ?
-              AND actor_type IN ('user', 'gamble')
+              AND actor_type = 'user'
               AND rolled_at >= ? AND rolled_at < ?
         """, (user_id, start_ts, end_ts)).fetchone()
 
@@ -851,7 +887,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
             FROM (
                 SELECT user_id, SUM(value) AS score
                 FROM rolls
-                WHERE actor_type IN ('user', 'gamble')
+                WHERE actor_type = 'user'
                   AND rolled_at >= ? AND rolled_at < ?
                 GROUP BY user_id
             )
@@ -859,7 +895,7 @@ def get_period_stats(user_id: int, start_ts: int, end_ts: int):
                 SELECT SUM(value)
                 FROM rolls
                 WHERE user_id = ?
-                  AND actor_type IN ('user', 'gamble')
+                  AND actor_type = 'user'
                   AND rolled_at >= ? AND rolled_at < ?
             )
         """, (start_ts, end_ts, user_id, start_ts, end_ts)).fetchone()[0]
@@ -1063,7 +1099,7 @@ async def sync_high_roller_role():
             """
             SELECT user_id, value
             FROM rolls
-            WHERE actor_type IN ('user', 'gamble')
+            WHERE actor_type = 'user'
               AND rolled_at >= ? AND rolled_at < ?
             ORDER BY value DESC, rolled_at ASC, rowid ASC
             LIMIT 1
@@ -1207,7 +1243,7 @@ class GambleConfirmView(discord.ui.View):
         stake_text = ("Ogre say good roll. Have coin back!" if result["stake_returned"]
                       else "Ha! Ogre keep this one.")
         notice = (
-            f"{interaction.user.mention} rolled **{result['best']}** {roll_dice_markup(datetime.now(TZ).date())}\n"
+            f"{interaction.user.mention} rolled **{result['extra']}** {roll_dice_markup(datetime.now(TZ).date())}\n"
             f"-# {interaction.user.name} risked a coin to roll again: "
             f"**{result['base']} → {result['extra']}**. {stake_text}"
         )
@@ -1227,7 +1263,7 @@ class GambleConfirmView(discord.ui.View):
 
         await interaction.followup.send(
             f"**Gamble:** {result['base']} → **{result['extra']}**. "
-            f"{stake_text} Best roll **{result['best']}**. "
+            f"{stake_text} Original roll **{result['base']}** stays in today's competition. "
             f"**{result['balance']} coins** held.",
             ephemeral=True,
         )
@@ -1235,9 +1271,9 @@ class GambleConfirmView(discord.ui.View):
             f"GAMBLE user={interaction.user.id} base={result['base']} "
             f"extra={result['extra']} stake_returned={result['stake_returned']}"
         )
-        await reply_if_tied_for_highest(interaction, result["best"], public_msg)
+        # The gamble cannot affect ties or the Highest Daily Roller role.
+        # Reaction sync may still place the lowest-roll marker on the gamble.
         await roll_reactions.sync()
-        await sync_high_roller_role()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction, button):
@@ -1295,7 +1331,7 @@ async def show_gamble_rules(interaction):
         "Ogre gives you **one extra roll** if you choose to gamble.\n"
         "**Higher second roll:** Ogre return your coin. "
         "**Tie or lower:** Ogre keep it.\n"
-        "Your best roll stays in today's competition. "
+        "Your original free roll stays in today's competition. "
         f"Today's highest roller gets **{prize}** "
         f"{'coin' if prize == 1 else 'coins'}; "
         "gambling gives no extra prize.\n"
@@ -2544,7 +2580,7 @@ async def reply_if_tied_for_highest(interaction, value, roll_message=None):
     with db() as con:
         top = con.execute(
             """SELECT user_id, value FROM rolls
-               WHERE actor_type IN ('user', 'gamble', 'bot')
+               WHERE actor_type IN ('user', 'bot')
                  AND rolled_at >= ? AND rolled_at < ?
                ORDER BY value DESC, rolled_at ASC, rowid ASC LIMIT 1""",
             (start, end),
