@@ -73,7 +73,9 @@ class RaidFollowupTests(unittest.TestCase):
                 if "<:Warrior:" in line or "<:Mage:" in line
             )
         )
-        self.assertLess(text.index("**Required:**"), text.index("**Warcraft Logs:**"))
+        # The manual Check URL is no longer a confirmation link.
+        self.assertNotIn("**Required:**", text)
+        self.assertNotIn("WoWSims:", text)
         self.assertLess(text.index("**Warcraft Logs:**"), text.index("[SoftRes"))
 
     def test_existing_sheet_format_uses_overflow_and_equal_management_widths(self):
