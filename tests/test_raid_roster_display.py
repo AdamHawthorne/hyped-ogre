@@ -199,7 +199,7 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
             ("42", "Zulu", "Hyjal, Barrows 🔸"),
         ]
         text = "\n".join(poster.roster_preview_pages(self.event, selected))
-        self.assertEqual(text.count("**Hyjal** 🔸🔹"), 1)
+        self.assertEqual(text.count("**Hyjal** 🔹🔸"), 1)
         self.assertEqual(text.count("**Barrows** 🔸"), 1)
         self.assertEqual(text.count("**Barrows** 🔹"), 1)
         self.assertEqual(text.count("-# Zulu " + schedule.CREATOR_CROWN), 2)
@@ -257,7 +257,7 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(sheets, "read_selected", return_value=selected):
             await button.callback(interaction)
         sent = interaction.followup.send.await_args
-        self.assertIn("**Hyjal** 🔸🔹", sent.args[0])
+        self.assertIn("**Hyjal** 🔹🔸", sent.args[0])
         self.assertIsInstance(sent.kwargs["view"], poster.RaidRosterPreview)
         self.assertEqual(sent.kwargs["view"].snapshot, tuple(selected))
         self.assertTrue(sent.kwargs["ephemeral"])

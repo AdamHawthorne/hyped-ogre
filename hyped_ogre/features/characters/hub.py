@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import math
 import os
 import sqlite3
 
@@ -12,76 +11,47 @@ from discord.ext import commands, tasks
 
 from cogs import raid_signup as raid
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID
-from . import equipment, items
+from .roster import rows, render
+from .absence_ui import AbsenceActions
 
 LOG = logging.getLogger(__name__)
-PAGE_SIZE = 8
-
-
-def rows(path):
-    with raid.database(path) as con:
-        con.row_factory = sqlite3.Row
-        characters = [dict(row) for row in con.execute(
-            "SELECT character_id,discord_id,name,class_name,spec,role,is_main,off_spec,off_role "
-            "FROM characters ORDER BY is_main DESC,LOWER(name),character_id")]
-        window = [r[0] for r in con.execute(
-            "SELECT raid_id FROM raids WHERE archived_at IS NOT NULL ORDER BY raid_at DESC LIMIT 4")]
-        credits = {}
-        if window:
-            for row in con.execute(
-                "SELECT discord_id,COUNT(DISTINCT raid_id) FROM attendance WHERE raid_id IN ("
-                + ",".join("?" for _ in window) + ") AND status IN ('Attended','Late','AFK') GROUP BY discord_id",
-                window):
-                credits[row[0]] = row[1]
-    catalog = items.cached_catalog(path)
-    gear = {r["character_id"]: r for r in equipment.latest_profiles(path)}
-    for character in characters:
-        character["attendance"] = (f"{credits.get(character['discord_id'], 0)}/{len(window)}"
-                                   if window else "No completed raids")
-        export = gear.get(character["character_id"])
-        parsed = equipment.parse_export(export["raw_text"]) if export else None
-        average, known, equipped = equipment.average_item_level(parsed, catalog)
-        character["ilvl"] = (f"{average:.1f}" + (f" ({known}/{equipped} items known)" if known < equipped else "")
-                              if average is not None else "Awaiting WoWSims/item data")
-    return characters
-
-
-def render(characters, page=0):
-    pages = max(1, math.ceil(len(characters) / PAGE_SIZE))
-    page = min(max(0, page), pages - 1)
-    embed = discord.Embed(title="<Hyped> Characters", colour=0xB84A3A,
-        description="Use **Update characters** to add a main, alt or off-spec and unlock class chats.\n"
-                    "Attendance is per player across the last four completed guild raids.")
-    for row in characters[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]:
-        off = f"{row['off_spec']} · {row['off_role']}" if row["off_spec"] else "Not set"
-        name = discord.utils.escape_mentions(discord.utils.escape_markdown(row["name"]))
-        embed.add_field(name=f"{name} · {row['class_name']} · {'Main' if row['is_main'] else 'Alt'}",
-                        value=(f"<@{row['discord_id']}> · {row['spec']} · {row['role']}\n"
-                               f"Off-spec: {off}\nAttendance: {row['attendance']} · iLvl: {row['ilvl']}\n"
-                               "Top parses: Awaiting Warcraft Logs connection"), inline=False)
-    if not characters:
-        embed.add_field(name="Add your character", value="Ogre has no registered characters yet.", inline=False)
-    embed.set_footer(text=f"Page {page + 1}/{pages} · WoWSims gear snapshot · Updates every minute")
-    return embed, page, pages
-
-
 class HubView(discord.ui.View):
     def __init__(self, cog, channel_id):
         super().__init__(timeout=None)
         self.cog, self.channel_id = cog, channel_id
 
-    @discord.ui.button(label="Update characters", style=discord.ButtonStyle.success,
+    async def interaction_check(self, interaction):
+        if interaction.guild_id == GUILD_ID:
+            return True
+        await interaction.response.send_message("This roster belongs to Hyped.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Add", style=discord.ButtonStyle.success,
+                       custom_id="hyped_characters:add:v2")
+    async def add(self, interaction, button):
+        await interaction.response.send_message(view=raid.ClassPickerView(interaction.user.id), ephemeral=True)
+
+    @discord.ui.button(label="Manage", style=discord.ButtonStyle.secondary,
                        custom_id="hyped_characters:update:v1")
     async def update(self, interaction, button):
         await self.cog.open_characters(interaction)
 
-    @discord.ui.button(label="Previous", custom_id="hyped_characters:previous:v1")
-    async def previous(self, interaction, button):
-        await self.cog.turn(interaction, self.channel_id, -1)
+    @discord.ui.button(label="WoWSims", style=discord.ButtonStyle.secondary,
+                       custom_id="hyped_characters:gear:v2")
+    async def gear(self, interaction, button):
+        cog = self.cog.bot.get_cog("RaidPrototype")
+        if cog is None:
+            await interaction.response.send_message("Ogre's character menu is restarting. Try again shortly.", ephemeral=True)
+            return
+        await cog.on_gear(interaction)
 
-    @discord.ui.button(label="Next", custom_id="hyped_characters:next:v1")
-    async def next_page(self, interaction, button):
-        await self.cog.turn(interaction, self.channel_id, 1)
+    @discord.ui.button(label="Remove / absent", style=discord.ButtonStyle.danger,
+                       custom_id="hyped_characters:absence:v2")
+    async def absence(self, interaction, button):
+        await interaction.response.send_message(
+            "Ogre tell Leadership when you remove a character or report a long-term absence. "
+            "Absence details stay private. Existing raid sign-ups need their own Absent update.",
+            view=AbsenceActions(interaction.user.id), ephemeral=True)
 
 
 class CharacterHub(commands.Cog):
@@ -109,6 +79,9 @@ class CharacterHub(commands.Cog):
             con.execute("""CREATE TABLE IF NOT EXISTS character_panels (
                 guild_id INTEGER NOT NULL, channel_id INTEGER PRIMARY KEY,
                 message_id INTEGER NOT NULL, page_index INTEGER NOT NULL DEFAULT 0)""")
+            con.execute("""CREATE TABLE IF NOT EXISTS character_panel_parts (
+                channel_id INTEGER NOT NULL, position INTEGER NOT NULL,
+                message_id INTEGER NOT NULL, PRIMARY KEY(channel_id,position))""")
         for channel_id, message_id, _ in await asyncio.to_thread(self.panels):
             self.bot.add_view(HubView(self, channel_id), message_id=message_id)
         self.maintenance.start()
@@ -129,25 +102,46 @@ class CharacterHub(commands.Cog):
             return
         await cog.on_update(interaction)
 
-    async def turn(self, interaction, channel_id, direction):
-        if interaction.guild_id != GUILD_ID:
-            await interaction.response.send_message("This board belongs to Hyped.", ephemeral=True)
-            return
-        await interaction.response.defer()
-        async with self.lock:
-            saved = next((row for row in await asyncio.to_thread(self.panels) if row[0] == channel_id), None)
-            if saved and interaction.message.id == saved[1]:
-                await self.refresh(channel_id, saved[1], saved[2] + direction)
-
-    async def refresh(self, channel_id, message_id, page):
+    async def refresh(self, channel_id, message_id, page=0):
         channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             raise ValueError("Character board channel is not in Hyped.")
-        embed, page, _ = render(await asyncio.to_thread(rows, raid.RAID_DB), page)
+        embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
+        # Refresh the anchor first. A missing anchor is handled by /postcharacters.
         await channel.get_partial_message(message_id).edit(
-            embed=embed, view=HubView(self, channel_id), allowed_mentions=discord.AllowedMentions.none())
+            embed=embeds[0], view=HubView(self, channel_id), allowed_mentions=discord.AllowedMentions.none())
+        await self.sync_parts(channel, embeds[1:])
         with raid.database(raid.RAID_DB) as con:
-            con.execute("UPDATE character_panels SET page_index=? WHERE channel_id=?", (page, channel_id))
+            con.execute("UPDATE character_panels SET page_index=0 WHERE channel_id=?", (channel_id,))
+
+    async def sync_parts(self, channel, embeds):
+        with raid.database(raid.RAID_DB) as con:
+            saved = dict(con.execute("SELECT position,message_id FROM character_panel_parts WHERE channel_id=?",
+                                     (channel.id,)))
+        for position, embed in enumerate(embeds, 1):
+            message_id = saved.get(position)
+            if message_id:
+                try:
+                    await channel.get_partial_message(message_id).edit(
+                        embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                except discord.NotFound:
+                    message_id = None
+            if not message_id:
+                message = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                with raid.database(raid.RAID_DB) as con:
+                    con.execute("INSERT INTO character_panel_parts VALUES (?,?,?) "
+                                "ON CONFLICT(channel_id,position) DO UPDATE SET message_id=excluded.message_id",
+                                (channel.id, position, message.id))
+        for position, message_id in saved.items():
+            if position <= len(embeds):
+                continue
+            try:
+                await channel.get_partial_message(message_id).delete()
+            except discord.NotFound:
+                pass
+            with raid.database(raid.RAID_DB) as con:
+                con.execute("DELETE FROM character_panel_parts WHERE channel_id=? AND position=?",
+                            (channel.id, position))
 
     @tasks.loop(seconds=60)
     async def maintenance(self):
@@ -191,14 +185,15 @@ class CharacterHub(commands.Cog):
                 except discord.NotFound:
                     saved = None
             if saved is None:
-                embed, _, _ = render(await asyncio.to_thread(rows, raid.RAID_DB))
-                message = await channel.send(embed=embed, view=HubView(self, channel.id),
+                embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
+                message = await channel.send(embed=embeds[0], view=HubView(self, channel.id),
                                              allowed_mentions=discord.AllowedMentions.none())
                 with raid.database(raid.RAID_DB) as con:
                     con.execute("INSERT INTO character_panels (guild_id,channel_id,message_id,page_index) "
                                 "VALUES (?,?,?,0) ON CONFLICT(channel_id) DO UPDATE SET "
                                 "message_id=excluded.message_id,page_index=0", (GUILD_ID, channel.id, message.id))
-        await interaction.followup.send("Ogre's character board is ready. Everyone can use /characters privately.", ephemeral=True)
+                await self.sync_parts(channel, embeds[1:])
+        await interaction.followup.send("Ogre's roster is ready. Everyone can use /characters privately.", ephemeral=True)
 
 
 async def setup(bot):

@@ -202,6 +202,20 @@ def _leadership(rows):
     return manual, guests
 
 
+def _acknowledged_members(db_path, raid_id):
+    """Local acknowledgement state is authoritative for the Sheet tick."""
+    with database(db_path) as con:
+        return {str(row[0]) for row in con.execute(
+            "SELECT discord_id FROM raid_ack_members "
+            "WHERE raid_id=? AND acknowledged_at IS NOT NULL", (raid_id,)
+        )}
+
+
+def _ack_name(name, acknowledged):
+    base = str(name or "").removesuffix(" ✅")
+    return base + (" ✅" if acknowledged else "")
+
+
 def _legacy_choices(session, event):
     """One-time migration from the original Roster Builder, without editing it."""
     try:
@@ -258,6 +272,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         if r["raid_id"] == event["raid_id"]
     }
     manual, guests = _leadership(old_rows)
+    acknowledged = _acknowledged_members(db_path, event["raid_id"])
     legacy = legacy or {}
     guests.extend(legacy.get("_guests", []))
     groups = {section: [] for section in SECTIONS}
@@ -284,7 +299,10 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
                 sign_note += (" | " if sign_note else "") + "Absent: " + absence["note"]
             if absence.get("signed_off_at"):
                 sign_note += (" | " if sign_note else "") + "Signed off: " + absence["signed_off_at"]
-        name = (names or {}).get(int(member_id)) or previous[0] or member_id
+        name = _ack_name(
+            (names or {}).get(int(member_id)) or previous[0] or member_id,
+            member_id in acknowledged,
+        )
         uploaded = gear_by_char.get(char_id, {})
         gear_status = (
             wowsims_gear.summary(parsed_by_char.get(char_id), catalog)
@@ -312,7 +330,10 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         if member_id in registered:
             continue
         previous = manual.get(member_id, [""] * len(COLUMNS))
-        name = (names or {}).get(int(member_id)) or previous[0] or member_id
+        name = _ack_name(
+            (names or {}).get(int(member_id)) or previous[0] or member_id,
+            member_id in acknowledged,
+        )
         groups["Absent"].append([
             name, previous[1], previous[2], previous[3], previous[4],
             previous[5], ("Absent: " + (absence.get("note") or "")
@@ -890,6 +911,36 @@ def read_selected(db_path, raid_id):
                   if item["raid_id"] == raid_id}
         return [entry for entry in _approved(rows, event, include_details=True)
                 if not entry[0] or entry[0] not in absent]
+    finally:
+        session.close()
+
+
+def sync_acknowledgements(db_path, raid_id):
+    """Write acknowledgement ticks beside Discord names without a full sync."""
+    if not raid_sheets.configured():
+        return False
+    event = read_raid(db_path, raid_id)
+    if not event:
+        return False
+    session = raid_sheets._session()
+    try:
+        title = tab_title(event)
+        if title not in _list_tabs(session):
+            return False
+        rows = _read(session, title)
+        acknowledged = _acknowledged_members(db_path, raid_id)
+        changed = False
+        for index, row in enumerate(rows[7:], start=8):
+            padded = (list(row) + [""] * len(COLUMNS))[:len(COLUMNS)]
+            member_id = str(padded[16]).strip()
+            if not member_id.isdecimal():
+                continue
+            desired = _ack_name(padded[0], member_id in acknowledged)
+            if desired == padded[0]:
+                continue
+            _permanent_write_cell(session, title, f"A{index}", desired)
+            changed = True
+        return changed
     finally:
         session.close()
 

@@ -41,6 +41,9 @@ class RaidFollowupTests(unittest.TestCase):
         text = ack.render(1, [(42, "Player")], 1)
         self.assertIn("<:check:1566948806535159808>", text)
         self.assertIn("<@42>", text)
+        self.assertIn("React below to confirm raid spot. Ogre cross name off list.", text)
+        self.assertNotIn("Ogre picked raid team", text)
+        self.assertNotIn("Raid spot stay yours", text)
         self.assertNotIn("<@42>", ack.render(1, [], 1))
 
     def test_confirmed_totals_and_names_are_subtext_and_wcl_below_check(self):
@@ -70,7 +73,7 @@ class RaidFollowupTests(unittest.TestCase):
                 if "<:Warrior:" in line or "<:Mage:" in line
             )
         )
-        self.assertLess(text.index("**Check:**"), text.index("**Warcraft Logs:**"))
+        self.assertLess(text.index("**Required:**"), text.index("**Warcraft Logs:**"))
         self.assertLess(text.index("**Warcraft Logs:**"), text.index("[SoftRes"))
 
     def test_existing_sheet_format_uses_overflow_and_equal_management_widths(self):

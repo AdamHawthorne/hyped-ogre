@@ -81,6 +81,34 @@ class RaidAcknowledgementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "already announced"):
                 ack.record_announcement(path, 1, 123, 457, [("42", "Snore")])
 
+    def test_acknowledgement_adds_tick_to_discord_name_and_normal_sync_preserves_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            ack.record_announcement(path, 1, 123, 456, [("42", "Snore")])
+            self.assertEqual(ack.acknowledge(path, 123, 456, 42), 1)
+            body = sheet._rows(path, event, {42: "Adam"})
+            member = next(row for row in body if row[16] == "42")
+            self.assertEqual(member[0], "Adam ✅")
+
+            rows = [[""] * len(sheet.COLUMNS) for _ in range(7)]
+            rows.append(member)
+            session = MagicMock()
+            with patch.object(sheet.raid_sheets, "configured", return_value=True), \
+                 patch.object(sheet.raid_sheets, "_session", return_value=session), \
+                 patch.object(sheet, "_list_tabs",
+                              return_value={sheet.tab_title(event): {"sheetId": 1}}), \
+                 patch.object(sheet, "_read", return_value=[*rows[:7],
+                              [*member[:1], *member[1:]]]), \
+                 patch.object(sheet, "_permanent_write_cell") as write:
+                # Simulate the pre-reaction cell for the targeted immediate update.
+                rows[7][0] = "Adam"
+                sheet._read.return_value = rows
+                self.assertTrue(sheet.sync_acknowledgements(path, 1))
+            write.assert_called_once_with(
+                session, sheet.tab_title(event), "A8", "Adam ✅")
+            session.close.assert_called_once()
+
     def test_archiving_closes_signups_but_acknowledgement_is_still_stored(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")

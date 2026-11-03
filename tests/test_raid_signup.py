@@ -765,7 +765,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(event["end_at"], end_at)
             self.assertEqual(event["check_message_url"], draft["check_message_url"])
-            self.assertIn("**Check:** [View message](", raid_schedule.raid_panel_intro(event))
+            self.assertIn("**Required:** [Confirm raid spot](", raid_schedule.raid_panel_intro(event))
             self.assertIn(" - " + raid_schedule.format_discord_date(
                 end_at, style="t", with_relative=False
             ), raid_schedule.raid_panel_intro(event))
@@ -793,7 +793,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 path, 1, "2026-12-09 21:00", "Hyjal (20m)", check_message_url=None
             )
             self.assertIsNone(cleared["check_message_url"])
-            self.assertNotIn("**Check:**", raid_schedule.raid_panel_intro(cleared))
+            self.assertNotIn("**Required:**", raid_schedule.raid_panel_intro(cleared))
             with raid.database(path) as con:
                 cols = {r[1] for r in con.execute("PRAGMA table_info(raids)")}
                 self.assertTrue({"end_at", "check_message_url"} <= cols)

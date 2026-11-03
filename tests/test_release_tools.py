@@ -15,7 +15,7 @@ import discord
 from discord.ext import commands
 
 from cogs import raid_signup as raid, raid_schedule as schedule, raid_sheets_v3 as sheets
-from hyped_ogre.features.characters import profiles, hub
+from hyped_ogre.features.characters import profiles, hub, roster
 from hyped_ogre.features.raids import activity, attendance, notifications, announcer
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID, BOT_ROLE_ID
 with patch.dict(os.environ, {"HYPED_GUILD_ID": "77"}):
@@ -71,14 +71,14 @@ class DataFixture(unittest.TestCase):
         with raid.database(legacy) as con:
             self.assertEqual(profiles.offspec(con,42,7), ("Paladin","",""))
 
-    def test_board_item_level_labels_partial_metadata_instead_of_character_level(self):
+    def test_board_hides_partial_item_level_instead_of_displaying_misleading_average(self):
         import json
         exported = {"name":"Paladin","class":"paladin","spec":"retribution","version":"v3.2.6",
                     "level":60,"gear":{"items":[{"id":5},{"id":6}]}}
         raid.save_wowsims_export(42,self.cid,json.dumps(exported),self.path)
-        with patch.object(hub.items,"cached_catalog",return_value={"5":{"level":50,"name":"Known"}}):
+        with patch.object(roster.items,"cached_catalog",return_value={"5":{"level":50,"name":"Known"}}):
             value=hub.rows(self.path)[0]["ilvl"]
-        self.assertEqual(value,"50.0 (1/2 items known)")
+        self.assertEqual(value,"N/A")
 
     def test_new_notes_changes_and_absences_queue_once_per_actual_change(self):
         raid.save_signup(1, 42, self.cid, self.path)
@@ -161,18 +161,21 @@ class DataFixture(unittest.TestCase):
         schedule.raid_status(self.path, 1, "confirm", confirmed_entries=[("42", "Paladin", "Hyjal")])
         schedule.raid_status(self.path, 1, "archive")
         values = hub.rows(self.path)
-        self.assertEqual(values[0]["attendance"], "1/1")
-        self.assertEqual(values[0]["ilvl"], "Awaiting WoWSims/item data")
-        embed, _, _ = hub.render(values)
-        self.assertIn("Awaiting Warcraft Logs", str(embed.to_dict()))
-        self.assertNotIn("100%", str(embed.to_dict()))
+        self.assertEqual(values[0]["attendance"], "100%")
+        self.assertEqual(values[0]["ilvl"], "N/A")
+        embed = hub.render(values)[0]
+        self.assertNotIn("Warcraft Logs", str(embed.to_dict()))
+        self.assertIn("100%", str(embed.to_dict()))
 
-    def test_hub_pagination_clamps_and_keeps_all_registered_characters(self):
+    def test_hub_shows_all_registered_characters_without_pagination(self):
         base = hub.rows(self.path)[0]
-        values = [dict(base, name=f"Character {i}") for i in range(19)]
-        embed, page, pages = hub.render(values, 99)
-        self.assertEqual((page, pages, len(embed.fields)), (2, 3, 3))
-        self.assertIn("Character 18", str(embed.to_dict()))
+        values = [dict(base, name=f"Character {i:02}") for i in range(19)]
+        embeds = hub.render(values)
+        self.assertEqual(len(embeds), 1)
+        content = str(embeds[0].to_dict())
+        for row in values:
+            self.assertIn(row["name"], content)
+        self.assertNotIn("Page", content)
 
     def test_archive_hides_only_completed_raid_tab_and_preserves_permanent_history(self):
         tabs = {"Raid #1 - Wed": {"sheetId": 1}, "Raid #2 - Sun": {"sheetId": 2},
