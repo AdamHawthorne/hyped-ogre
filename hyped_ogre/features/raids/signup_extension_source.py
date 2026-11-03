@@ -6,7 +6,7 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 
 import discord
 from discord import app_commands
@@ -224,7 +224,7 @@ def delete_character(discord_id, character_id, path=RAID_DB):
             "LFG_DB_PATH",
             "/data/lfg_board.db" if os.path.isdir("/data") else "lfg_board.db")
         if path == RAID_DB and os.path.isfile(lfg_path):
-            with sqlite3.connect(lfg_path, timeout=10) as lfg_db:
+            with closing(sqlite3.connect(lfg_path, timeout=10)) as lfg_db:
                 for table in ("lfg_dungeon_requests", "lfg_listings", "lfg_live_plans"):
                     exists = lfg_db.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
