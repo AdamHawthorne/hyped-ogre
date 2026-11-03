@@ -1086,11 +1086,20 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
                 continue
             key = (str(raid_id), did)
             old_entry = attendance_map.get(key)
+            absent = row[8] == "Absent"
             if old_entry:
-                # Attendance, late/AFK, excused and notes belong to leadership.
+                # Bot-created Pending entries may become Absent when the member
+                # reports an absence. Never overwrite leadership decisions,
+                # particularly Excused, Attended or an already recorded Absent.
+                prior = old_entry[1]
+                if absent and len(prior) > 9 and prior[9] in ("", "Pending"):
+                    _permanent_write_cell(session, "Forever Attendance",
+                                          f"J{old_entry[0]}", "Absent")
+                    prior[9] = "Absent"
                 continue
             values = [str(raid_id), date, did, row[0], cid, row[1],
-                      row[2], row[4], row[9], "Pending", "", "", "No", "", ""]
+                      row[2], row[4], row[9], "Absent" if absent else "Pending",
+                      "", "", "No", "", ""]
             _permanent_write(session, "Forever Attendance", attendance_next, values)
             attendance_map[key] = (attendance_next, values)
             attendance_next += 1
@@ -1358,9 +1367,13 @@ def sync_once(db_path, discord_names=None):
             if (event.get("wcl_url") or "") != before_wcl:
                 metadata_changed.add(raid_id)
             counts["raid_tabs"] += changes
+            # Import absence declarations as attendance rows as well as
+            # selected/benched players. Absence is a starting status, not a
+            # leadership decision: officers can change it to Excused later.
             raid_rosters[raid_id] = [r for r in rows[7:]
-                if len(r) >= 18 and r[16].isdigit() and r[9] in ("Selected", "Bench")
-                and r[8] == "Signed"]
+                if len(r) >= 18 and str(r[16]).isdigit()
+                and (r[8] == "Absent" or
+                     (r[8] == "Signed" and r[9] in ("Selected", "Bench")))]
             if event.get("roster_published"):
                 # After publishing, the Sheet remains authoritative for live
                 # selections; new sign-ups may still be assigned and displayed.
