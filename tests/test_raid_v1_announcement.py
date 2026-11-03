@@ -108,6 +108,15 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
             self.assertLessEqual(len(embed), 6000)
         self.assertLessEqual(sum(len(e) for e in embeds), 5900)
 
+    def test_unregistered_guest_is_visible_in_grid_without_reaction_id(self):
+        selection = self.selected() + [
+            ("", "GuestShaman", "Hyjal", "Shaman", "DPS", "Enhancement"),
+        ]
+        embeds = announcer.roster_embeds(self.event, selection)
+        self.assertEqual(embeds[0].title, "Hyjal (7) 🔹🔸")
+        self.assertIn("GuestShaman", embeds[0].fields[3].value)
+        self.assertNotIn("<@None>", str([e.to_dict() for e in embeds]))
+
     def test_thirty_guild_players_fit_without_losing_names(self):
         people = [
             (str(100+i), f"Member{i:02}", "Hyjal, Barrows " +
@@ -152,13 +161,18 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
                                    fetch_channel=AsyncMock())
 
     async def test_initial_announcement_is_v1_and_saves_reaction_permalink(self):
+        selected = self.selected + [
+            ("", "GuestMage", "Hyjal", "Mage", "DPS", "Frost"),
+        ]
         link = await announcer.announce(
-            self.bot, self.path, 1, GUILD_ID, selected=self.selected,
+            self.bot, self.path, 1, GUILD_ID, selected=selected,
         )
         self.assertEqual(link, self.message.jump_url)
         call = self.channel.send.await_args.kwargs
         self.assertIn("<@101>", call["content"])
-        self.assertEqual(call["embeds"][0].title, "Hyjal (1) 🔹🔸")
+        self.assertEqual(call["embeds"][0].title, "Hyjal (2) 🔹🔸")
+        self.assertIn("GuestMage", call["embeds"][0].fields[-1].value)
+        self.assertNotIn("GuestMage", call["content"])
         self.assertTrue(all(isinstance(e, discord.Embed) for e in call["embeds"]))
         self.assertEqual(ack.announcement(self.path, 1), (333, 444))
         self.assertIn("/333/444", schedule.raid_panel_intro(
