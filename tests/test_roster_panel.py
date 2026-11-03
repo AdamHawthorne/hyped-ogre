@@ -48,6 +48,7 @@ class RosterDataTests(unittest.TestCase):
         raid.save_wowsims_export(42,self.cid,json.dumps(export),self.path)
         with patch.object(roster.items,'cached_catalog',return_value={'5':{'level':50},'6':{'level':60}}):
             self.assertEqual(roster.rows(self.path)[0]['ilvl'], '55.0')
+            self.assertEqual(roster.rows(self.path)[0]['level'], 60)
 
     def test_absence_is_private_idempotent_and_does_not_change_raid_history(self):
         schedule.save_raid(self.path, 1, '2026-12-09 19:00', 'Hyjal (20m)', wowsims_policy='optional')
@@ -121,18 +122,19 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].description, 'Ogre keep track. You add or update.')
         self.assertEqual(embeds[0].thumbnail.url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].footer.text)
-        self.assertEqual([f.name for f in embeds[0].fields[::2]],
+        self.assertEqual([f.name for f in embeds[0].fields[::3]],
                          ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
         content = str(embeds[0].to_dict())
         self.assertNotIn('WCL', content)
         for row in data:
             self.assertEqual(content.count(row['name']), 1)
             self.assertIn(f"<@{row['discord_id']}>", content)
-        for i in range(0, len(embeds[0].fields), 2):
-            fields = embeds[0].fields[i:i+2]
-            self.assertEqual(fields[1].name, 'Lvl · Att. · iLvl')
+        for i in range(0, len(embeds[0].fields), 3):
+            fields = embeds[0].fields[i:i+3]
+            self.assertEqual([f.name for f in fields[1:]], ['Attendance', 'Lvl'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
-            self.assertTrue(all(v == '— · 75% · 67.5' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == '75%' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
@@ -141,7 +143,7 @@ class LayoutTests(unittest.TestCase):
                 self.row(3, 'DPS', 'Druid', 'Feral'),
                 self.row(4, 'Tank', 'Druid', 'Feral')]
         fields = roster.render(data)[0].fields
-        groups = {fields[i].name: fields[i].value for i in range(0, len(fields), 2)}
+        groups = {fields[i].name: fields[i].value for i in range(0, len(fields), 3)}
         self.assertIn('Character0001', groups['Melee (2)'])
         self.assertIn('Character0003', groups['Melee (2)'])
         self.assertIn('Character0002', groups['Ranged (1)'])
@@ -154,19 +156,49 @@ class LayoutTests(unittest.TestCase):
         content = str(embed.to_dict())
         self.assertIn('Character0001', content)
         self.assertNotIn('Character0002', content)
-        self.assertEqual([f.name for f in embed.fields[::2]],
+        self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
 
-    def test_level_is_placeholder_until_actual_profile_level_is_available(self):
+    def test_level_uses_validated_saved_profile_value_or_na(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, '— · 75% · 67.5')
+        self.assertEqual(fields[2].value, 'N/A')
         main['level'] = 43
-        fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, '43 · 75% · 67.5')
-        main['level'] = 999
-        fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, '— · 75% · 67.5')
+        self.assertEqual(roster.render([main])[0].fields[2].value, '43')
+        for invalid in (999, None, True, 0, -1):
+            main['level'] = invalid
+            self.assertEqual(roster.render([main])[0].fields[2].value, 'N/A')
+
+    def test_thirty_distinct_guild_players_fit_one_embed(self):
+        specs = (('Tank', 'Warrior', 'Protection'),
+                 ('Healer', 'Priest', 'Holy'),
+                 ('DPS', 'Rogue', 'Combat'),
+                 ('DPS', 'Mage', 'Frost'))
+        players = [self.row(n, *specs[n % 4]) for n in range(30)]
+        for player in players:
+            player['name'] = f"LongCharacterName{player['character_id']:04}"
+            player['level'] = (player['character_id'] % 60) + 1
+        embeds = roster.render(players)
+        self.assertEqual(len(embeds), 1)
+        embed = embeds[0]
+        self.assertLessEqual(len(embed), 6000)
+        self.assertEqual(len(embed.fields), 12)
+        for index in range(0, len(embed.fields), 3):
+            fields = embed.fields[index:index+3]
+            self.assertEqual([f.name for f in fields[1:]], ['Attendance', 'Lvl'])
+            self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
+        content = str(embed.to_dict())
+        for player in players:
+            self.assertEqual(content.count(player['name']), 1)
+
+    def test_thirty_players_even_in_one_role_fit_one_embed(self):
+        players = [self.row(n) for n in range(30)]
+        embeds = roster.render(players)
+        self.assertEqual(len(embeds), 1)
+        self.assertEqual(len(embeds[0].fields) % 3, 0)
+        content = str(embeds[0].to_dict())
+        for player in players:
+            self.assertEqual(content.count(player['name']), 1)
 
     def test_large_roster_keeps_all_mains_within_discord_limits(self):
         data = [self.row(n) for n in range(400)]
@@ -183,7 +215,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
         embed = roster.render([])[0]
-        self.assertEqual([f.name for f in embed.fields[::2]],
+        self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (0)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
         self.assertIn('No mains registered', str(embed.to_dict()))
         self.assertNotIn('0%', str(embed.to_dict()))
