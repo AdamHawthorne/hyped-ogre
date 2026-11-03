@@ -9,10 +9,13 @@ as Ogre's owner, server owner or Leadership. Discord's default command
 visibility is Manage Server; allow Leadership to use the posting command in
 Server Settings > Integrations rather than widening their server permissions.
 
-The board is a persistent standard embed grouped into Tanks, Healers and DPS.
-Its aligned fields show character and Discord member, attendance percentage,
-and saved WoWSims item level. The four buttons are **Add**, **Manage**,
-**WoWSims** and **Remove / absent**. All member actions open privately.
+The board is a persistent standard embed grouped into Tanks, Healers,
+Melee and Ranged, listing only main characters. Each role has two inline
+fields: character / Discord member, and a compact "Lvl · Att. · iLvl" summary.
+Level displays a dash until a separately verified character level is made
+available; the bot does not infer current character level from an old WoWSims
+export. The panel has no explanatory footer. The four buttons are **Add**,
+**Manage**, **WoWSims** and **Remove / absent**. All member actions open privately.
 Repeating `/postcharacters` refreshes the saved message; a confirmed missing
 message can be recreated. A normal guild roster fits in one embed. If Discord's
 limits are reached, Ogre adds visible continuation messages rather than hiding
