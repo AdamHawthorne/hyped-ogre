@@ -32,10 +32,12 @@ class RollReactions:
                 "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
-        # A lower gamble roll must never replace the member's existing best.
+        # Only original free rolls (plus Ogre's bot roll) compete for highest.
+        # Gambles may still count for the cosmetic lowest-individual-roll marker.
         all_scores = {}
         for user_id, value, actor_type in rows:
-            all_scores[user_id] = max(value, all_scores.get(user_id, 0))
+            if actor_type in ("user", "bot"):
+                all_scores[user_id] = max(value, all_scores.get(user_id, 0))
         scores = {uid: value for uid, value in all_scores.items() if uid != 0}
         if not scores:
             return
@@ -47,6 +49,7 @@ class RollReactions:
         # This also recovers today's rolls posted before this feature was deployed.
         messages = []
         latest_by_user = {}
+        first_by_user = {}
         messages_by_user = {}
         async for message in channel.history(
             limit=None, after=datetime.fromtimestamp(start, timezone.utc),
@@ -87,6 +90,10 @@ class RollReactions:
                         )
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
+                # Do not place the daily-high icon on a gamble if a user's
+                # original free-roll message was removed from Discord.
+                if "risked a coin to roll again:" not in message.content:
+                    first_by_user.setdefault(user_id, message.id)
                 messages_by_user.setdefault(user_id, []).append(message)
 
         # Only visible human roll messages count for reaction ranking.
@@ -142,7 +149,7 @@ class RollReactions:
                     except Exception as exc:
                         self.log_error(f"LEGACY POOP CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
-                (high_emoji, user_id == high and message.id == latest_by_user[user_id]),
+                (high_emoji, user_id == high and message.id == first_by_user.get(user_id)),
                 (poop_emoji, low is not None and user_id == low
                  and message.id == low_message_id),
             ):

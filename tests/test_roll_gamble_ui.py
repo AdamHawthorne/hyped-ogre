@@ -204,13 +204,44 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.channel.send.await_count, 1)
         self.assertIn("19", self.channel.send.await_args.args[0])
         self.assertIn("91", self.channel.send.await_args.args[0])
+        self.assertTrue(self.channel.send.await_args.args[0].startswith(
+            "<@101> rolled **91**"))
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
+        ).fetchone(), (19, 1, 19))
         self.assertIn("<:ogredie:1566175682034270288>", self.channel.send.await_args.args[0])
         self.assertIn("Gamer risked a coin to roll again:", self.channel.send.await_args.args[0])
         self.assertIn("Ogre say good roll. Have coin back!", self.channel.send.await_args.args[0])
         self.ns["roll_reactions"].sync.assert_awaited_once()
-        self.ns["sync_high_roller_role"].assert_awaited_once()
+        self.ns["sync_high_roller_role"].assert_not_awaited()
+        self.ns["reply_if_tied_for_highest"].assert_not_awaited()
         i.followup.send.assert_awaited_once()
         self.assertTrue(i.followup.send.await_args.kwargs["ephemeral"])
+
+    async def test_lower_gamble_displays_actual_second_roll_and_keeps_free_score(self):
+        self.award()
+        self.free_roll(36)
+        self.ns["secrets"] = SimpleNamespace(randbelow=lambda n: 17)
+        i = self.interaction()
+        await self.ns["show_gamble_rules"](i)
+        button = next(child for child in
+                      i.response.send_message.await_args.kwargs["view"].children
+                      if isinstance(child, discord.ui.Button)
+                      and child.label == "Gamble 1 coin")
+        await button.callback(i)
+        notice = self.channel.send.await_args.args[0]
+        self.assertTrue(notice.startswith(
+            "<@101> rolled **18** <:ogredie:1566175682034270288>"))
+        self.assertIn("**36 → 18**. Ha! Ogre keep this one.", notice)
+        self.assertNotIn("rolled **36**", notice)
+        self.assertEqual(coin_total(self.con, 9, 101), 0)
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
+        ).fetchone(), (36, 1, 36))
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls FROM daily_scores WHERE user_id=101"
+        ).fetchone(), (36, 1))
+        self.ns["reply_if_tied_for_highest"].assert_not_awaited()
 
     async def test_one_gamble_daily_then_new_attempt_is_refused_privately(self):
         self.award()
