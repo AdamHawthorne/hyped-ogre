@@ -22,6 +22,9 @@ class AbsenceAttendanceTests(unittest.TestCase):
         raid.create_schema(self.path)
         schedule.ensure_raid_fields(self.path)
         schedule.save_raid(self.path, 1, "2026-12-09 21:00", "Hyjal (20m)")
+        schedule.record_panel(self.path, 1, 100, 200)
+        schedule.raid_status(self.path, 1, "confirm",
+                             confirmed_entries=[("42", "Snore", "Hyjal")])
         raid.save_character(42, "Snore", "Warrior", "Protection", "Tank", self.path)
         self.cid = raid.member_characters(42, self.path)[0][0]
         self.event = schedule.read_raid(self.path, 1)
@@ -40,10 +43,12 @@ class AbsenceAttendanceTests(unittest.TestCase):
             row = [""] * 15
             row[0], row[2], row[4], row[9] = "1", "42", str(self.cid), existing
             attendance.append(row)
+        roster_header = [""] * 15
+        roster_header[8] = "Last 4 completed raids"
         with patch.object(sheets.raid_sheets, "_raid_snapshot",
                           return_value=([], {1: self.event}, [], [], [])), \
              patch.object(sheets, "_permanent_read",
-                          side_effect=[[["header"] * 15], attendance]), \
+                          side_effect=[[roster_header], attendance]), \
              patch.object(sheets, "_permanent_write") as write, \
              patch.object(sheets, "_permanent_write_cell") as cell:
             sheets._sync_permanent(self.session, self.path, {}, {1: [player]})
