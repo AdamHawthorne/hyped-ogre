@@ -141,11 +141,12 @@ def mark_deleted(path, raid_id):
 
 def render(raid_id, awaiting, total, panel_url=None):
     """Compact public text, with no mass mentions and no name removed from roster."""
-    intro = (f"**<Hyped> Raid #{raid_id} | Roster announced**\n"
-             f"React below to confirm raid spot. Ogre cross name off list. {ACK_EMOJI}\n\n")
+    # The V1 embed already supplies the raid heading and grouped roster.
+    # Keep the actual text message compact while still pinging selected users.
+    intro = f"React below to confirm raid spot. Ogre cross name off list. {ACK_EMOJI}\n"
     if awaiting:
-        mentions = "\n".join(f"<@{int(member_id)}>" for member_id, _ in awaiting)
-        body = f"**Still need nod ({len(awaiting)}/{total}):**\n{mentions}"
+        mentions = " ".join(f"<@{int(member_id)}>" for member_id, _ in awaiting)
+        body = f"**Still need nod ({len(awaiting)}/{total}):** {mentions}"
     else:
         body = f"**All {total} acknowledged.** Ogre got nod from everyone!"
     footer = f"\n\n[View raid roster]({panel_url})" if panel_url else ""
