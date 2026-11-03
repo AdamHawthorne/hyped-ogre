@@ -97,7 +97,7 @@ class RaidSyncPermissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(interaction.followup.send.await_args.kwargs["ephemeral"])
         self.assertIn("Ogre synced", interaction.followup.send.await_args.args[0])
 
-    def test_wowsims_precedes_optional_check_link(self):
+    def test_wowsims_in_signup_but_manual_check_url_not_a_confirmation_link(self):
         event = {
             "raid_id": 1,
             "raid_at": "2026-12-09T21:00:00+00:00",
@@ -109,8 +109,9 @@ class RaidSyncPermissionTests(unittest.IsolatedAsyncioTestCase):
                 "2222222222222222/3333333333333333",
         }
         intro = schedule.raid_panel_intro(event)
-        self.assertLess(intro.index("**WoWSims:**"),
-                        intro.index("**Required:**"))
+        self.assertIn("**WoWSims:**", intro)
+        self.assertNotIn("**Required:**", intro)
+        self.assertNotIn("3333333333333333", intro)
 
 
 class RaidDeleteSyncTests(unittest.IsolatedAsyncioTestCase):
