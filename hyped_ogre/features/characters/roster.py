@@ -32,6 +32,11 @@ def rows(path):
                                    if window else "N/A")
         export = gear.get(character["character_id"])
         parsed = equipment.parse_export(export["raw_text"]) if export else None
+        # A saved WoWSims export contains a snapshot, not a live character level.
+        level = parsed.get("level") if parsed else None
+        character["level"] = (level if isinstance(level, int)
+                              and not isinstance(level, bool)
+                              and 1 <= level <= 60 else None)
         average, known, equipped = equipment.average_item_level(parsed, catalog)
         character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
     return characters
@@ -45,7 +50,7 @@ def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
     Inline columns are client-controlled and may stack on mobile. Build each
-    two-column block from exactly the same rows; never truncate a roster.
+    three-column block from exactly the same rows; never truncate a roster.
     """
     def new_embed(first):
         result = discord.Embed(title="<Hyped> Roster" if first else "<Hyped> Roster (continued)",
@@ -71,21 +76,22 @@ def render(characters):
                 blocks.append(block)
                 block, length = [], 0
             level = row.get("level")
-            level_text = str(level) if isinstance(level, int) and 1 <= level <= 60 else "—"
-            stats = f"{level_text} · {row['attendance']} · {row['ilvl']}"
-            block.append((name, stats))
+            level_text = (str(level) if isinstance(level, int)
+                          and not isinstance(level, bool)
+                          and 1 <= level <= 60 else "N/A")
+            block.append((name, row["attendance"], level_text))
             length += len(name) + 1
         if block:
             blocks.append(block)
         if not blocks:
-            blocks = [[("No mains registered", "— · N/A · N/A")]]
+            blocks = [[("No mains registered", "N/A", "N/A")]]
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
-            values = ["\n".join(row[col] for row in block) for col in range(2)]
-            names = (heading, "Lvl · Att. · iLvl")
+            values = ["\n".join(row[col] for row in block) for col in range(3)]
+            names = (heading, "Attendance", "Lvl")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
-            if len(embed.fields) + 2 > 25 or len(embed) + addition > 5900:
+            if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
                 embed = new_embed(False)
                 embeds.append(embed)
             for name, value in zip(names, values):
