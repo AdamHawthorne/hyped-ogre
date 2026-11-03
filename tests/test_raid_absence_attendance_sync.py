@@ -158,6 +158,25 @@ class CompletedAcknowledgementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ack.dirty_announcements(self.path), [])
         self.assertIsNone(ack.acknowledge(self.path, 111, 333, 42))
 
+    async def test_older_archived_announcement_is_cleaned_once_after_restart(self):
+        schedule.raid_status(self.path, 1, "archive")
+        # Simulate an earlier release that archived the raid but did not
+        # queue deletion of its separate roster acknowledgement message.
+        with schedule.database(self.path) as con:
+            con.execute("UPDATE raid_ack_announcements SET needs_refresh=0 "
+                        "WHERE raid_id=1")
+        schedule.ensure_raid_fields(self.path)
+        self.assertEqual(ack.dirty_announcements(self.path), [1])
+        await announcer.refresh(self.bot, self.path, 1, 99)
+        self.message.delete.assert_awaited_once()
+        with schedule.database(self.path) as con:
+            deleted_at = con.execute(
+                "SELECT deleted_at FROM raid_ack_announcements WHERE raid_id=1"
+            ).fetchone()[0]
+        self.assertTrue(deleted_at)
+        schedule.ensure_raid_fields(self.path)  # Another restart
+        self.assertEqual(ack.dirty_announcements(self.path), [])
+
     async def test_missing_ack_is_already_clean_and_does_not_delete_v2(self):
         schedule.raid_status(self.path, 1, "archive")
         response = MagicMock(status=404, reason="Not Found")
