@@ -128,7 +128,8 @@ def ensure_raid_fields(path):
                 message_id INTEGER NOT NULL UNIQUE,
                 created_at TEXT NOT NULL,
                 needs_refresh INTEGER NOT NULL DEFAULT 0,
-                retracted_at TEXT
+                retracted_at TEXT,
+                deleted_at TEXT
             )
         """)
         con.execute("""
@@ -150,6 +151,17 @@ def ensure_raid_fields(path):
         if "retracted_at" not in ack_cols:
             con.execute("ALTER TABLE raid_ack_announcements "
                         "ADD COLUMN retracted_at TEXT")
+        if "deleted_at" not in ack_cols:
+            con.execute("ALTER TABLE raid_ack_announcements "
+                        "ADD COLUMN deleted_at TEXT")
+        # Queue cleanup for earlier completed raids as well, including the
+        # test raid completed before this change was deployed. A deleted_at
+        # marker makes this restart-safe and prevents repeated delete calls.
+        con.execute(
+            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+            "WHERE deleted_at IS NULL AND raid_id IN "
+            "(SELECT raid_id FROM raids WHERE archived_at IS NOT NULL)"
+        )
         # Older confirmations used to close registration; migrate active raids.
         con.execute("UPDATE raids SET signup_open=1 "
                     "WHERE roster_published=1 AND archived_at IS NULL")
