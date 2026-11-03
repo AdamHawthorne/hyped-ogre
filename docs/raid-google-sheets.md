@@ -44,9 +44,11 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    the export before signing them up. An export is saved per character and
    reused for later raids. Players should update it before the
    roster-confirmation date where possible, but WoWSims collection remains
-   open until leadership completes/archives the raid. The public raid panel
-   displays the selected requirement and a link to the addon. One character
-   per player per raid night.
+   open until leadership completes/archives the raid. The public V2 panel
+   displays the selected requirement and addon link while gathering sign-ups.
+   After publication, the WoWSims requirement line is hidden from the roster
+   view, but the WoWSims button and existing export workflow remain available.
+   One character per player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
    them with **Confirmation:** and the scheduled Discord relative
@@ -55,13 +57,16 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    live Sheet selection. Choose **Publish roster only** or **Publish + ping
    selected**. Publishing reveals the teams on the existing Discord panel,
    but **does not close sign-ups or lock the Sheet**.
-5. **Publish + ping selected** posts a separate message in the raid channel
-   tagging each selected Discord member once. Members react ✅ to acknowledge
-   that they have seen the roster. Ogre removes their mention from the list
-   of outstanding responses. The selected player remains on the actual roster.
-   Ogre does not re-ping on subsequent panel refreshes, and a second
-   announcement is blocked for the same raid. PUGs without Discord IDs
-   cannot be tagged and are excluded from acknowledgement tracking.
+5. **Publish + ping selected** posts a separate **V1 embed** announcement in
+   the raid channel, tagging each selected Discord member once. Each raid
+   instance/split has a compact grid of Tanks beside Healers and Melee beside
+   Ranged, retaining class icons, diamond markers and role totals. Members
+   react ✅ to acknowledge. Ogre removes their mention from the outstanding
+   list without removing them from the roster or pinging a second time.
+   The published V2 panel's **Confirm raid spot** link resolves to the
+   recorded Ogre reaction message, never the independently saved manual
+   Check URL. The original V2 signup panel and its buttons remain unchanged.
+   PUGs without Discord IDs cannot be tagged or acknowledged.
 6. Keep using the raid Sheet after publication. Later sign-ups flow into the
    raid tab, and leadership assignment changes update the public roster
    automatically at the next successful sync (~60 seconds). To unpublish,

@@ -1606,9 +1606,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def announce_roster(self, raid_id, selected=None):
         async with self._ack_lock:
-            return await raid_announcer.announce(
+            link = await raid_announcer.announce(
                 self.bot, RAID_DB, raid_id, GUILD_ID, selected=selected
             )
+        # The reaction message ID exists only after posting it. Refresh the
+        # V2 sign-up panel so "Confirm raid spot" points to that actual post.
+        # A temporary Discord edit failure must not cause a duplicate ping.
+        try:
+            await self.refresh_saved_panel(raid_id)
+        except (discord.HTTPException, sqlite3.Error, ValueError) as exc:
+            LOGGER.warning("Raid #%s confirmation link refresh delayed: %s",
+                           raid_id, exc)
+        return link
 
     async def cleanup_completed_announcement(self, raid_id):
         """Remove only the roster acknowledgement ping after archiving.
@@ -1769,6 +1778,15 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
 
     async def sheet_sync_loop(self):
         await self.bot.wait_until_ready()
+        # One silent startup edit repairs older V2 panels that still point to
+        # the manual Check message. No new announcements or member pings.
+        for event in active_panels(RAID_DB):
+            if event.get("roster_published") and not event.get("archived_at"):
+                try:
+                    await self.refresh_saved_panel(event["raid_id"])
+                except (discord.HTTPException, sqlite3.Error, ValueError) as exc:
+                    LOGGER.warning("Raid #%s confirmation link update delayed: %s",
+                                   event["raid_id"], exc)
         while True:
             try:
                 await self.sync_raid_sheets()
@@ -1831,6 +1849,21 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 except (discord.NotFound, discord.Forbidden, discord.HTTPException):
                     LOGGER.warning("Unable to refresh revealed roster for Raid #%s in channel %s",
                                    raid_id, channel_id)
+            if changed:
+                # Keep Ogre's separate V1 announcement aligned with later
+                # leadership Sheet changes, without publishing a new ping.
+                # In old test/minimal databases the optional acknowledgement
+                # table may not exist; never interrupt the V2 panel sync.
+                try:
+                    with database(RAID_DB) as con:
+                        con.executemany(
+                            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+                            "WHERE raid_id=? AND retracted_at IS NULL "
+                            "AND deleted_at IS NULL",
+                            [(raid_id,) for raid_id in changed],
+                        )
+                except sqlite3.Error as exc:
+                    LOGGER.warning("Roster acknowledgement refresh delayed: %s", exc)
             return counts, changed
 
     async def on_register(self, interaction):
@@ -1945,6 +1978,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         return {name.casefold(): guild_emoji(name) for name in EMOJI_IDS}
 
     def make_panel(self, event):
+        # Some callers pass a raw Sheets snapshot without the computed link.
+        # Reload the authoritative saved announcement before building V2.
+        event = read_raid(RAID_DB, event["raid_id"]) or event
+
         async def signup(interaction):
             await self.on_signup(interaction, event["raid_id"])
 

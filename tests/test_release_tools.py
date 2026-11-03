@@ -435,7 +435,10 @@ class RosterReactionFlowTests(unittest.IsolatedAsyncioTestCase):
             raid.save_signup(1,42,cid,path)
             schedule.record_panel(path,1,300,400)
             schedule.raid_status(path,1,"confirm",confirmed_entries=[("42","Paladin","Hyjal")])
-            message = SimpleNamespace(id=500, jump_url="https://discord.com/message", content="", add_reaction=AsyncMock())
+            message = SimpleNamespace(
+                id=500, jump_url="https://discord.com/message",
+                content="", embeds=[], add_reaction=AsyncMock(),
+            )
             async def edit(**kwargs):
                 message.content = kwargs["content"]
             message.edit = AsyncMock(side_effect=edit)
@@ -444,11 +447,15 @@ class RosterReactionFlowTests(unittest.IsolatedAsyncioTestCase):
             channel.permissions_for.return_value = discord.Permissions.all()
             async def send(**kwargs):
                 message.content = kwargs["content"]
+                message.embeds = kwargs["embeds"]
                 return message
             channel.send = AsyncMock(side_effect=send)
             channel.fetch_message = AsyncMock(return_value=message)
             bot = SimpleNamespace(user=SimpleNamespace(id=200),get_channel=lambda ident: channel)
-            await announcer.announce(bot,path,1,GUILD_ID,selected=[("42","Paladin"),("43","Mage")])
+            await announcer.announce(bot,path,1,GUILD_ID,selected=[
+                ("42", "Paladin", "Hyjal", "Paladin", "Tank", "Protection"),
+                ("43", "Mage", "Hyjal", "Mage", "DPS", "Frost"),
+            ])
             message.add_reaction.assert_awaited_once_with(ack.ACK_EMOJI)
             for user_id, channel_id, emoji in ((99,300,ack.ACK_EMOJI),(42,999,ack.ACK_EMOJI),(42,300,"bad")):
                 payload=SimpleNamespace(guild_id=GUILD_ID,channel_id=channel_id,message_id=500,user_id=user_id,emoji=emoji)
