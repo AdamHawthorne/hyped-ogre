@@ -11,15 +11,16 @@ Server Settings > Integrations rather than widening their server permissions.
 
 The board is a persistent standard embed grouped into Tanks, Healers,
 Melee and Ranged, listing only main characters. Each role has three inline
-fields: character / Discord member, Attendance, and Lvl. Level uses the last
+fields: character / Discord member, Lvl, and Attendance. Level uses the last
 saved WoWSims export as a snapshot, not a live in-game level, and shows N/A
 when no valid export level exists. Within each role, mains are ordered by
 highest saved level, then highest attendance, then alphabetically, with
 unknown values last. The guild mark is displayed as a compact icon
-beside the roster heading (embed author icon), without a right-hand thumbnail
-or introductory description that would reduce room for the three columns.
+beside the **Characters** heading (embed author icon), without a right-hand
+thumbnail or introductory embed description. Ogre writes the separate message
+`Add yer name to mighty Hyped roster!` immediately above the embed.
 The panel has no explanatory footer. The four buttons are **Add**,
-**Manage**, **WoWSims** and **Remove / absent**. All member actions open privately.
+**Manage**, **WoWSims** and **Remove / Absent**. All member actions open privately.
 Repeating `/postcharacters` refreshes the saved message; a confirmed missing
 message can be recreated. A normal guild roster fits in one embed. If Discord's
 limits are reached, Ogre adds visible continuation messages rather than hiding
@@ -36,7 +37,7 @@ Missing or partial gear data shows `N/A`; no live armory data is inferred.
 WCL is omitted until a Warcraft Logs connection and verified Forever
 character/realm/zone identity are available.
 
-**Remove / absent** lets a member report a long-term absence, clear it when
+**Remove / Absent** lets a member report a long-term absence, clear it when
 they return, or select one of their characters for the existing two-step
 removal flow. Long-term absence details stay private and do not alter raid
 sign-ups or attendance. Character removal remains blocked while the character
