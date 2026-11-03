@@ -226,6 +226,18 @@ class ClassroomsCog(commands.GroupCog, group_name="classrooms",
                             if current.view_channel is False:
                                 result.blocked += 1
                                 continue
+                            if record is not None and not any(
+                                existing.id == ident and not isinstance(existing, discord.Role)
+                                for existing in channel.overwrites
+                            ):
+                                # Discord's category sync deletes entire member
+                                # overwrites. Rebuild eligible access from the
+                                # now-empty baseline instead of treating missing
+                                # entries as an intentional partial/manual deny.
+                                # No live flags remain for the old journal to own.
+                                await self.run(self.store.forget_grant, GUILD_ID,
+                                               channel.id, ident)
+                                record = None
                             if record is None:
                                 owned = tuple(p for p in MEMBER_PERMISSIONS
                                               if getattr(current, p) is None)
