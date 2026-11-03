@@ -41,7 +41,7 @@ def roster_embeds(event, selected):
     entries = [
         (str(row[1]), str(row[2]), str(row[3]), str(row[4]),
          str(row[5]), str(row[0]))
-        for row in selected if len(row) >= 6 and str(row[0]).isdigit()
+        for row in selected if len(row) >= 6 and str(row[1]).strip()
     ]
     if not entries:
         return []
@@ -103,11 +103,13 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
         raise ValueError("Ogre needs a posted raid panel to announce.")
     if selected is None:
         selected = await asyncio.to_thread(raid_sheets_v3.read_selected, path, raid_id)
-    selected = [tuple(row) for row in selected
-                if str(row[0]).isdigit() and int(row[0]) > 0]
-    if not selected:
+    # Everyone on the selected roster appears in the V1 grid, including
+    # PUGs with no Discord account. Only saved Discord IDs receive pings.
+    selected = [tuple(row) for row in selected if len(row) >= 6 and str(row[1]).strip()]
+    pinged = [(str(row[0]), str(row[1])) for row in selected
+              if str(row[0]).isdigit() and int(row[0]) > 0]
+    if not pinged:
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
-    pinged = [(str(row[0]), str(row[1])) for row in selected]
     panel_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{panel_id}"
     content = store.render(raid_id, pinged, len(pinged), panel_url)
     embeds = roster_embeds(event, selected)
@@ -186,7 +188,6 @@ async def refresh(bot, path, raid_id, guild_id):
             (member_id, name, assignment, klass, role, spec)
             for name, assignment, klass, role, spec, member_id
             in read_public_roster(path, raid_id, include_identity=True)
-            if str(member_id).isdigit() and int(member_id) > 0
         ],
     ) if event and not retracted else [])
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
