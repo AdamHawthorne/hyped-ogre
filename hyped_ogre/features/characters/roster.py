@@ -4,11 +4,12 @@ import sqlite3
 
 import discord
 from cogs import raid_signup as raid
-from cogs.emojis import markup
+from cogs.emojis import markup, combat_role
 from . import equipment, items
 
 FOOTER = ("Attendance: per player, last 4 completed raids; bench counts. "
           "iLvl: saved WoWSims gear. N/A: no attendance history or incomplete gear data.")
+THUMBNAIL_URL = "https://i.vgy.me/asI88C.png"
 
 
 def rows(path):
@@ -16,7 +17,7 @@ def rows(path):
         con.row_factory = sqlite3.Row
         characters = [dict(row) for row in con.execute(
             "SELECT character_id,discord_id,name,class_name,spec,role,is_main,off_spec,off_role "
-            "FROM characters ORDER BY is_main DESC,LOWER(name),character_id")]
+            "FROM characters WHERE is_main=1 ORDER BY LOWER(name),character_id")]
         window = [r[0] for r in con.execute(
             "SELECT raid_id FROM raids WHERE archived_at IS NOT NULL ORDER BY raid_at DESC LIMIT 4")]
         credits = {}
@@ -42,6 +43,11 @@ def safe_name(value):
     return discord.utils.escape_mentions(discord.utils.escape_markdown(value))
 
 
+def roster_role(character):
+    role = combat_role(character['role'], character['class_name'], character.get('spec', ''))
+    return "Ranged" if role == "Caster" else role
+
+
 def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
@@ -53,14 +59,16 @@ def render(characters):
                                description="Ogre keep track. You add or update." if first else None,
                                colour=0xB84A3A)
         result.set_footer(text=FOOTER)
+        if first:
+            result.set_thumbnail(url=THUMBNAIL_URL)
         return result
 
     embeds = [new_embed(True)]
-    roles = (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS"))
+    roles = (("Tanks", "Tank"), ("Healers", "Healer"),
+             ("Melee", "Melee"), ("Ranged", "Ranged"))
     for label, role in roles:
-        members = sorted((r for r in characters if
-                          (r['role'] if r['role'] in ('Tank', 'Healer') else 'DPS') == role),
-                         key=lambda r: (not r['is_main'], r['name'].casefold(), r['character_id']))
+        members = sorted((r for r in characters if r['is_main'] and roster_role(r) == role),
+                         key=lambda r: (r['name'].casefold(), r['character_id']))
         blocks, block, length = [], [], 0
         for row in members:
             name = f"{markup(row['class_name'])} {safe_name(row['name'])} / <@{row['discord_id']}>"
@@ -77,13 +85,12 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = ("Character", "Attendance", "iLvl")
-            addition = len(heading) + 1 + sum(map(len, values)) + sum(map(len, names))
+            names = (heading, "Attendance", "iLvl")
+            addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
-            if len(embed.fields) + 4 > 25 or len(embed) + addition > 5900:
+            if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
                 embed = new_embed(False)
                 embeds.append(embed)
-            embed.add_field(name=heading, value="\u200b", inline=False)
             for name, value in zip(names, values):
                 embed.add_field(name=name, value=value, inline=True)
     return embeds
