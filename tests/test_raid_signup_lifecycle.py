@@ -91,7 +91,8 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 allowed=lambda _interaction: True,
                 raid_db_path=lambda: path,
                 sync_raid_sheets=AsyncMock(),
-                refresh_saved_panel=AsyncMock()
+                refresh_saved_panel=AsyncMock(),
+                cleanup_completed_announcement=AsyncMock()
             )
             private_poster = SimpleNamespace(edit=AsyncMock())
             view = raid.RaidCompletionConfirm(
@@ -142,7 +143,8 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
                 sync_raid_sheets=AsyncMock(side_effect=RuntimeError("Sheets offline")),
-                refresh_saved_panel=AsyncMock()
+                refresh_saved_panel=AsyncMock(),
+                cleanup_completed_announcement=AsyncMock()
             )
             view = raid.RaidCompletionConfirm(cog, 1, "", "")
             button = next(
