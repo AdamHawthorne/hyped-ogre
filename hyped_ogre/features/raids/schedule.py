@@ -403,7 +403,23 @@ def read_raid(path, number):
     with database(path) as con:
         con.row_factory = sqlite3.Row
         row = con.execute("SELECT * FROM raids WHERE raid_id=?", (number,)).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        event = dict(row)
+        # The public confirmation link must be Ogre's actual reaction message,
+        # not the independent Check link manually supplied in poster settings.
+        if event.get("roster_published") and not event.get("archived_at"):
+            ack = con.execute(
+                "SELECT channel_id, message_id FROM raid_ack_announcements "
+                "WHERE raid_id=? AND retracted_at IS NULL AND deleted_at IS NULL",
+                (number,),
+            ).fetchone()
+            if ack:
+                event["confirmation_url"] = (
+                    f"https://discord.com/channels/{os.getenv('HYPED_GUILD_ID', '0')}/"
+                    f"{ack['channel_id']}/{ack['message_id']}"
+                )
+        return event
 
 
 def latest_raid(path):
@@ -672,12 +688,15 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
         if not clean_name:
             continue
         if by_role:
-            # All damage specs share the public DPS category. Missing historical
-            # metadata stays visible under DPS rather than being dropped.
-            role_group = (role or "").strip().casefold()
-            role_group = ("Tank" if role_group == "tank"
-                          else "Healer" if role_group in ("healer", "heal")
-                          else "DPS")
+            if by_role == "four":
+                # V1 roster announcements use the same four roles as sign-ups;
+                # the live V2 raid panel keeps its existing three-role layout.
+                role_group = signup_role_group(klass, spec, role)
+            else:
+                role_group = (role or "").strip().casefold()
+                role_group = ("Tank" if role_group == "tank"
+                              else "Healer" if role_group in ("healer", "heal")
+                              else "DPS")
             clean_name = (role_group, clean_name)
         tokens = {item.strip().casefold() for item in (assignment or "").split(",")}
         split = _split_from_tokens(tokens)
@@ -741,15 +760,21 @@ def raid_panel_intro(event):
         "fresh": "Fresh export required",
         "optional": "Optional",
     }.get(wse_policy, "Required if character has no export")
-    wse_line = (f"\n**WoWSims:** {wse_label} · "
-                "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)")
+    # WoWSims instructions belong to collecting sign-ups, not an announced
+    # roster. The roster confirmation link is only Ogre's own reaction post.
+    wse_line = (
+        (f"\n**WoWSims:** {wse_label} · "
+         "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)")
+        if not event.get("roster_published") else ""
+    )
+    confirmation = event.get("confirmation_url") if event.get("roster_published") else None
     return (
         f"## {title}\n"
         f"{raid_panel_when(event['raid_at'], event.get('end_at'))}\n"
         + "**Instances:** " + ", ".join(instances)
         + wse_line
-        + (f"\n**Required:** [Confirm raid spot]({event['check_message_url']})"
-           if event.get("check_message_url") else "")
+        + (f"\n**Required:** [Confirm raid spot]({confirmation})"
+           if confirmation else "")
         + wcl_line + softres_line
     )
 
