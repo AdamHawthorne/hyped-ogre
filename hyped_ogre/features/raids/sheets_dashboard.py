@@ -1086,11 +1086,20 @@ def _sync_permanent(session, db_path, discord_names, raid_rosters):
                 continue
             key = (str(raid_id), did)
             old_entry = attendance_map.get(key)
+            absent = row[8] == "Absent"
             if old_entry:
-                # Attendance, late/AFK, excused and notes belong to leadership.
+                # Bot-created Pending entries may become Absent when the member
+                # reports an absence. Never overwrite leadership decisions,
+                # particularly Excused, Attended or an already recorded Absent.
+                prior = old_entry[1]
+                if absent and len(prior) > 9 and prior[9] in ("", "Pending"):
+                    _permanent_write_cell(session, "Forever Attendance",
+                                          f"J{old_entry[0]}", "Absent")
+                    prior[9] = "Absent"
                 continue
             values = [str(raid_id), date, did, row[0], cid, row[1],
-                      row[2], row[4], row[9], "Pending", "", "", "No", "", ""]
+                      row[2], row[4], row[9], "Absent" if absent else "Pending",
+                      "", "", "No", "", ""]
             _permanent_write(session, "Forever Attendance", attendance_next, values)
             attendance_map[key] = (attendance_next, values)
             attendance_next += 1
@@ -1330,13 +1339,45 @@ def _sync_gear_tab(session, db_path, titles):
     _GEAR_TAB_SNAPSHOT[sid] = stamp
 
 
+def _append_reported_absences(raid_rosters, raids, signups, absences, discord_names):
+    """Include saved absences even when a completed raid tab is hidden.
+
+    This also repairs older Pending entries for members who marked Absent
+    before the attendance import was corrected. It never invents a raid spot
+    or changes selected rosters.
+    """
+    signups_by_member = {
+        (str(s["raid_id"]), str(s["discord_id"])): s for s in signups
+    }
+    already = {
+        (str(raid_id), str(row[16])) for raid_id, players in raid_rosters.items()
+        for row in players if len(row) > 16
+    }
+    for absence in absences:
+        raid_id, member_id = absence["raid_id"], str(absence["discord_id"])
+        event = raids.get(raid_id)
+        key = (str(raid_id), member_id)
+        if (not event or not event.get("panel_message_id") or key in already):
+            continue
+        signup = signups_by_member.get(key, {})
+        row = [""] * len(COLUMNS)
+        row[0] = (discord_names or {}).get(int(member_id), member_id)
+        row[1] = signup.get("character") or ""
+        row[2] = signup.get("class_name") or ""
+        row[4] = signup.get("role") or ""
+        row[8], row[9] = "Absent", "Not selected"
+        row[16], row[17] = member_id, str(signup.get("character_id") or "")
+        raid_rosters.setdefault(raid_id, []).append(row)
+        already.add(key)
+
+
 def sync_once(db_path, discord_names=None):
     """Synchronise only posted raids into one private tab each."""
     if not raid_sheets.configured():
         raise RuntimeError("Google Sheets credentials are not configured.")
     session = raid_sheets._session()
     try:
-        _, raids, _, absences, _ = raid_sheets._raid_snapshot(db_path)
+        _, raids, signups, absences, _ = raid_sheets._raid_snapshot(db_path)
         titles = _list_tabs(session)
         counts, published = {"raid_tabs": 0}, {}
         metadata_changed = set()
@@ -1358,9 +1399,13 @@ def sync_once(db_path, discord_names=None):
             if (event.get("wcl_url") or "") != before_wcl:
                 metadata_changed.add(raid_id)
             counts["raid_tabs"] += changes
+            # Import absence declarations as attendance rows as well as
+            # selected/benched players. Absence is a starting status, not a
+            # leadership decision: officers can change it to Excused later.
             raid_rosters[raid_id] = [r for r in rows[7:]
-                if len(r) >= 18 and r[16].isdigit() and r[9] in ("Selected", "Bench")
-                and r[8] == "Signed"]
+                if len(r) >= 18 and str(r[16]).isdigit()
+                and (r[8] == "Absent" or
+                     (r[8] == "Signed" and r[9] in ("Selected", "Bench")))]
             if event.get("roster_published"):
                 # After publishing, the Sheet remains authoritative for live
                 # selections; new sign-ups may still be assigned and displayed.
@@ -1374,6 +1419,8 @@ def sync_once(db_path, discord_names=None):
                 # the latest Sheet visibility flags cached by _one(). Instance
                 # assignments and selection still stay private until publish.
                 published[raid_id] = read_signup_roster(db_path, raid_id, include_identity=True)
+        _append_reported_absences(raid_rosters, raids, signups, absences,
+                                  discord_names)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
         try:
             _sync_gear_tab(session, db_path, titles)
@@ -1444,8 +1491,18 @@ def attendance_set(db_path, raid_id, member_id, outcome, minutes=0):
 
 
 def attendance_complete(db_path, raid_id):
-    """Fill only Pending/empty records; preserve officer-entered exceptions."""
+    """Fill Pending/empty selected records, never a reported absent member."""
     candidates = attendance_candidates(db_path, raid_id)
+    # Check the authoritative saved absence state as well as Sheets. Even if
+    # the raid tab has not refreshed yet, do not silently mark Absent as
+    # Attended during completion.
+    with database(db_path) as con:
+        unavailable = {str(row[0]) for row in con.execute(
+            "SELECT discord_id FROM raid_absences WHERE raid_id=? "
+            "UNION SELECT discord_id FROM signups "
+            "WHERE raid_id=? AND availability='Unavailable'",
+            (raid_id, raid_id),
+        )}
     session = raid_sheets._session()
     try:
         existing = _permanent_read(session, "Forever Attendance")
@@ -1454,6 +1511,8 @@ def attendance_complete(db_path, raid_id):
     finally:
         session.close()
     for member in candidates:
+        if str(member[16]) in unavailable:
+            continue
         old = keyed.get((str(raid_id), member[16]), [])
         if len(old) <= 9 or old[9] in ("", "Pending"):
             attendance_set(db_path, raid_id, member[16], "Attended")

@@ -65,10 +65,27 @@ async def refresh(bot, path, raid_id, guild_id):
     if not location:
         return
     channel_id, message_id = location
+    event = read_raid(path, raid_id)
+    if event and event.get("archived_at"):
+        # Only delete the stored bot-authored *acknowledgement* announcement.
+        # The original V2 raid sign-up message is a separate saved ID.
+        channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+        if not isinstance(channel, discord.TextChannel) or channel.guild.id != guild_id:
+            raise ValueError("Saved acknowledgement channel is outside this guild.")
+        try:
+            message = await channel.fetch_message(message_id)
+        except discord.NotFound:
+            # Someone already deleted the announcement. Mark cleanup complete.
+            pass
+        else:
+            if bot.user is None or message.author.id != bot.user.id:
+                raise ValueError("Saved acknowledgement is not authored by Ogre.")
+            await message.delete()
+        store.mark_deleted(path, raid_id)
+        return
     entries = store.members(path, raid_id)
     waiting = [(member_id, name) for member_id, name, acked in entries
                if acked is None]
-    event = read_raid(path, raid_id)
     panel_url = (
         f"https://discord.com/channels/{guild_id}/{event['panel_channel_id']}/{event['panel_message_id']}"
         if event and event.get("panel_channel_id") and event.get("panel_message_id")

@@ -62,11 +62,13 @@ def acknowledge(path, channel_id, message_id, member_id):
     """Return raid_id when this is a NEW acknowledgement; otherwise None."""
     with database(path) as con:
         row = con.execute(
-            "SELECT raid_id, retracted_at FROM raid_ack_announcements "
-            "WHERE channel_id=? AND message_id=?",
+            "SELECT a.raid_id, a.retracted_at, r.archived_at "
+            "FROM raid_ack_announcements a "
+            "JOIN raids r ON r.raid_id=a.raid_id "
+            "WHERE a.channel_id=? AND a.message_id=?",
             (channel_id, message_id),
         ).fetchone()
-        if not row or row[1]:
+        if not row or row[1] or row[2]:
             return None
         raid_id = row[0]
         changed = con.execute(
@@ -125,6 +127,16 @@ def mark_refreshed(path, raid_id):
     with database(path) as con:
         con.execute("UPDATE raid_ack_announcements SET needs_refresh=0 "
                     "WHERE raid_id=?", (raid_id,))
+
+
+def mark_deleted(path, raid_id):
+    """Record completed-raid Discord cleanup without losing ack history."""
+    with database(path) as con:
+        con.execute(
+            "UPDATE raid_ack_announcements SET deleted_at=COALESCE(deleted_at, ?), "
+            "needs_refresh=0 WHERE raid_id=?",
+            (datetime.now(timezone.utc).isoformat(), raid_id),
+        )
 
 
 def render(raid_id, awaiting, total, panel_url=None):
