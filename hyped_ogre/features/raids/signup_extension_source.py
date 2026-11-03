@@ -1409,10 +1409,14 @@ class RaidCompletionConfirm(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         try:
+            # Capture newly declared absences before completing and hiding
+            # the raid tab, including members omitted from confirmed teams.
+            await self.cog.sync_raid_sheets()
             count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
                                             RAID_DB, self.raid_id)
             raid_status(RAID_DB, self.raid_id, "archive",
                         notes=self.notes, wcl_url=self.url)
+            await self.cog.cleanup_completed_announcement(self.raid_id)
             # The stored raid is closed regardless of Sheets availability.
             # Always edit the public panel so Attend greys out on completion.
             try:
@@ -1598,6 +1602,19 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             return await raid_announcer.announce(
                 self.bot, RAID_DB, raid_id, GUILD_ID, selected=selected
             )
+
+    async def cleanup_completed_announcement(self, raid_id):
+        """Remove only the roster acknowledgement ping after archiving.
+
+        Failure must not roll back a completed raid. The durable
+        needs_refresh flag lets the existing maintenance task retry.
+        """
+        async with self._ack_lock:
+            try:
+                await raid_announcer.refresh(self.bot, RAID_DB, raid_id, GUILD_ID)
+            except (discord.HTTPException, ValueError, sqlite3.Error) as exc:
+                LOGGER.warning("Raid #%s acknowledgement cleanup delayed: %s",
+                               raid_id, exc)
 
     async def unpublish_roster(self, raid_id):
         """Revert public roster and retract the old ping without new mentions."""
@@ -2127,6 +2144,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.response.defer(ephemeral=True)
         try:
             raid_status(RAID_DB, number, "archive", notes=notes, wcl_url=url)
+            await self.cleanup_completed_announcement(number)
             # Close the Discord Attend control even when Sheets is unavailable.
             try:
                 await self.sync_raid_sheets()
