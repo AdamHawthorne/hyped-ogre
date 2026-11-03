@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import discord
 from cogs.emojis import markup as guild_emoji, combat_role
+from hyped_ogre.features.classrooms.config import GUILD_ID
 
 UK = ZoneInfo("Europe/London")
 RAID_IMAGE = "https://i.vgy.me/XIszIH.png"  # Poster thumbnail stays unchanged.
@@ -416,7 +417,7 @@ def read_raid(path, number):
             ).fetchone()
             if ack:
                 event["confirmation_url"] = (
-                    f"https://discord.com/channels/{os.getenv('HYPED_GUILD_ID', '0')}/"
+                    f"https://discord.com/channels/{GUILD_ID}/"
                     f"{ack['channel_id']}/{ack['message_id']}"
                 )
         return event
