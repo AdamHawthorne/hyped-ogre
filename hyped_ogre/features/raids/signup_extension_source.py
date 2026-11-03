@@ -1843,15 +1843,18 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             if changed:
                 # Keep Ogre's separate V1 announcement aligned with later
                 # leadership Sheet changes, without publishing a new ping.
-                # The existing acknowledgement maintenance worker refreshes
-                # these posts with AllowedMentions.none().
-                with database(RAID_DB) as con:
-                    con.executemany(
-                        "UPDATE raid_ack_announcements SET needs_refresh=1 "
-                        "WHERE raid_id=? AND retracted_at IS NULL "
-                        "AND deleted_at IS NULL",
-                        [(raid_id,) for raid_id in changed],
-                    )
+                # In old test/minimal databases the optional acknowledgement
+                # table may not exist; never interrupt the V2 panel sync.
+                try:
+                    with database(RAID_DB) as con:
+                        con.executemany(
+                            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+                            "WHERE raid_id=? AND retracted_at IS NULL "
+                            "AND deleted_at IS NULL",
+                            [(raid_id,) for raid_id in changed],
+                        )
+                except sqlite3.Error as exc:
+                    LOGGER.warning("Roster acknowledgement refresh delayed: %s", exc)
             return counts, changed
 
     async def on_register(self, interaction):
