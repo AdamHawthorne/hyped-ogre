@@ -90,7 +90,10 @@ class RollReactions:
                         )
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
-                first_by_user.setdefault(user_id, message.id)
+                # Do not place the daily-high icon on a gamble if a user's
+                # original free-roll message was removed from Discord.
+                if "risked a coin to roll again:" not in message.content:
+                    first_by_user.setdefault(user_id, message.id)
                 messages_by_user.setdefault(user_id, []).append(message)
 
         # Only visible human roll messages count for reaction ranking.
@@ -146,7 +149,7 @@ class RollReactions:
                     except Exception as exc:
                         self.log_error(f"LEGACY POOP CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
-                (high_emoji, user_id == high and message.id == first_by_user[user_id]),
+                (high_emoji, user_id == high and message.id == first_by_user.get(user_id)),
                 (poop_emoji, low is not None and user_id == low
                  and message.id == low_message_id),
             ):
