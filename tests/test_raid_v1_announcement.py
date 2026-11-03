@@ -70,6 +70,17 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.assertNotIn("WoWSims:", text)
         self.assertNotIn("Get addon", text)
         self.assertIn("Instances:", text)
+        # Even a cached event without its computed link renders correctly;
+        # the persistent V2 panel reloads the recorded message ID.
+        from cogs import raid_signup as signup
+        with patch.object(signup, "RAID_DB", self.path):
+            panel = signup.RaidPrototype(SimpleNamespace()).make_panel(before)
+        rendered = "\n".join(item.content for item in panel.walk_children()
+                             if isinstance(item, discord.ui.TextDisplay))
+        self.assertIn(f"[Confirm raid spot]({url})", rendered)
+        buttons = [item.label for item in panel.walk_children()
+                   if isinstance(item, discord.ui.Button)]
+        self.assertTrue({"Attend", "WoWSims", "Absent"}.issubset(buttons))
         # Unpublishing invalidates the link without deleting V2 sign-ups.
         ack.retract(self.path, 1)
         self.assertNotIn("Confirm raid spot",
