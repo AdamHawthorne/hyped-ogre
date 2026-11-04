@@ -164,6 +164,13 @@ def ensure_raid_fields(path):
         if "deleted_at" not in ack_cols:
             con.execute("ALTER TABLE raid_ack_announcements "
                         "ADD COLUMN deleted_at TEXT")
+        # Upgrade older withdrawn messages, which were previously edited
+        # into "Roster withdrawn". Delete those outdated reaction posts too,
+        # then clear their state so leadership may reannounce after confirming.
+        con.execute(
+            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+            "WHERE retracted_at IS NOT NULL AND deleted_at IS NULL"
+        )
         # Queue cleanup for earlier completed raids as well, including the
         # test raid completed before this change was deployed. A deleted_at
         # marker makes this restart-safe and prevents repeated delete calls.
