@@ -74,10 +74,11 @@ def _member_chunks(names):
 def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     """One standard V1 embed for all normal raid instances and both splits.
 
-    Each group uses five fields: an inline group-heading/Tanks field beside
-    Healers, one full-width row break between the upper and lower pairs, and
-    then the two Melee/Ranged fields. No empty full-width heading row.
-    Four nonempty groups fit within Discord's 25-field limit.
+    Each group uses six fields: the instance heading and Tanks in one
+    left-hand field, Healers on the right, then one row break, Melee and
+    Ranged alongside each other, and a final row break. Without the final
+    break Discord puts the next instance's heading in an unwanted third
+    column. Four groups fit in 24 of Discord's 25 fields.
     Create a continuation embed only if the full roster exceeds Discord limits.
     The V2 sign-up post is never modified by this renderer.
     """
@@ -88,7 +89,8 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     ]
     if not entries:
         return []
-    leader_ids = effective_leaders(path, event, selected) if path else {}
+    # Leadership assignments remain available for the separate T-15 invite
+    # message. Do not render unresolvable <@id> text in V1 role headings.
     checked = {str(value) for value in acknowledged_ids}
     result = []
     panel_url = (
@@ -108,8 +110,6 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
         detail += f"\n[Warcraft Logs]({event['wcl_url']})"
     main.description = detail
     main.set_thumbnail(url=RAID_PANEL_IMAGE)
-    # Footer strings cannot mention Discord roles; this is guidance only.
-    main.set_footer(text="Contact: @Leadership or mark absent if needed")
     current = main
 
     for group, players in roster_groups(
@@ -131,12 +131,9 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
             title = f"Ony ({len(players)})"
         else:
             title = f"{group} ({len(players)})"
-        leader = leader_ids.get(key)
-        # Keep the group heading and leader on the same line. Discord needs
-        # a nonempty field value even for a header-only field.
-        group_heading = (
-            f"{title} <@{leader}>" if leader else f"{title} · Unassigned"
-        )
+        # The V1 role heading is a plain instance label. Leadership is used
+        # only to build copyable /w commands sent 15 minutes before the raid.
+        group_heading = title
         for page in range(pages):
             tanks = chunks["Tanks"][page] if page < len(chunks["Tanks"]) else []
             healers = chunks["Healers"][page] if page < len(chunks["Healers"]) else []
@@ -155,6 +152,10 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
                  "\n".join(melee) or "—", True),
                 (f"Ranged ({len(members['Ranged'])})" if page == 0 else "Ranged",
                  "\n".join(ranged) or "—", True),
+                # End this instance's second inline pair before the next
+                # group's heading. Without this break, Discord puts that
+                # heading into the third column beside Melee and Ranged.
+                ("\u200b", "\u200b", False),
             ]
             addition = sum(len(n) + len(v) for n, v, _ in fields)
             if (len(current.fields) + len(fields) > 25 or
