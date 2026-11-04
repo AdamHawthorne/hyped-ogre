@@ -30,6 +30,7 @@ RAID_COLUMNS = {
     "roster_announce_at": "TEXT",
     "panel_message_id": "INTEGER",
     "panel_channel_id": "INTEGER",
+    "created_by": "TEXT",
     "softres_url": "TEXT",
     "custom_title": "TEXT",
     "banner_url": "TEXT",
@@ -643,11 +644,14 @@ def signup_role_groups(public_roster, *, emoji_map=None):
     return [(name, members) for name, members in groups.items() if members]
 
 
-def record_panel(path, number, channel_id, message_id):
+def record_panel(path, number, channel_id, message_id, creator_id=None):
+    """Remember the first person who posted the signup without changing it on edits."""
     with database(path) as con:
         con.execute(
-            "UPDATE raids SET panel_channel_id=?, panel_message_id=? WHERE raid_id=?",
-            (channel_id, message_id, number),
+            "UPDATE raids SET panel_channel_id=?, panel_message_id=?, "
+            "created_by=COALESCE(created_by, ?) WHERE raid_id=?",
+            (channel_id, message_id,
+             str(creator_id) if creator_id is not None else None, number),
         )
 
 
