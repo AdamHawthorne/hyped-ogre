@@ -1,6 +1,7 @@
 """Public raid acknowledgement messages: opt-in pings, durable ✅ reactions."""
 import asyncio
 import logging
+import os
 
 import discord
 
@@ -10,6 +11,7 @@ from cogs.raid_schedule import (
     raid_panel_when, roster_groups,
 )
 from hyped_ogre.features.raids.leaders import effective_leaders, group_label
+from hyped_ogre.features.classrooms.config import GUILD_ID
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +34,8 @@ def _member_chunks(names):
     return chunks or [[]]
 
 
-def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
+def roster_embeds(event, selected, *, path=None, acknowledged_ids=(),
+                  creator_name=None):
     """One standard V1 embed for all normal raid instances and both splits.
 
     Exactly six embed fields per group: full-width group/leader header, two
@@ -51,16 +54,30 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     leader_ids = effective_leaders(path, event, selected) if path else {}
     checked = {str(value) for value in acknowledged_ids}
     result = []
+    panel_url = (
+        f"https://discord.com/channels/{GUILD_ID}/"
+        f"{event['panel_channel_id']}/{event['panel_message_id']}"
+        if event.get("panel_channel_id") and event.get("panel_message_id") else None
+    )
     main = discord.Embed(
-        title=f"<Hyped> Raid #{event['raid_id']} | Roster announced",
+        title=f"<Hyped> Raid #{event['raid_id']} | Confirmed roster",
+        url=panel_url,
         colour=RAID_PANEL_ACCENT,
     )
-    main.set_author(name="<Hyped> Raid Roster", icon_url=RAID_PANEL_IMAGE)
+    creator_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
+    if creator_id.isdigit() and int(creator_id) > 0:
+        main.set_author(
+            name=f"Created by {creator_name or 'Snore'}",
+            url=f"https://discord.com/users/{creator_id}",
+            icon_url=RAID_PANEL_IMAGE,
+        )
+    else:
+        main.set_author(name="Hyped raid team", icon_url=RAID_PANEL_IMAGE)
     detail = raid_panel_when(event["raid_at"], event.get("end_at"))
     if event.get("softres_url"):
-        detail += f"\\n[SoftRes sign-up]({event['softres_url']})"
+        detail += f"\n[SoftRes sign-up]({event['softres_url']})"
     if event.get("wcl_url"):
-        detail += f"\\n[Warcraft Logs]({event['wcl_url']})"
+        detail += f"\n[Warcraft Logs]({event['wcl_url']})"
     main.description = detail
     current = main
 
@@ -93,14 +110,14 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
                 names = chunks[role][page] if page < len(chunks[role]) else []
                 fields.append((
                     f"{role} ({len(members[role])})" if page == 0 else role,
-                    "\\n".join(names) or "—", True,
+                    "\n".join(names) or "—", True,
                 ))
-            fields.append(("\\u200b", "\\u200b", False))
+            fields.append(("\u200b", "\u200b", False))
             for role in ("Melee", "Ranged"):
                 names = chunks[role][page] if page < len(chunks[role]) else []
                 fields.append((
                     f"{role} ({len(members[role])})" if page == 0 else role,
-                    "\\n".join(names) or "—", True,
+                    "\n".join(names) or "—", True,
                 ))
             addition = sum(len(n) + len(v) for n, v, _ in fields)
             if (len(current.fields) + len(fields) > 25 or
@@ -140,7 +157,11 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
     panel_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{panel_id}"
     content = store.render(raid_id, pinged, len(pinged), panel_url)
-    embeds = roster_embeds(event, selected, path=path)
+    owner_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
+    owner = (bot.get_user(int(owner_id)) if owner_id.isdigit()
+             and hasattr(bot, "get_user") else None)
+    name = getattr(owner, "display_name", None) or getattr(owner, "name", None)
+    embeds = roster_embeds(event, selected, path=path, creator_name=name)
     if not embeds:
         raise ValueError("Selected roster lacks class and raid assignment details.")
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
