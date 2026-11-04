@@ -1,16 +1,17 @@
 """Public raid acknowledgement messages: opt-in pings, durable ✅ reactions."""
 import asyncio
 import logging
-import os
 
 import discord
 
 from cogs import raid_acknowledgements as store, raid_sheets_v3
 from cogs.raid_schedule import (
-    RAID_PANEL_ACCENT, RAID_PANEL_IMAGE, read_raid, read_public_roster,
+    RAID_PANEL_ACCENT, read_raid, read_public_roster,
     raid_panel_when, roster_groups,
 )
-from hyped_ogre.features.raids.leaders import effective_leaders, group_label
+from hyped_ogre.features.raids.leaders import (
+    effective_leaders, group_label, GROUPS,
+)
 from hyped_ogre.features.classrooms.config import GUILD_ID
 
 LOGGER = logging.getLogger(__name__)
@@ -18,21 +19,32 @@ LOGGER = logging.getLogger(__name__)
 ROLES = ("Tanks", "Healers", "Melee", "Ranged")
 
 
-def _creator_display(bot, event):
-    creator_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
-    if not creator_id.isdigit() or int(creator_id) <= 0:
-        return None
-    person = None
-    if hasattr(bot, "get_guild"):
-        guild = bot.get_guild(GUILD_ID)
-        if guild is not None and hasattr(guild, "get_member"):
-            person = guild.get_member(int(creator_id))
-    if person is None and hasattr(bot, "get_user"):
-        person = bot.get_user(int(creator_id))
-    return (getattr(person, "display_name", None) or
-            getattr(person, "name", None) or
-            ("Snore" if creator_id == str(os.getenv("OWNER_ID", "")) else
-             "Guild leadership"))
+def leader_invite_commands(path, event, selected):
+    """Copyable /w commands for distinct, currently assigned group leaders.
+
+    Match the actual selected character name by Discord ID, not the
+    leader's Discord display name. One command is enough if one person leads
+    Hyjal, Barrows and Ony during the same raid.
+    """
+    if not path:
+        return []
+    leaders = effective_leaders(path, event, selected)
+    names = {
+        str(row[0]): str(row[1]).strip()
+        for row in selected if len(row) >= 2 and str(row[0]).isdigit()
+    }
+    invited = set()
+    commands = []
+    for group in GROUPS:
+        leader = leaders.get(group)
+        if not leader or leader in invited:
+            continue
+        name = names.get(leader, "").replace("\\r", " ").replace("\\n", " ").replace("`", "")
+        if not name:
+            continue
+        commands.append(f"/w {name} inv")
+        invited.add(leader)
+    return commands
 
 
 def _member_chunks(names):
@@ -51,8 +63,7 @@ def _member_chunks(names):
     return chunks or [[]]
 
 
-def roster_embeds(event, selected, *, path=None, acknowledged_ids=(),
-                  creator_name=None):
+def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     """One standard V1 embed for all normal raid instances and both splits.
 
     Exactly six embed fields per group: full-width group/leader header, two
@@ -81,15 +92,6 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=(),
         url=panel_url,
         colour=RAID_PANEL_ACCENT,
     )
-    creator_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
-    if creator_id.isdigit() and int(creator_id) > 0:
-        main.set_author(
-            name=f"Created by {creator_name or 'Guild leadership'}",
-            url=f"https://discord.com/users/{creator_id}",
-            icon_url=RAID_PANEL_IMAGE,
-        )
-    else:
-        main.set_author(name="Hyped raid team", icon_url=RAID_PANEL_IMAGE)
     detail = raid_panel_when(event["raid_at"], event.get("end_at"))
     if event.get("softres_url"):
         detail += f"\n[SoftRes sign-up]({event['softres_url']})"
@@ -118,11 +120,16 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=(),
         else:
             title = f"{group} ({len(players)})"
         leader = leader_ids.get(key)
-        leader_text = f"Leader: <@{leader}>" if leader else "Leader: Unassigned"
-
+        # Keep the group heading and leader on the same line. Discord needs
+        # a nonempty field value even for a header-only field.
+        group_heading = (
+            f"{title} <@{leader}>" if leader else f"{title} · Unassigned"
+        )
         for page in range(pages):
-            fields = [(title if page == 0 else f"{title} · continued",
-                       leader_text if page == 0 else "—", False)]
+            fields = [(
+                group_heading if page == 0 else f"{title} · continued",
+                "\\u200b", False,
+            )]
             for role in ("Tanks", "Healers"):
                 names = chunks[role][page] if page < len(chunks[role]) else []
                 fields.append((
@@ -172,11 +179,11 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
               if str(row[0]).isdigit() and int(row[0]) > 0]
     if not pinged:
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
-    panel_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{panel_id}"
-    content = store.render(raid_id, pinged, len(pinged), panel_url)
-    embeds = roster_embeds(
-        event, selected, path=path, creator_name=_creator_display(bot, event)
+    content = store.render(
+        raid_id, pinged, len(pinged),
+        invite_commands=leader_invite_commands(path, event, selected),
     )
+    embeds = roster_embeds(event, selected, path=path)
     if not embeds:
         raise ValueError("Selected roster lacks class and raid assignment details.")
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
@@ -243,22 +250,19 @@ async def refresh(bot, path, raid_id, guild_id):
     entries = store.members(path, raid_id)
     waiting = [(member_id, name) for member_id, name, acked in entries
                if acked is None]
-    panel_url = (
-        f"https://discord.com/channels/{guild_id}/{event['panel_channel_id']}/{event['panel_message_id']}"
-        if event and event.get("panel_channel_id") and event.get("panel_message_id")
-        else None
+    selected = [
+        (member_id, name, assignment, klass, role, spec)
+        for name, assignment, klass, role, spec, member_id
+        in read_public_roster(path, raid_id, include_identity=True)
+    ]
+    content = store.render(
+        raid_id, waiting, len(entries),
+        invite_commands=leader_invite_commands(path, event, selected),
     )
-    content = store.render(raid_id, waiting, len(entries), panel_url)
     embeds = roster_embeds(
-        event, [
-            (member_id, name, assignment, klass, role, spec)
-            for name, assignment, klass, role, spec, member_id
-            in read_public_roster(path, raid_id, include_identity=True)
-        ],
-        path=path,
+        event, selected, path=path,
         acknowledged_ids={member_id for member_id, _, acked in entries
                           if acked is not None},
-        creator_name=_creator_display(bot, event),
     )
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
     message = await channel.fetch_message(message_id)
