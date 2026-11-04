@@ -14,6 +14,7 @@ def ensure_signup_schema_on_connection(con):
         name TEXT NOT NULL,
         realm TEXT, class_name TEXT, spec TEXT, role TEXT,
         is_main INTEGER NOT NULL DEFAULT 1,
+        roster_visible INTEGER NOT NULL DEFAULT 1,
         last_simc_at INTEGER,
         UNIQUE(discord_id, name, realm)
     );
@@ -101,6 +102,10 @@ def ensure_signup_schema_on_connection(con):
     for name in ("off_spec", "off_role"):
         if name not in columns:
             con.execute(f"ALTER TABLE characters ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+    # Existing raid/roster registrations stay listed; new LFG-only
+    # registrations explicitly opt out when saving a shared character.
+    if "roster_visible" not in columns:
+        con.execute("ALTER TABLE characters ADD COLUMN roster_visible INTEGER NOT NULL DEFAULT 1")
 
     con.execute("""CREATE TABLE IF NOT EXISTS raid_activity_events (
         event_id INTEGER PRIMARY KEY, raid_id INTEGER NOT NULL,
@@ -116,19 +121,19 @@ def ensure_signup_schema_on_connection(con):
     # sign-ups, attendance references or saved SimC snapshots.
     con.execute("BEGIN IMMEDIATE")
     rows = con.execute(
-        "SELECT character_id, discord_id, name, is_main, last_simc_at "
+        "SELECT character_id, discord_id, name, is_main, last_simc_at, roster_visible "
         "FROM characters ORDER BY character_id"
     ).fetchall()
     grouped = {}
-    for character_id, member_id, character_name, is_main, simc_at in rows:
+    for character_id, member_id, character_name, is_main, simc_at, visible in rows:
         normalized = " ".join((character_name or "").split())
         key = (member_id, normalized.casefold())
         grouped.setdefault(key, []).append(
-            (character_id, normalized, is_main, simc_at)
+            (character_id, normalized, is_main, simc_at, visible)
         )
     for matches in grouped.values():
-        keep_id, clean_name, _, _ = matches[0]
-        for duplicate_id, _, _, _ in matches[1:]:
+        keep_id, clean_name, _, _, _ = matches[0]
+        for duplicate_id, _, _, _, _ in matches[1:]:
             for table in ("signups", "attendance", "gear_exports", "gear_images"):
                 con.execute(
                     f"UPDATE {table} SET character_id=? WHERE character_id=?",
@@ -138,10 +143,11 @@ def ensure_signup_schema_on_connection(con):
                 "DELETE FROM characters WHERE character_id=?", (duplicate_id,)
             )
         con.execute(
-            "UPDATE characters SET name=?, is_main=?, last_simc_at=? "
+            "UPDATE characters SET name=?, is_main=?, last_simc_at=?, roster_visible=? "
             "WHERE character_id=?",
             (clean_name, max(row[2] for row in matches),
-             max((row[3] or 0) for row in matches) or None, keep_id),
+             max((row[3] or 0) for row in matches) or None,
+             max(row[4] for row in matches), keep_id),
         )
     # One identity per Discord user and character name, ignoring case
     # and the legacy realm column. Different characters remain separate.
