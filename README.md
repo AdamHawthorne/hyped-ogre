@@ -15,6 +15,7 @@
 - **Polls:** private `/poll create` setup, anonymous single/multiple-choice votes, optional live counts, deadlines, private results and deliberate publication. See the [poll guide](docs/polls.md).
 - **Guild utilities:** Forever role panels, countdowns, suggestions, flameboard and Ogre messaging
 - **Guild sync:** optional signed sync from the Hyped Guild Companion for main-character levels and guild-bank activity. See [guild sync setup](docs/guild-sync.md).
+- **Companion controls:** optional signed raid draft requests to the private owner-only poster. See [guild companion control setup](docs/guild-companion-control.md).
 
 Feature behaviour is covered by regression tests in `tests/`.
 

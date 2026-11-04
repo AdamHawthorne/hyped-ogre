@@ -348,4 +348,7 @@ def register_route(app: Any, bot: Any) -> None:
                                   "acceptedRosterRows": len(validated["roster"])})
 
     app.router.add_post("/hyped/sync", hyped_sync)
+    if os.getenv("HYPED_CONTROL_ENABLED") == "true":
+        from hyped_ogre.features.guild_control import register_route as register_control_route
+        register_control_route(app, bot)
 
