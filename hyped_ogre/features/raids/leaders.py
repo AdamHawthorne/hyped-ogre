@@ -1,8 +1,9 @@
 """Leadership-owned instance/split leaders for the separate V1 raid post.
 
-A person may lead one group per raid. The guild owner defaults to the first
-group in which they actually appear, not every group on the same raid night.
-Explicit assignments and unassignments are stored independently of sign-ups.
+A person can lead Hyjal, one Barrows split and Ony during the same raid
+night. They cannot lead both Barrows teams. The guild owner defaults to
+each eligible group unless explicitly overridden or unassigned.
+Assignments are stored independently of sign-ups.
 """
 import os
 
@@ -49,7 +50,7 @@ def read_leaders(path, raid_id):
 
 
 def effective_leaders(path, event, selected):
-    """Return only valid, non-duplicated leaders for groups on the roster."""
+    """Resolve leaders; only simultaneous Barrows split leadership is forbidden."""
     from cogs.raid_schedule import roster_groups
     present = {group_label(label) for label, members in roster_groups(
         event, [(row[1], row[2], row[3], row[4], row[5], row[0])
@@ -61,22 +62,34 @@ def effective_leaders(path, event, selected):
             for group in member_groups(str(row[2])):
                 members.setdefault(group, set()).add(str(row[0]))
     saved = read_leaders(path, event["raid_id"])
-    result, used = {}, set()
+    result = {}
     for group in GROUPS:
-        chosen = saved.get(group)
         if group not in present or group not in saved:
             continue
-        if chosen and chosen in members.get(group, set()) and chosen not in used:
-            result[group] = chosen
-            used.add(chosen)
+        chosen = saved[group]
+        if chosen and chosen in members.get(group, set()):
+            other = "Barrows 🔹" if group == "Barrows 🔸" else (
+                "Barrows 🔸" if group == "Barrows 🔹" else None
+            )
+            if other and result.get(other) == chosen:
+                result[group] = None
+            else:
+                result[group] = chosen
         else:
             result[group] = None
     owner = str(os.getenv("OWNER_ID", "0"))
-    if owner not in ("", "0") and owner not in used:
+    if owner not in ("", "0"):
         for group in GROUPS:
-            if group in present and group not in result and owner in members.get(group, set()):
-                result[group] = owner
-                break
+            if group not in present or group in result:
+                continue
+            if owner not in members.get(group, set()):
+                continue
+            if group.startswith("Barrows") and any(
+                result.get(other) == owner for other in ("Barrows 🔸", "Barrows 🔹")
+                if other != group
+            ):
+                continue
+            result[group] = owner
     return result
 
 
@@ -101,14 +114,15 @@ def set_group_leader(path, raid_id, group, member_id=None):
     ):
         raise ValueError("Choose a Discord member assigned to this instance group.")
     with database(path) as con:
-        if member_id:
+        if member_id and group.startswith("Barrows"):
+            other_group = "Barrows 🔹" if group == "Barrows 🔸" else "Barrows 🔸"
             overlap = con.execute(
-                "SELECT group_name FROM raid_group_leaders "
-                "WHERE raid_id=? AND discord_id=? AND group_name!=?",
-                (raid_id, member_id, group),
+                "SELECT 1 FROM raid_group_leaders "
+                "WHERE raid_id=? AND discord_id=? AND group_name=?",
+                (raid_id, member_id, other_group),
             ).fetchone()
             if overlap:
-                raise ValueError(f"That player already leads {overlap[0]}.")
+                raise ValueError("A player cannot lead both Barrows runs.")
         con.execute(
             "INSERT INTO raid_group_leaders (raid_id,group_name,discord_id) "
             "VALUES (?,?,?) ON CONFLICT(raid_id,group_name) DO UPDATE SET "
