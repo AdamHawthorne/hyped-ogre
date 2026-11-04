@@ -50,6 +50,32 @@ class RosterDataTests(unittest.TestCase):
             self.assertEqual(roster.rows(self.path)[0]['ilvl'], '55.0')
             self.assertEqual(roster.rows(self.path)[0]['level'], 60)
 
+    def test_professions_use_latest_wowsims_export_and_show_reported_skills(self):
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
+        original = {
+            'name': 'Snore', 'class': 'warrior', 'spec': 'protection',
+            'version': 'v3.2.6', 'level': 20, 'gear': {'items': []},
+            'professions': [
+                {'name': 'Mining', 'level': 65},
+                {'name': 'Blacksmithing', 'level': 120},
+            ],
+        }
+        raid.save_wowsims_export(42, self.cid, json.dumps(original), self.path)
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'Min: 65 / BS: 120')
+        self.assertIn('Min: 65 / BS: 120', roster.render(roster.rows(self.path))[0].fields[2].value)
+
+        updated = {**original, 'professions': [
+            {'name': 'Herbalism', 'level': 150},
+            {'name': 'Alchemy', 'level': 99},
+        ]}
+        raid.save_wowsims_export(42, self.cid, json.dumps(updated), self.path)
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'Herb: 150 / Alch: 99')
+
+        # Professions are an optional WoWSims field, not a live in-game feed.
+        updated['professions'] = []
+        raid.save_wowsims_export(42, self.cid, json.dumps(updated), self.path)
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
+
     def test_absence_is_private_idempotent_and_does_not_change_raid_history(self):
         schedule.save_raid(self.path, 1, '2026-12-09 19:00', 'Hyjal (20m)', wowsims_policy='optional')
         raid.save_signup(1,42,self.cid,self.path)
@@ -108,7 +134,8 @@ class LayoutTests(unittest.TestCase):
     def row(self, n, role='DPS', klass='Mage', spec='Frost', is_main=True):
         return dict(character_id=n, discord_id=100000000000000000+n,
                     name=f'Character{n:04}', class_name=klass, spec=spec,
-                    role=role, is_main=is_main, attendance='75%', ilvl='67.5')
+                    role=role, is_main=is_main, attendance='75%', ilvl='67.5',
+                    professions='N/A')
 
     def test_grouping_columns_and_every_main_in_one_guild_sized_embed(self):
         specs = (('Tank', 'Warrior', 'Protection'),
@@ -133,11 +160,23 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Lvl', 'Attendance'])
+            self.assertEqual([f.name for f in fields[1:]], ['Level', 'Professions'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
             self.assertTrue(all(v == 'N/A' for v in fields[1].value.splitlines()))
-            self.assertTrue(all(v == '75%' for v in fields[2].value.splitlines()))
+            self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
+
+    def test_professions_keep_one_line_per_character_and_fit_discord_fields(self):
+        players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 11)]
+        for row in players:
+            row['professions'] = 'Min: 65 / BS: 120'
+            row['level'] = 20
+        fields = roster.render(players)[0].fields
+        self.assertEqual([f.name for f in fields[:3]], ['Tanks (10)', 'Level', 'Professions'])
+        self.assertEqual(len(fields[0].value.splitlines()), 10)
+        self.assertEqual(fields[1].value.splitlines(), ['20'] * 10)
+        self.assertEqual(fields[2].value.splitlines(), ['Min: 65 / BS: 120'] * 10)
+        self.assertTrue(all(len(field.value) <= 1024 for field in fields))
 
     def test_icon_in_author_does_not_change_three_column_roster_layout(self):
         players = [self.row(n) for n in range(30)]
@@ -148,7 +187,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('title', embed.to_dict())
         self.assertEqual(len(embed.fields) % 3, 0)
         self.assertEqual([f.name for f in embed.fields[:3]],
-                         ['Tanks (0)', 'Lvl', 'Attendance'])
+                         ['Tanks (0)', 'Level', 'Professions'])
         self.assertLessEqual(len(embed), 6000)
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
@@ -200,9 +239,7 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(name + ' /', character_lines[index])
         self.assertEqual(embed.fields[1].value.splitlines(),
                          ['60', '60', '60', '60', '60', '39', '39', 'N/A', 'N/A'])
-        self.assertEqual(embed.fields[2].value.splitlines(),
-                         ['100%', '50%', '50%', '25%', 'N/A', '100%',
-                          '90%', '100%', 'N/A'])
+        self.assertEqual(embed.fields[2].value.splitlines(), ['N/A'] * 9)
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
@@ -232,7 +269,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embed.fields), 12)
         for index in range(0, len(embed.fields), 3):
             fields = embed.fields[index:index+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Lvl', 'Attendance'])
+            self.assertEqual([f.name for f in fields[1:]], ['Level', 'Professions'])
             self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
         content = str(embed.to_dict())
         for player in players:
