@@ -30,6 +30,7 @@ RAID_COLUMNS = {
     "roster_announce_at": "TEXT",
     "panel_message_id": "INTEGER",
     "panel_channel_id": "INTEGER",
+    "created_by": "TEXT",
     "softres_url": "TEXT",
     "custom_title": "TEXT",
     "banner_url": "TEXT",
@@ -143,6 +144,14 @@ def ensure_raid_fields(path):
                 PRIMARY KEY(raid_id, discord_id)
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_group_leaders (
+                raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
+                group_name TEXT NOT NULL,
+                discord_id TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (raid_id, group_name)
+            )
+        """)
         ack_cols = {row[1] for row in con.execute(
             "PRAGMA table_info(raid_ack_announcements)"
         )}
@@ -155,6 +164,13 @@ def ensure_raid_fields(path):
         if "deleted_at" not in ack_cols:
             con.execute("ALTER TABLE raid_ack_announcements "
                         "ADD COLUMN deleted_at TEXT")
+        # Upgrade older withdrawn messages, which were previously edited
+        # into "Roster withdrawn". Delete those outdated reaction posts too,
+        # then clear their state so leadership may reannounce after confirming.
+        con.execute(
+            "UPDATE raid_ack_announcements SET needs_refresh=1 "
+            "WHERE retracted_at IS NOT NULL AND deleted_at IS NULL"
+        )
         # Queue cleanup for earlier completed raids as well, including the
         # test raid completed before this change was deployed. A deleted_at
         # marker makes this restart-safe and prevents repeated delete calls.
@@ -473,6 +489,7 @@ def delete_raid(path, number):
         con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_ack_members WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_ack_announcements WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_group_leaders WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
@@ -634,11 +651,14 @@ def signup_role_groups(public_roster, *, emoji_map=None):
     return [(name, members) for name, members in groups.items() if members]
 
 
-def record_panel(path, number, channel_id, message_id):
+def record_panel(path, number, channel_id, message_id, creator_id=None):
+    """Remember the first person who posted the signup without changing it on edits."""
     with database(path) as con:
         con.execute(
-            "UPDATE raids SET panel_channel_id=?, panel_message_id=? WHERE raid_id=?",
-            (channel_id, message_id, number),
+            "UPDATE raids SET panel_channel_id=?, panel_message_id=?, "
+            "created_by=COALESCE(created_by, ?) WHERE raid_id=?",
+            (channel_id, message_id,
+             str(creator_id) if creator_id is not None else None, number),
         )
 
 
@@ -661,7 +681,8 @@ def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None, *,
     return " ".join(part for part in (guild_emoji(klass), name, crown) if part)
 
 
-def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
+def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
+                  acknowledged_ids=()):
     """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
     Only leadership-approved names are passed in from the Sheet. One raider
@@ -696,6 +717,10 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
         )
         if not clean_name:
             continue
+        # The custom check appears beside a player's name in Ogre's separate
+        # V1 confirmation once they react. The V2 signup remains unchanged.
+        if (len(entry) > 5 and str(entry[5]) in acknowledged_ids):
+            clean_name += " <:check:1566948806535159808>"
         if by_role:
             if by_role == "four":
                 # V1 roster announcements use the same four roles as sign-ups;
@@ -769,12 +794,12 @@ def raid_panel_intro(event):
         "fresh": "Fresh export required",
         "optional": "Optional",
     }.get(wse_policy, "Required if character has no export")
-    # WoWSims instructions belong to collecting sign-ups, not an announced
-    # roster. The roster confirmation link is only Ogre's own reaction post.
+    # The V2 post stays the original sign-up panel after roster publication.
+    # Keep WoWSims instructions here; only the separate V1 announcement
+    # leaves them out. The confirmation link leads to Ogre's V1 reaction post.
     wse_line = (
-        (f"\n**WoWSims:** {wse_label} · "
-         "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)")
-        if not event.get("roster_published") else ""
+        f"\n**WoWSims:** {wse_label} · "
+        "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)"
     )
     confirmation = event.get("confirmation_url") if event.get("roster_published") else None
     return (
@@ -855,21 +880,19 @@ def raid_panel_text(event, public_roster=(), *, emoji_map=None):
 
 
 def roster_components(event, public_roster, *, emoji_map=None):
-    """Role-grouped live sign-ups before confirmation; team rosters afterwards."""
+    """The original V2 message always shows live sign-ups, never the confirmed grid.
+
+    Leadership's selected instance roster is posted separately as a V1
+    announcement. Keep the V2 look, role groups and member actions intact.
+    """
     if not public_roster:
         return []
-    if not event.get("roster_published"):
-        return [
-            discord.ui.TextDisplay(
-                "-# **" + role + " (" + str(len(players)) + ")**\n" +
-                "\n".join("-# " + player for player in players))
-            for role, players in signup_role_groups(
-                public_roster, emoji_map=emoji_map)
-        ]
     return [
-        discord.ui.TextDisplay(_roster_group_text(title, players))
-        for title, players in roster_groups(
-            event, public_roster, emoji_map=emoji_map, by_role=True)
+        discord.ui.TextDisplay(
+            "-# **" + role + " (" + str(len(players)) + ")**\n" +
+            "\n".join("-# " + player for player in players))
+        for role, players in signup_role_groups(
+            public_roster, emoji_map=emoji_map)
     ]
 
 
@@ -888,7 +911,6 @@ class RaidEventPanel(discord.ui.LayoutView):
                 ),
             ),
             *( [discord.ui.TextDisplay(
-                   "### Roster" if event.get("roster_published") else
                    f"**Sign-ups ({len(public_roster)})**"
                )] + roster_components(event, public_roster, emoji_map=emoji_map)
                if public_roster else [] ),

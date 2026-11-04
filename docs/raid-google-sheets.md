@@ -46,8 +46,9 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    roster-confirmation date where possible, but WoWSims collection remains
    open until leadership completes/archives the raid. The public V2 panel
    displays the selected requirement and addon link while gathering sign-ups.
-   After publication, the WoWSims requirement line is hidden from the roster
-   view, but the WoWSims button and existing export workflow remain available.
+   The existing V2 sign-up panel retains the WoWSims instructions and the
+   WoWSims button even after publication. The separate V1 confirmation embed
+   omits the requirement line but keeps other raid information.
    One character per player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
@@ -57,16 +58,31 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    live Sheet selection. Choose **Publish roster only** or **Publish + ping
    selected**. Publishing reveals the teams on the existing Discord panel,
    but **does not close sign-ups or lock the Sheet**.
-5. **Publish + ping selected** posts a separate **V1 embed** announcement in
-   the raid channel, tagging each selected Discord member once. Each raid
-   instance/split has a compact grid of Tanks beside Healers and Melee beside
-   Ranged, retaining class icons, diamond markers and role totals. Members
-   react ✅ to acknowledge. Ogre removes their mention from the outstanding
-   list without removing them from the roster or pinging a second time.
-   The published V2 panel's **Confirm raid spot** link resolves to the
-   recorded Ogre reaction message, never the independently saved manual
-   Check URL. The original V2 signup panel and its buttons remain unchanged.
-   PUGs without Discord IDs cannot be tagged or acknowledged.
+5. **Publish + ping selected** posts one new, separate **V1 embed**
+   confirmation message alongside the unchanged Components V2 sign-up post.
+   All active raid instances/splits appear within the same V1 embed where
+   Discord's limits permit. Each group has a leader followed by the four
+   class-role sections as two rows: Tanks beside Healers and Melee beside
+   Ranged. Role totals, class icons, diamond markers and raid links remain.
+   The embed title links back to the original V2 sign-up post, and its
+   creator header links to the person who originally posted that sign-up.
+   Only selected Discord members are pinged in the normal message content.
+   They react to Ogre's check emoji; the corresponding V1 roster name gets
+   a check, and the outstanding mentions are removed without a fresh ping.
+   PUGs stay on the roster but are not pinged or acknowledged. The V2 panel's
+   **Confirm raid spot** link points to the actual new V1 reaction message.
+   The sign-up post and its existing buttons are never replaced or deleted.
+   Use `/raid leader number:<n> group:<instance> member:<member>` from the
+   private Ogre channel to nominate the leader of an active group. A player
+   can lead Hyjal, **one** Barrows split and Ony on the same raid night, but
+   cannot lead **both Barrows runs**. The configured owner (Snore) defaults
+   to all eligible groups under this rule until overridden. Omit the member
+   to explicitly unassign.
+   **Unpublish Roster** deletes only the separate V1 reaction announcement,
+   leaving the V2 sign-up and Sheet data untouched. After correcting and
+   reconfirming the roster, choose **Announce** again to send a new V1 message
+   and a fresh ping. Reactions on the old deleted post cannot be counted.
+   Once the raid is completed, Ogre also deletes that separate V1 post.
 6. Keep using the raid Sheet after publication. Later sign-ups flow into the
    raid tab, and leadership assignment changes update the public roster
    automatically at the next successful sync (~60 seconds). To unpublish,

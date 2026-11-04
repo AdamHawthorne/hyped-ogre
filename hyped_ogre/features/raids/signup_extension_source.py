@@ -22,6 +22,7 @@ from hyped_ogre.features.characters import queries as character_queries
 from hyped_ogre.features.characters import mutations as character_mutations
 from hyped_ogre.features.raids import signup_queries
 from hyped_ogre.features.raids import signup_mutations
+from hyped_ogre.features.raids.leaders import set_group_leader, GROUPS
 from hyped_ogre.features.raids.signup_reference import (
     SHEET_TABS, ATTENDANCE_OPTIONS, CLASS_SPECS,
 )
@@ -1484,8 +1485,8 @@ class RaidUnpublishConfirmation(discord.ui.View):
         await interaction.followup.send(
             f"Raid #{self.raid_id} roster unpublished. Ogre show sign-ups again. "
             "Attendance, characters and Sheet selections still saved. "
-            "Attend stay open; no new pings sent. "
-            "Ogre withdraw old announcement if one was sent.",
+            "Attend stay open; old reaction post deleted. "
+            "Ogre can ping again after confirmation.",
             ephemeral=True,
         )
 
@@ -1552,8 +1553,9 @@ class RaidManageView(discord.ui.View):
             f"**Unpublish Raid #{self.raid_id}?**\n"
             "Ogre return public panel to sign-up list. "
             "Sign-ups and Sheet selections stay saved. "
-            "Any earlier roster ping will be marked withdrawn, "
-            "and Ogre will not ping everyone again automatically.",
+            "Ogre will delete the old reaction message. "
+            "Confirm the corrected roster and choose Announce again "
+            "to send a fresh ping.",
             view=RaidUnpublishConfirmation(
                 self.cog, self.raid_id,
                 poster_owner_id=self.poster_owner_id,
@@ -1633,7 +1635,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                                raid_id, exc)
 
     async def unpublish_roster(self, raid_id):
-        """Revert public roster and retract the old ping without new mentions."""
+        """Restore V2 signups and delete the withdrawn V1 reaction message."""
         from cogs import raid_acknowledgements as ack
         async with self._ack_lock:
             event = read_raid(RAID_DB, raid_id)
@@ -1644,8 +1646,9 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 try:
                     await raid_announcer.refresh(self.bot, RAID_DB, raid_id, GUILD_ID)
                 except (discord.HTTPException, ValueError) as exc:
-                    # State is saved. Background sync will retry message edit.
-                    LOGGER.warning("Raid #%s announcement retraction delayed: %s",
+                    # Keep the old ID until deletion is actually confirmed;
+                    # maintenance retries it. Never send a duplicate ping.
+                    LOGGER.warning("Raid #%s announcement deletion delayed: %s",
                                    raid_id, exc)
         try:
             await self.sync_raid_sheets()
@@ -2004,10 +2007,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             event, on_signup=signup, on_update=self.on_update,
             on_remind=remind,
             on_gear=self.on_gear, on_absent=absent,
-            public_roster=(
-                read_public_roster(RAID_DB, event["raid_id"], include_identity=True)
-                if event.get("roster_published") else
-                read_signup_roster(RAID_DB, event["raid_id"], include_identity=True)
+            public_roster=read_signup_roster(
+                RAID_DB, event["raid_id"], include_identity=True
             ),
             emoji_map=self.raid_emoji_map(),
         )
@@ -2089,7 +2090,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             await interaction.followup.send(
                 f"Ogre couldn't post in {channel.mention}: {exc}", ephemeral=True)
             return
-        record_panel(RAID_DB, event["raid_id"], channel.id, message.id)
+        record_panel(
+            RAID_DB, event["raid_id"], channel.id, message.id,
+            creator_id=getattr(getattr(interaction, "user", None), "id", None),
+        )
         if old_message_id and old_channel_id and old_channel_id != channel.id:
             try:
                 old_channel = self.bot.get_channel(old_channel_id) or await self.bot.fetch_channel(old_channel_id)
@@ -2158,7 +2162,53 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
         await interaction.followup.send(
             f"Raid #{number} roster unpublished. Sign-ups remain open. "
             "Update the Sheet and publish again from /raid poster. "
-            "Ogre will not send another automatic ping.",
+            "Choose Announce after reconfirming to ping selected players again.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="leader", description="Choose a leader for a raid instance or split"
+    )
+    @app_commands.describe(
+        number="Raid number",
+        group="Instance group to lead",
+        member="Selected Discord member to lead, or leave blank to unassign",
+    )
+    @app_commands.choices(group=[
+        app_commands.Choice(name="Hyjal", value="Hyjal"),
+        app_commands.Choice(name="Barrows 🔸", value="Barrows 🔸"),
+        app_commands.Choice(name="Barrows 🔹", value="Barrows 🔹"),
+        app_commands.Choice(name="Ony", value="Ony"),
+    ])
+    async def leader(self, interaction: discord.Interaction, number: int,
+                     group: str, member: discord.Member | None = None):
+        if not self.allowed(interaction):
+            await interaction.response.send_message(
+                "Owner-only in private #ogre.", ephemeral=True,
+            )
+            return
+        try:
+            selected = set_group_leader(
+                RAID_DB, number, group, member.id if member else None
+            )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't set leader: {exc}", ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        # Update the existing V1 message without repinging anyone. The
+        # background maintenance job also retries if Discord is unavailable.
+        async with self._ack_lock:
+            try:
+                await raid_announcer.refresh(self.bot, RAID_DB, number, GUILD_ID)
+            except (discord.HTTPException, ValueError, sqlite3.Error) as exc:
+                LOGGER.warning("Raid #%s leader refresh delayed: %s", number, exc)
+        await interaction.followup.send(
+            f"Raid #{number} {group} leader: " +
+            (f"<@{selected}>" if selected else "Unassigned") +
+            ". V2 sign-up stays untouched.",
+            allowed_mentions=discord.AllowedMentions.none(),
             ephemeral=True,
         )
 

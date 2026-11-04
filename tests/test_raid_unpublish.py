@@ -43,10 +43,16 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
     async def test_manage_raid_unpublish_confirm_retracts_announcement(self):
         schedule.record_panel(self.db, 1, 777, 888)
         ack.record_announcement(self.db, 1, 555, 777, [("42", "Snore")])
-        message = SimpleNamespace(content=ack.render(1, ack.pending(self.db, 1), 1),
-                                  edit=AsyncMock())
-        channel = SimpleNamespace(fetch_message=AsyncMock(return_value=message))
-        bot = SimpleNamespace(get_channel=lambda channel_id: channel)
+        message = SimpleNamespace(
+            author=SimpleNamespace(id=999),
+            content=ack.render(1, ack.pending(self.db, 1), 1),
+            delete=AsyncMock(), edit=AsyncMock(),
+        )
+        channel = unittest.mock.MagicMock(spec=discord.TextChannel)
+        channel.guild = SimpleNamespace(id=raid.GUILD_ID)
+        channel.fetch_message = AsyncMock(return_value=message)
+        bot = SimpleNamespace(user=SimpleNamespace(id=999),
+                              get_channel=lambda channel_id: channel)
         cog = raid.RaidPrototype(bot)
         cog.allowed = Mock(return_value=True)
         cog.sync_raid_sheets = AsyncMock()
@@ -91,12 +97,14 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raid.my_signup(1, 42, self.db),
                          ("Snore", "Available"))
         self.assertFalse(schedule.confirmed_roster(self.db, 1))
-        self.assertTrue(ack.is_retracted(self.db, 1))
+        self.assertIsNone(ack.announcement(self.db, 1))
         self.assertFalse(ack.dirty_announcements(self.db))
-        self.assertIn("Roster withdrawn", message.edit.await_args.kwargs["content"])
-        self.assertNotIn("<@42>", message.edit.await_args.kwargs["content"])
-        mentions = message.edit.await_args.kwargs["allowed_mentions"]
-        self.assertFalse(mentions.users)
+        message.delete.assert_awaited_once()
+        message.edit.assert_not_awaited()
+        # Only Ogre's distinct confirmation was fetched; the V2 sign-up
+        # is still saved as message 888 and must never be fetched/deleted.
+        channel.fetch_message.assert_awaited_once_with(777)
+        self.assertEqual(schedule.read_raid(self.db, 1)["panel_message_id"], 888)
         cog.sync_raid_sheets.assert_awaited_once()
         cog.refresh_saved_panel.assert_awaited_once_with(1)
         private_poster.edit.assert_awaited_once()
@@ -104,11 +112,13 @@ class RaidUnpublishTests(unittest.IsolatedAsyncioTestCase):
             "Collecting sign-ups",
             private_poster.edit.await_args.kwargs["view"].description(),
         )
-        # Republish can still happen later, but the old ping stays retracted.
+        # Reconfirming permits a fresh explicit ping with a new message ID.
         schedule.raid_status(self.db, 1, "confirm",
                              confirmed_entries=[("42", "Snore", "Hyjal")])
-        self.assertTrue(ack.is_retracted(self.db, 1))
         self.assertIsNone(ack.acknowledge(self.db, 555, 777, 42))
+        ack.record_announcement(self.db, 1, 555, 778, [("42", "Snore")])
+        self.assertEqual(ack.pending(self.db, 1), [("42", "Snore")])
+        self.assertEqual(ack.acknowledge(self.db, 555, 778, 42), 1)
 
     async def test_unpublish_is_rejected_after_archive(self):
         schedule.raid_status(self.db, 1, "archive")

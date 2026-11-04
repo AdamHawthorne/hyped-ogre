@@ -1,4 +1,4 @@
-"""One opt-in roster announcement per raid, with persistent reaction acknowledgements.
+"""One active opt-in roster announcement, with durable reaction acknowledgements.
 
 Acknowledgement removes a mention from the outstanding list and adds a Sheet
 tick beside the member's Discord name. It never changes sign-ups, roster
@@ -33,7 +33,7 @@ def pending(path, raid_id):
 
 
 def record_announcement(path, raid_id, channel_id, message_id, selected):
-    """Store exactly the guild member IDs that were pinged; one post per raid."""
+    """Save one active post; withdrawing and deleting allows a fresh ping."""
     selected = [(str(discord_id), name) for discord_id, name in selected
                 if str(discord_id).isdigit() and int(discord_id) > 0]
     # One signup per Discord member. Deduplicate defensively.
@@ -92,6 +92,25 @@ def retract(path, raid_id):
             (datetime.now(timezone.utc).isoformat(), raid_id),
         )
         return result.rowcount == 1
+
+
+def clear_withdrawn(path, raid_id):
+    """Clear a withdrawn reaction post only after Discord confirmed deletion.
+
+    Keep historical attendance and roster data. Reset acknowledgement state
+    so a freshly confirmed roster can ping selected members exactly once.
+    """
+    with database(path) as con:
+        row = con.execute(
+            "SELECT a.retracted_at, r.roster_published, r.archived_at "
+            "FROM raid_ack_announcements a JOIN raids r ON r.raid_id=a.raid_id "
+            "WHERE a.raid_id=?", (raid_id,),
+        ).fetchone()
+        if not row or not row[0] or row[1] or row[2]:
+            return False
+        con.execute("DELETE FROM raid_ack_members WHERE raid_id=?", (raid_id,))
+        con.execute("DELETE FROM raid_ack_announcements WHERE raid_id=?", (raid_id,))
+        return True
 
 
 def is_retracted(path, raid_id):

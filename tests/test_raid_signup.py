@@ -312,11 +312,18 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
                 raid.RAID_DB, 5, [(x[1], x[2], x[3], x[4], x[5])
                                   for x in confirmed_entries])
             confirmed_panel = json.dumps(cog.make_panel(confirmed_event).to_components())
-            self.assertIn("### Roster", confirmed_panel)
-            self.assertIn("**Hyjal (", confirmed_panel)
-            self.assertIn("**Barrows (", confirmed_panel)
-            self.assertIn("**Ony (", confirmed_panel)
-            self.assertNotIn("Sign-ups (4)", confirmed_panel)
+            # The V2 post continues to show the live signup categories.
+            # The selected instance teams appear only in Ogre's separate V1
+            # confirmation message after explicit announcement.
+            self.assertIn("Sign-ups (4)", confirmed_panel)
+            self.assertIn("**Tanks (1)**", confirmed_panel)
+            self.assertIn("**Melee (1)**", confirmed_panel)
+            self.assertIn("**Ranged (1)**", confirmed_panel)
+            self.assertIn("**Healers (1)**", confirmed_panel)
+            self.assertNotIn("### Roster", confirmed_panel)
+            self.assertNotIn("**Hyjal (", confirmed_panel)
+            self.assertNotIn("**Barrows (", confirmed_panel)
+            self.assertNotIn("**Ony (", confirmed_panel)
             self.assertEqual(confirmed_event["signup_open"], 1)
 
             # Signing off while still collecting removes that name immediately.
