@@ -172,10 +172,10 @@ def render(raid_id, awaiting, total, panel_url=None, *, invite_commands=()):
         status = f"**Still need nod ({len(awaiting)}/{total}):** {mentions}"
     else:
         status = f"**All {total} acknowledged.** Ogre got nod from everyone!"
-    commands = "\\n".join(
+    commands = "\n".join(
         f"`{command}`" for command in dict.fromkeys(invite_commands) if command
     )
-    result = intro + "\\n\\n" + status + ("\\n\\n" + commands if commands else "")
+    result = intro + "\n\n" + status + ("\n\n" + commands if commands else "")
     if len(result) > 2000:
         raise ValueError("Too many selected raiders for one Discord announcement.")
     return result
