@@ -208,13 +208,13 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
             "<@101> rolled **91**"))
         self.assertEqual(self.con.execute(
             "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
-        ).fetchone(), (19, 1, 19))
+        ).fetchone(), (91, 1, 91))
         self.assertIn("<:ogredie:1566175682034270288>", self.channel.send.await_args.args[0])
         self.assertIn("Gamer risked a coin to roll again:", self.channel.send.await_args.args[0])
         self.assertIn("Ogre say good roll. Have coin back!", self.channel.send.await_args.args[0])
         self.ns["roll_reactions"].sync.assert_awaited_once()
-        self.ns["sync_high_roller_role"].assert_not_awaited()
-        self.ns["reply_if_tied_for_highest"].assert_not_awaited()
+        self.ns["sync_high_roller_role"].assert_awaited_once()
+        self.ns["reply_if_tied_for_highest"].assert_awaited_once()
         i.followup.send.assert_awaited_once()
         self.assertTrue(i.followup.send.await_args.kwargs["ephemeral"])
 

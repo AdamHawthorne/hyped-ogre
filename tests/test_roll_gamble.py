@@ -15,6 +15,7 @@ from cogs.roll_coins import (
     settle_completed_days, daily_coin_prize, day_award, award_missing_day,
 )
 from cogs.roll_gamble import gamble_once, GambleError
+from hyped_ogre.features.rolls.scoring import reconcile_scores
 
 
 SOURCE = (Path(__file__).resolve().parents[1] / "hyped_ogre/bot.py").read_text(encoding="utf-8")
@@ -126,7 +127,7 @@ class GambleDatabaseTests(unittest.TestCase):
         self.award()
         self.assertTrue(self.free_roll(20))
         result = self.gamble(extra=88)
-        self.assertEqual(result["best"], 20)
+        self.assertEqual(result["best"], 88)
         self.assertTrue(result["stake_returned"])
         self.assertEqual(result["balance"], 1)
         self.assertEqual(self.con.execute("""
@@ -134,10 +135,10 @@ class GambleDatabaseTests(unittest.TestCase):
         """).fetchall(), [("user", 20), ("gamble", 88)])
         self.assertEqual(self.con.execute(
             "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
-        ).fetchone(), (20, 1, 20))
+        ).fetchone(), (88, 1, 88))
         self.assertEqual(self.con.execute(
             "SELECT score,rolls FROM daily_scores WHERE user_id=101"
-        ).fetchone(), (20, 1))
+        ).fetchone(), (88, 1))
         self.assertEqual(coin_total(self.con, 9, 101), 1)
 
     def test_existing_free_roll_only_gets_one_extra_roll(self):
@@ -145,7 +146,7 @@ class GambleDatabaseTests(unittest.TestCase):
         self.assertTrue(self.free_roll(33))
         outcome = self.gamble(extra=90)
         self.assertEqual(outcome["base"], 33)
-        self.assertEqual(outcome["best"], 33)
+        self.assertEqual(outcome["best"], 90)
         self.assertEqual(
             self.con.execute("SELECT COUNT(*) FROM rolls").fetchone()[0], 2)
         self.assertFalse(self.writer(
@@ -233,15 +234,65 @@ class GambleDatabaseTests(unittest.TestCase):
         count = settle_completed_days(
             self.con, 9, datetime(2026, 11, 2, 0, 2, tzinfo=UK))
         self.assertEqual(count, 1)
-        # 101 gambled 99 but their official free roll was 80. Player 102
-        # earned the Sunday prize with an original roll of 90.
-        self.assertEqual(day_award(self.con, 9, "2026-11-01")["user_id"], 102)
-        self.assertEqual(day_award(self.con, 9, "2026-11-01")["winning_roll"], 90)
+        # 101 gambled 99 over a free 80; the 99 beats player 102's 90
+        # and earns the normal Sunday two-coin daily prize.
+        self.assertEqual(day_award(self.con, 9, "2026-11-01")["user_id"], 101)
+        self.assertEqual(day_award(self.con, 9, "2026-11-01")["winning_roll"], 99)
         self.assertEqual(day_award(self.con, 9, "2026-11-01")["coins_awarded"], 2)
-        self.assertEqual(coin_total(self.con, 9, 101), 0)
-        self.assertEqual(coin_total(self.con, 9, 102), 2)
+        self.assertEqual(coin_total(self.con, 9, 101), 2)
+        self.assertEqual(coin_total(self.con, 9, 102), 0)
         self.assertEqual(settle_completed_days(
             self.con, 9, datetime(2026, 11, 2, 8, 0, tzinfo=UK)), 0)
+
+    def test_repair_november_4_saved_seven_to_85_without_rolling_again(self):
+        day = datetime(2026, 11, 4, 0, 53, tzinfo=UK)
+        self.award()
+        self.assertTrue(self.free_roll(7, now=day))
+        # Simulate a pre-fix gamble already in persistent rolls/coin ledger.
+        self.con.execute("""
+            INSERT INTO rolls(user_id,username,value,rolled_at,actor_type,roll_date)
+            VALUES (101,'Sley',85,?,'gamble','2026-11-04')
+        """, (int(day.timestamp()) + 1,))
+        self.con.execute("""
+            INSERT INTO roll_coin_gambles
+            (guild_id,roll_date,user_id,base_roll,gamble_roll,stake_returned,played_at)
+            VALUES (9,'2026-11-04',101,7,85,1,?)
+        """, (int(day.timestamp()) + 1,))
+        self.assertEqual(self.con.execute(
+            "SELECT score FROM daily_scores WHERE user_id=101"
+        ).fetchone()[0], 7)
+        before = self.con.execute("SELECT * FROM rolls").fetchall()
+        ledger_before = self.con.execute("SELECT * FROM roll_coin_gambles").fetchall()
+        self.assertEqual(coin_total(self.con, 9, 101), 1)
+        reconcile_scores(self.con)
+        reconcile_scores(self.con)  # Safe on repeat READY/redeployment.
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls FROM daily_scores WHERE user_id=101"
+        ).fetchone(), (85, 1))
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls,best FROM user_scores WHERE user_id=101"
+        ).fetchone(), (85, 1, 85))
+        self.assertEqual(self.con.execute("SELECT * FROM rolls").fetchall(), before)
+        self.assertEqual(self.con.execute(
+            "SELECT * FROM roll_coin_gambles").fetchall(), ledger_before)
+        self.assertEqual(coin_total(self.con, 9, 101), 1)
+
+        # 85 wins unless another player beats it before midnight.
+        self.assertEqual(settle_completed_days(
+            self.con, 9, datetime(2026, 11, 5, 0, 1, tzinfo=UK)), 1)
+        award = day_award(self.con, 9, "2026-11-04")
+        self.assertEqual((award["user_id"], award["winning_roll"]), (101, 85))
+        self.assertEqual(coin_total(self.con, 9, 101), 2)
+        self.assertEqual(settle_completed_days(
+            self.con, 9, datetime(2026, 11, 5, 0, 2, tzinfo=UK)), 0)
+
+    def test_tie_and_losing_gamble_do_not_upgrade_daily_score(self):
+        self.award()
+        self.free_roll(91)
+        self.assertEqual(self.gamble(extra=91)["best"], 91)
+        self.assertEqual(self.con.execute(
+            "SELECT score,rolls FROM daily_scores WHERE user_id=101"
+        ).fetchone(), (91, 1))
 
     def test_old_sunday_remains_one_coin_and_migration_is_idempotent(self):
         self.award(day="2026-10-25")

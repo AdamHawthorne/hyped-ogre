@@ -84,7 +84,7 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(d.reactions), 1)
         self.assertEqual(self.errors, [])
 
-    async def test_gamble_higher_does_not_take_highest_icon_from_free_roll(self):
+    async def test_gamble_higher_moves_highest_coin_to_second_roll(self):
         base = self.add(1, 30, 1)
         contender = self.add(2, 80, 2)
         await self.tracker.sync()
@@ -93,11 +93,25 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
             "INSERT INTO rolls VALUES (1, 96, 'gamble', 3)")
         extra = Message(1)
         extra.id = 3
+        extra.content += "\\n-# Gamer risked a coin to roll again: **30 → 96**."
         self.messages.append(extra)
         await self.tracker.sync()
-        self.assertFalse(self.has(extra, "<:ogrecoin:1564336079430099035>"))
+        self.assertTrue(self.has(extra, "<:ogrecoin:1564336079430099035>"))
         self.assertFalse(self.has(base, "<:ogrecoin:1564336079430099035>"))
-        self.assertTrue(self.has(contender, "<:ogrecoin:1564336079430099035>"))
+        self.assertFalse(self.has(contender, "<:ogrecoin:1564336079430099035>"))
+
+    async def test_higher_gamble_tie_loses_to_earlier_90(self):
+        early = self.add(2, 90, 2)
+        low = self.add(1, 7, 1)
+        self.con.execute("INSERT INTO rolls VALUES (1, 90, 'gamble', 3)")
+        extra = Message(1)
+        extra.id = 3
+        extra.content += "\\n-# Gamble risked a coin to roll again: **7 → 90**."
+        self.messages.append(extra)
+        await self.tracker.sync()
+        self.assertTrue(self.has(early, "<:ogrecoin:1564336079430099035>"))
+        self.assertFalse(self.has(extra, "<:ogrecoin:1564336079430099035>"))
+        self.assertFalse(self.has(low, "<:ogrecoin:1564336079430099035>"))
 
     async def test_gamble_lower_does_not_replace_original_best(self):
         top = self.add(1, 93, 1)

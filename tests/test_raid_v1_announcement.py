@@ -87,7 +87,9 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
                          schedule.raid_panel_intro(schedule.read_raid(self.path, 1)))
 
     def test_v1_two_by_two_role_grid_and_instance_split_counts(self):
-        embeds = announcer.roster_embeds(self.event, self.selected())
+        embeds = announcer.roster_embeds(
+            schedule.read_raid(self.path, 1), self.selected()
+        )
         self.assertEqual(len(embeds), 1)
         self.assertEqual(embeds[0].title,
                          "<Hyped> Raid #1 | Confirmed roster")
