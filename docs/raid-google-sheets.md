@@ -302,9 +302,15 @@ in chronological order. Example:
 
 **Attend** means the member registered as available, **Absent** means
 they recorded absence, and **Missing** means no registration or absence
-was recorded. If an earlier raid has actual attendance data, that result
-(e.g. **Attended**, **Late**, **No-show**) takes precedence. Therefore
-**Attend** for a past raid is not proof they physically attended.
+was recorded. For **completed raids**, the manually editable **Forever
+Attendance** tab is the authoritative source of final results, including
+**Attended**, **Absent**, **Excused** or **Pending**. An officer correction
+after archive (for example Absent to Excused) appears in subsequent raids'
+Past 3 history on the next sync, without changing the original archived
+raid sign-up tab. Future raids continue to use live sign-ups/absences,
+not attendance decisions. If no final attendance record exists, the
+registration history remains visible for context. **Attend** for a past
+raid is not proof they physically attended.
 
 A dash (—) means no raid exists in that position; it is different from
 **Missing**. Ogre cannot infer when a member joined the guild, so a
