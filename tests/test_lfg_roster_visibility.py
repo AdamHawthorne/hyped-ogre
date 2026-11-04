@@ -77,6 +77,28 @@ class SharedVisibilityTests(unittest.TestCase):
                 [("Casual", 0), ("Raider", 1)])
         self.assertEqual(len(raid.member_characters(42, self.raid_path)), 2)
 
+    def test_hidden_lfg_main_cannot_displace_a_visible_roster_main(self):
+        raid.save_character(42, "Raider", "Mage", "Frost", "DPS", self.raid_path)
+        with self.assertRaisesRegex(ValueError, "Add this LFG character"):
+            raid.set_main_character(42, self.cid, self.raid_path)
+        with raid.database(self.raid_path) as db:
+            self.assertEqual(db.execute(
+                "SELECT name FROM characters WHERE discord_id=42 AND "
+                "roster_visible=1 AND is_main=1").fetchall(), [("Raider",)])
+        self.assertEqual(len(roster.render(roster.rows(self.raid_path))[0].fields), 12)
+
+    def test_deleting_visible_main_prefers_remaining_visible_character(self):
+        raid.save_character(42, "Raider", "Mage", "Frost", "DPS", self.raid_path)
+        raid.save_character(42, "Alt", "Druid", "Balance", "DPS", self.raid_path)
+        raider = next(r[0] for r in raid.member_characters(42, self.raid_path)
+                      if r[1] == "Raider")
+        raid.delete_character(42, raider, self.raid_path)
+        with raid.database(self.raid_path) as db:
+            self.assertEqual(db.execute(
+                "SELECT name FROM characters WHERE discord_id=42 "
+                "AND roster_visible=1 AND is_main=1").fetchall(), [("Alt",)])
+        self.assertEqual(len(roster.rows(self.raid_path)), 1)
+
     def test_raid_signup_auto_promotes_exact_existing_lfg_character(self):
         event = schedule.save_raid(self.raid_path, 1, "2026-12-09 21:00",
                                    "Hyjal (20m)", wowsims_policy="optional")
