@@ -135,6 +135,7 @@ class LFGInteractionTests(unittest.IsolatedAsyncioTestCase):
         self.lfg_path = str(Path(self.temp.name) / "lfg_board.db")
         self.patchers = [
             patch.object(raid, "RAID_DB", self.raid_path),
+            patch.object(raid, "GUILD_ID", GUILD_ID),
             patch.object(lfg, "PATH", self.lfg_path),
             patch.dict(os.environ, {"HYPED_GUILD_ID": str(GUILD_ID)}),
         ]
