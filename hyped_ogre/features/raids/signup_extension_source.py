@@ -256,7 +256,7 @@ def delete_character(discord_id, character_id, path=RAID_DB):
         if character[1]:
             next_character = con.execute(
                 "SELECT character_id FROM characters WHERE discord_id=? "
-                "ORDER BY character_id LIMIT 1",
+                "ORDER BY roster_visible DESC, character_id LIMIT 1",
                 (discord_id,),
             ).fetchone()
             if next_character:
