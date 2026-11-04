@@ -2092,7 +2092,10 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             await interaction.followup.send(
                 f"Ogre couldn't post in {channel.mention}: {exc}", ephemeral=True)
             return
-        record_panel(RAID_DB, event["raid_id"], channel.id, message.id)
+        record_panel(
+            RAID_DB, event["raid_id"], channel.id, message.id,
+            creator_id=getattr(getattr(interaction, "user", None), "id", None),
+        )
         if old_message_id and old_channel_id and old_channel_id != channel.id:
             try:
                 old_channel = self.bot.get_channel(old_channel_id) or await self.bot.fetch_channel(old_channel_id)
