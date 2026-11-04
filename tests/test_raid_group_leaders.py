@@ -90,16 +90,18 @@ class RaidGroupLeaderTests(unittest.TestCase):
             f"https://discord.com/channels/{GUILD_ID}/333/444")
         self.assertFalse(embed.author.name)
         self.assertNotIn("author", embed.to_dict())
-        self.assertEqual(len(embed.fields), 24)
-        self.assertEqual([field.inline for field in embed.fields[:6]],
-                         [False, True, True, False, True, True])
+        self.assertEqual(len(embed.fields), 20)
+        self.assertEqual([field.inline for field in embed.fields[:5]],
+                         [True, True, False, True, True])
         self.assertEqual(embed.fields[0].name, "Hyjal (2) 🔹🔸 <@42>")
-        self.assertEqual(embed.fields[0].value, "\u200b")
-        self.assertEqual(embed.fields[6].name, "Barrows (2) 🔸 <@42>")
-        self.assertEqual(embed.fields[12].name,
+        self.assertIn("**Tanks (2)**", embed.fields[0].value)
+        self.assertEqual(embed.fields[5].name, "Barrows (2) 🔸 <@42>")
+        self.assertEqual(embed.fields[10].name,
                          "Barrows (1) 🔹 · Unassigned")
-        self.assertEqual(embed.fields[18].name, "Ony (2) <@42>")
-        self.assertNotIn("\\n", embed.fields[1].value)
+        self.assertEqual(embed.fields[15].name, "Ony (2) <@42>")
+        self.assertEqual(embed.thumbnail.url, schedule.RAID_PANEL_IMAGE)
+        self.assertIn("Contact: @Leadership", embed.footer.text)
+        self.assertNotIn("\\n", embed.fields[0].value)
         self.assertLess(len(embed), 5900)
 
     def test_invite_lines_use_selected_character_names_and_deduplicate_leaders(self):
@@ -131,8 +133,8 @@ class RaidGroupLeaderTests(unittest.TestCase):
         embeds = announcer.roster_embeds(
             event, self.selected, acknowledged_ids={"42"}
         )
-        self.assertIn("<:check:1566948806535159808>", embeds[0].fields[1].value)
-        self.assertNotIn("<:check:1566948806535159808>", embeds[0].fields[2].value)
+        self.assertIn("<:check:1566948806535159808>", embeds[0].fields[0].value)
+        self.assertNotIn("<:check:1566948806535159808>", embeds[0].fields[1].value)
         # The saved V2 post identity is never replaced with a new ID.
         self.assertEqual(schedule.read_raid(self.path, 2)["panel_message_id"], 444)
 
