@@ -157,7 +157,9 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         text = self.panel_text(self.panel(schedule.read_raid(self.path, 1)))
-        self.assertEqual(text.count("Zulu " + schedule.CREATOR_CROWN), 2)
+        # The V2 post now always shows live sign-ups; the separate V1
+        # confirmation roster is the only instance-specific layout.
+        self.assertEqual(text.count("Zulu " + schedule.CREATOR_CROWN), 1)
         self.assertEqual(self.snapshot(), before)
         self.assertTrue(
             all(row[14] == "Keep leadership note" for row in rows if row[16].isdigit())
