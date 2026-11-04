@@ -125,6 +125,23 @@ class LFGInteractionTests(unittest.IsolatedAsyncioTestCase):
         raid.save_character(42, "Casual", "Warrior", "Protection", "Tank",
                             self.raid_path, roster_visible=False)
         self.cid = raid.member_characters(42, self.raid_path)[0][0]
+        # Default path arguments were bound when raid_signup loaded, so
+        # patch the public wrappers rather than only its RAID_DB variable.
+        original_members = raid.member_characters
+        original_promote = raid.promote_character_to_roster
+        member_patch = patch.object(
+            raid, "member_characters",
+            side_effect=lambda member_id, path=None:
+                original_members(member_id, path or self.raid_path),
+        )
+        promotion_patch = patch.object(
+            raid, "promote_character_to_roster",
+            side_effect=lambda member_id, character_id, path=None:
+                original_promote(member_id, character_id, path or self.raid_path),
+        )
+        for wrapper_patch in (member_patch, promotion_patch):
+            wrapper_patch.start()
+            self.addCleanup(wrapper_patch.stop)
         self.cog = SimpleNamespace(
             panels=lambda: [(123, 456, 0)], refresh=AsyncMock(),
         )
