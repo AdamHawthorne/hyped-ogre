@@ -55,7 +55,7 @@ def history_for_raid(db_path, current_raid_id, attendance_rows=None):
             for raid_id, member_id, status in con.execute(
                 "SELECT raid_id, discord_id, status FROM attendance"
             ):
-                if raid_id in previous and status in STATES:
+                if raid_id in previous and status in STATES and status != "Pending":
                     statuses[(raid_id, member_id)] = STATES[status]
         else:
             # The permanent worksheet wins for completed raids. Do not copy
