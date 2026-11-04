@@ -46,8 +46,9 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    roster-confirmation date where possible, but WoWSims collection remains
    open until leadership completes/archives the raid. The public V2 panel
    displays the selected requirement and addon link while gathering sign-ups.
-   After publication, the WoWSims requirement line is hidden from the roster
-   view, but the WoWSims button and existing export workflow remain available.
+   The existing V2 sign-up panel retains the WoWSims instructions and the
+   WoWSims button even after publication. The separate V1 confirmation embed
+   omits the requirement line but keeps other raid information.
    One character per player per raid night.
 3. In that raid's Google tab, use the leadership dropdowns to build the
    proposed teams. The public panel can show partial previews but describes
@@ -72,9 +73,11 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    **Confirm raid spot** link points to the actual new V1 reaction message.
    The sign-up post and its existing buttons are never replaced or deleted.
    Use `/raid leader number:<n> group:<instance> member:<member>` from the
-   private Ogre channel to nominate the leader of an active group. The first
-   group containing the configured owner defaults to Snore; no player can
-   lead two groups on the same raid. Omit the member to explicitly unassign.
+   private Ogre channel to nominate the leader of an active group. A player
+   can lead Hyjal, **one** Barrows split and Ony on the same raid night, but
+   cannot lead **both Barrows runs**. The configured owner (Snore) defaults
+   to all eligible groups under this rule until overridden. Omit the member
+   to explicitly unassign.
    **Unpublish Roster** deletes only the separate V1 reaction announcement,
    leaving the V2 sign-up and Sheet data untouched. After correcting and
    reconfirming the roster, choose **Announce** again to send a new V1 message
