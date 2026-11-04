@@ -156,7 +156,7 @@ class DataFixture(unittest.TestCase):
             sheets.attendance_complete(self.path, 1)
             set_result.assert_not_called()
 
-    def test_character_board_attendance_uses_completed_raids_and_never_invents_parses_or_ilvl(self):
+    def test_character_board_preserves_internal_attendance_but_shows_professions(self):
         attendance.mirror_rows(self.path, [self.attendance_row(selection="Bench")])
         schedule.raid_status(self.path, 1, "confirm", confirmed_entries=[("42", "Paladin", "Hyjal")])
         schedule.raid_status(self.path, 1, "archive")
@@ -165,7 +165,9 @@ class DataFixture(unittest.TestCase):
         self.assertEqual(values[0]["ilvl"], "N/A")
         embed = hub.render(values)[0]
         self.assertNotIn("Warcraft Logs", str(embed.to_dict()))
-        self.assertIn("100%", str(embed.to_dict()))
+        self.assertNotIn("100%", str(embed.to_dict()))
+        self.assertEqual([field.name for field in embed.fields[1:3]], ["Level", "Professions"])
+        self.assertIn("N/A", embed.fields[2].value)
 
     def test_hub_shows_all_registered_characters_without_pagination(self):
         base = hub.rows(self.path)[0]
