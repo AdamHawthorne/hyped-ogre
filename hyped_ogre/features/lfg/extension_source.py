@@ -968,7 +968,7 @@ class LaunchCharacterPicker(discord.ui.View):
             await interaction.response.edit_message(
                 content=None, embed=None,
                 view=raid_signup.CharacterActionView(
-                    state.owner_id, purpose="update"),
+                    state.owner_id, purpose="lfg"),
             )
 
         manage.callback = open_characters
@@ -1164,7 +1164,7 @@ class CharactersButton(discord.ui.Button):
     async def callback(self, interaction):
         await interaction.response.send_message(
             view=raid_signup.CharacterActionView(
-                interaction.user.id, purpose="update"),
+                interaction.user.id, purpose="lfg"),
             ephemeral=True,
         )
 
@@ -1237,7 +1237,7 @@ class DungeonCharacterPicker(discord.ui.View):
                 return
             await interaction.response.edit_message(
                 content=None, view=raid_signup.CharacterActionView(
-                    state.owner_id, purpose="update"))
+                    state.owner_id, purpose="lfg"))
 
         open_manager.callback = show_characters
         self.add_item(open_manager)
@@ -1429,7 +1429,7 @@ class DungeonRemoveView(discord.ui.View):
 
 class DungeonButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
-        super().__init__(label="LF Dungeons", style=discord.ButtonStyle.primary,
+        super().__init__(label="LF Dungeons", style=discord.ButtonStyle.success,
                          custom_id="hyped_lfg_dungeons_v1")
         self.cog, self.channel_id = cog, channel_id
 
@@ -1545,18 +1545,18 @@ class BoardLayout(discord.ui.LayoutView):
             if preview:
                 self.add_item(discord.ui.ActionRow(
                     *[discord.ui.Button(
-                        label=label, style=discord.ButtonStyle.secondary,
+                        label=label,
+                        style=(discord.ButtonStyle.success if label == "LF Dungeons"
+                               else discord.ButtonStyle.secondary),
                         disabled=True,
-                    ) for label in ("Add / Update", "Characters", "LF Dungeons",
-                                   "Remove Dungeon", "Remove Plan")]
+                    ) for label in ("LF Dungeons", "Other", "Characters", "Edit")]
                 ))
             else:
                 self.add_item(discord.ui.ActionRow(
+                    DungeonButton(cog, channel_id),
                     LivePlanButton(cog, channel_id) if live_mode else AddUpdateButton(cog, channel_id),
                     CharactersButton(),
-                    DungeonButton(cog, channel_id),
-                    RemoveDungeonButton(cog, channel_id),
-                    RemoveLivePlan(cog, channel_id) if live_mode else RemoveButton(cog, channel_id),
+                    EditListingButton(cog, channel_id),
                 ))
         for row in visible:
             if isinstance(row, dict) and row.get("_kind") == "live":
@@ -1569,7 +1569,15 @@ class BoardLayout(discord.ui.LayoutView):
                 if row["notes"]:
                     lines.append(f"-# **Notes:** {safe(row['notes'])}")
                 lines.append(contact_line(row, preview=preview))
-                self.add_item(discord.ui.Container(discord.ui.TextDisplay("\n".join(lines)), accent_color=ACCENT))
+                container = discord.ui.Container(accent_color=ACCENT)
+                container.add_item(discord.ui.Section(
+                    discord.ui.TextDisplay("\n".join(lines)),
+                    accessory=discord.ui.Thumbnail(
+                        player_avatar_url(row, guild) or HEADER_IMAGE,
+                        description=f"{character[1] if character else 'Player'} Discord avatar",
+                    ),
+                ))
+                self.add_item(container)
                 continue
             if isinstance(row, dict) and row.get("_kind") == "dungeon":
                 character = shared_character(row["user_id"], row["character_id"])
