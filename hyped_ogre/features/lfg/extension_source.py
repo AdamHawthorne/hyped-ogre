@@ -968,7 +968,7 @@ class LaunchCharacterPicker(discord.ui.View):
             await interaction.response.edit_message(
                 content=None, embed=None,
                 view=raid_signup.CharacterActionView(
-                    state.owner_id, purpose="update"),
+                    state.owner_id, purpose="lfg"),
             )
 
         manage.callback = open_characters
@@ -1164,7 +1164,7 @@ class CharactersButton(discord.ui.Button):
     async def callback(self, interaction):
         await interaction.response.send_message(
             view=raid_signup.CharacterActionView(
-                interaction.user.id, purpose="update"),
+                interaction.user.id, purpose="lfg"),
             ephemeral=True,
         )
 
@@ -1237,7 +1237,7 @@ class DungeonCharacterPicker(discord.ui.View):
                 return
             await interaction.response.edit_message(
                 content=None, view=raid_signup.CharacterActionView(
-                    state.owner_id, purpose="update"))
+                    state.owner_id, purpose="lfg"))
 
         open_manager.callback = show_characters
         self.add_item(open_manager)
@@ -1429,7 +1429,7 @@ class DungeonRemoveView(discord.ui.View):
 
 class DungeonButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
-        super().__init__(label="LF Dungeons", style=discord.ButtonStyle.primary,
+        super().__init__(label="LF Dungeons", style=discord.ButtonStyle.success,
                          custom_id="hyped_lfg_dungeons_v1")
         self.cog, self.channel_id = cog, channel_id
 
@@ -1506,6 +1506,192 @@ class RemoveButton(discord.ui.Button):
         await interaction.followup.send(text, ephemeral=True)
 
 
+class ListingRemoveConfirmation(discord.ui.View):
+    """A second click is always required before deleting one listing."""
+
+    def __init__(self, cog, channel_id, owner_id, kind):
+        super().__init__(timeout=180)
+        self.cog, self.channel_id = cog, channel_id
+        self.owner_id, self.kind = owner_id, kind
+
+    async def interaction_check(self, interaction):
+        if (interaction.user.id == self.owner_id
+                and interaction.guild_id == int(os.environ["HYPED_GUILD_ID"])):
+            return True
+        await interaction.response.send_message(
+            "That listing belongs to another member.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Confirm removal", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction, button):
+        tables = {"dungeon": "lfg_dungeon_requests",
+                  "other": "lfg_live_plans", "launch": "lfg_listings"}
+        with database() as db:
+            deleted = db.execute(
+                f"DELETE FROM {tables[self.kind]} WHERE channel_id=? AND user_id=?",
+                (self.channel_id, self.owner_id),
+            ).rowcount
+        await interaction.response.edit_message(
+            content="Listing removed." if deleted else "Listing already removed.",
+            view=None,
+        )
+        if deleted:
+            try:
+                await self.cog.refresh(self.channel_id)
+            except (discord.HTTPException, sqlite3.Error, RuntimeError):
+                await interaction.followup.send(
+                    "Removed, but Ogre couldn't refresh the public board yet.",
+                    ephemeral=True,
+                )
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        await interaction.response.edit_message(content="No listing changed.", view=None)
+
+
+class ListingEditView(discord.ui.View):
+    """Choose one owned active listing, then edit or remove only that listing."""
+
+    LABELS = {"dungeon": "Dungeon request",
+              "other": "Other (PvP / levelling)",
+              "launch": "Launch plan"}
+
+    def __init__(self, cog, channel_id, owner_id, kinds):
+        super().__init__(timeout=300)
+        self.cog, self.channel_id, self.owner_id = cog, channel_id, owner_id
+        self.kinds = tuple(kinds)
+        self.kind = self.kinds[0]
+        if len(self.kinds) > 1:
+            select = discord.ui.Select(
+                placeholder="Which listing?",
+                options=[
+                    discord.SelectOption(
+                        label=self.LABELS[kind], value=kind,
+                        default=kind == self.kind,
+                    ) for kind in self.kinds
+                ],
+            )
+
+            async def selected(interaction):
+                if not await self.interaction_check(interaction):
+                    return
+                self.kind = select.values[0]
+                await interaction.response.edit_message(
+                    content=f"Manage your **{self.LABELS[self.kind]}**.",
+                    view=ListingEditView(
+                        self.cog, self.channel_id, self.owner_id,
+                        (self.kind, *[k for k in self.kinds if k != self.kind]),
+                    ),
+                )
+
+            select.callback = selected
+            self.add_item(select)
+
+        edit = discord.ui.Button(label="Edit listing", style=discord.ButtonStyle.primary)
+        remove = discord.ui.Button(label="Remove listing", style=discord.ButtonStyle.danger)
+
+        async def do_edit(interaction):
+            if not await self.interaction_check(interaction):
+                return
+            if self.kind == "dungeon":
+                state = DungeonState(self.cog, self.channel_id, self.owner_id)
+                if state.current is None:
+                    await interaction.response.edit_message(
+                        content="Dungeon request no longer exists.", view=None)
+                    return
+                await interaction.response.edit_message(
+                    content=dungeon_selection_summary(state),
+                    view=DungeonSelectionView(state),
+                )
+            elif self.kind == "other":
+                with database() as db:
+                    prior = db.execute(
+                        "SELECT character_id FROM lfg_live_plans "
+                        "WHERE channel_id=? AND user_id=?",
+                        (self.channel_id, self.owner_id),
+                    ).fetchone()
+                if prior is None:
+                    await interaction.response.edit_message(
+                        content="Other plan no longer exists.", view=None)
+                    return
+                from hyped_ogre.features.lfg.live_ui import LivePlanModal
+                await interaction.response.send_modal(
+                    LivePlanModal(self.cog, self.channel_id, self.owner_id, prior[0]))
+            else:
+                if current_listing(self.channel_id, self.owner_id) is None:
+                    await interaction.response.edit_message(
+                        content="Launch plan no longer exists.", view=None)
+                    return
+                await interaction.response.edit_message(
+                    content="Choose your saved character to update the plan.",
+                    view=LaunchCharacterPicker(
+                        WizardState(self.cog, self.channel_id, self.owner_id)),
+                )
+
+        async def do_remove(interaction):
+            if not await self.interaction_check(interaction):
+                return
+            await interaction.response.edit_message(
+                content=f"Remove your **{self.LABELS[self.kind]}**? "
+                        "Your character remains registered.",
+                view=ListingRemoveConfirmation(
+                    self.cog, self.channel_id, self.owner_id, self.kind),
+            )
+
+        edit.callback, remove.callback = do_edit, do_remove
+        self.add_item(edit)
+        self.add_item(remove)
+
+    async def interaction_check(self, interaction):
+        if (interaction.user.id == self.owner_id
+                and interaction.guild_id == int(os.environ["HYPED_GUILD_ID"])):
+            return True
+        await interaction.response.send_message(
+            "That listing belongs to another member.", ephemeral=True)
+        return False
+
+
+class EditListingButton(discord.ui.Button):
+    def __init__(self, cog, channel_id):
+        super().__init__(label="Edit", style=discord.ButtonStyle.secondary,
+                         custom_id="hyped_lfg_manage_listings_v1")
+        self.cog, self.channel_id = cog, channel_id
+
+    async def callback(self, interaction):
+        if interaction.guild_id != int(os.environ["HYPED_GUILD_ID"]):
+            await interaction.response.send_message(
+                "This board belongs to Hyped.", ephemeral=True)
+            return
+        with database() as db:
+            owner = interaction.user.id
+            has_dungeon = lfg_dungeons.get_request(db, self.channel_id, owner) is not None
+            has_other = db.execute(
+                "SELECT 1 FROM lfg_live_plans WHERE channel_id=? AND user_id=?",
+                (self.channel_id, owner),
+            ).fetchone() is not None
+            has_launch = db.execute(
+                "SELECT 1 FROM lfg_listings WHERE channel_id=? AND user_id=?",
+                (self.channel_id, owner),
+            ).fetchone() is not None
+        kinds = (["dungeon"] if has_dungeon else [])
+        if board_mode(self.channel_id) == "live":
+            if has_other:
+                kinds.append("other")
+        elif has_launch:
+            kinds.append("launch")
+        if not kinds:
+            await interaction.response.send_message(
+                "You have no listings on this board. Use **LF Dungeons** "
+                "or **Other** to create one.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            f"Manage your **{ListingEditView.LABELS[kinds[0]]}**.",
+            view=ListingEditView(
+                self.cog, self.channel_id, interaction.user.id, kinds),
+            ephemeral=True,
+        )
+
+
 class BoardLayout(discord.ui.LayoutView):
     """One Discord message with a V2 container for each visible member."""
 
@@ -1545,18 +1731,18 @@ class BoardLayout(discord.ui.LayoutView):
             if preview:
                 self.add_item(discord.ui.ActionRow(
                     *[discord.ui.Button(
-                        label=label, style=discord.ButtonStyle.secondary,
+                        label=label,
+                        style=(discord.ButtonStyle.success if label == "LF Dungeons"
+                               else discord.ButtonStyle.secondary),
                         disabled=True,
-                    ) for label in ("Add / Update", "Characters", "LF Dungeons",
-                                   "Remove Dungeon", "Remove Plan")]
+                    ) for label in ("LF Dungeons", "Other", "Characters", "Edit")]
                 ))
             else:
                 self.add_item(discord.ui.ActionRow(
+                    DungeonButton(cog, channel_id),
                     LivePlanButton(cog, channel_id) if live_mode else AddUpdateButton(cog, channel_id),
                     CharactersButton(),
-                    DungeonButton(cog, channel_id),
-                    RemoveDungeonButton(cog, channel_id),
-                    RemoveLivePlan(cog, channel_id) if live_mode else RemoveButton(cog, channel_id),
+                    EditListingButton(cog, channel_id),
                 ))
         for row in visible:
             if isinstance(row, dict) and row.get("_kind") == "live":
@@ -1569,7 +1755,15 @@ class BoardLayout(discord.ui.LayoutView):
                 if row["notes"]:
                     lines.append(f"-# **Notes:** {safe(row['notes'])}")
                 lines.append(contact_line(row, preview=preview))
-                self.add_item(discord.ui.Container(discord.ui.TextDisplay("\n".join(lines)), accent_color=ACCENT))
+                container = discord.ui.Container(accent_color=ACCENT)
+                container.add_item(discord.ui.Section(
+                    discord.ui.TextDisplay("\n".join(lines)),
+                    accessory=discord.ui.Thumbnail(
+                        player_avatar_url(row, guild) or HEADER_IMAGE,
+                        description=f"{character[1] if character else 'Player'} Discord avatar",
+                    ),
+                ))
+                self.add_item(container)
                 continue
             if isinstance(row, dict) and row.get("_kind") == "dungeon":
                 character = shared_character(row["user_id"], row["character_id"])

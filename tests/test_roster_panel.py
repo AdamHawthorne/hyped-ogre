@@ -320,8 +320,9 @@ class PanelActionsTests(unittest.IsolatedAsyncioTestCase):
                          [('Add',discord.ButtonStyle.success),('Manage',discord.ButtonStyle.secondary),
                           ('WoWSims',discord.ButtonStyle.secondary),('Remove / Absent',discord.ButtonStyle.danger)])
         interaction=self.interaction()
-        await view.children[0].callback(interaction)
-        self.assertIsInstance(interaction.response.send_message.call_args.kwargs['view'],raid.ClassPickerView)
+        with patch.object(raid, 'member_characters', return_value=[]):
+            await view.children[0].callback(interaction)
+        self.assertIsInstance(interaction.response.send_message.call_args.kwargs['view'],hub.RosterAddView)
         self.assertTrue(interaction.response.send_message.call_args.kwargs['ephemeral'])
         await view.children[1].callback(interaction)
         cog.open_characters.assert_awaited_once_with(interaction)

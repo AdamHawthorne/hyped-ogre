@@ -92,7 +92,7 @@ def _raid_snapshot(db_path):
     with database(db_path) as con:
         con.row_factory = sqlite3.Row
         characters = [dict(r) for r in con.execute(
-            "SELECT * FROM characters ORDER BY character_id"
+            "SELECT * FROM characters WHERE roster_visible=1 ORDER BY character_id"
         )]
         raids = {r["raid_id"]: dict(r) for r in con.execute(
             "SELECT * FROM raids ORDER BY raid_id"
@@ -117,10 +117,10 @@ def _raid_snapshot(db_path):
                 (SELECT MAX(i.submitted_at) FROM gear_images i
                  WHERE i.character_id=c.character_id) AS image_latest
             FROM characters c
-            WHERE EXISTS (SELECT 1 FROM gear_exports g
+            WHERE c.roster_visible=1 AND (EXISTS (SELECT 1 FROM gear_exports g
                           WHERE g.character_id=c.character_id)
                OR EXISTS (SELECT 1 FROM gear_images i
-                          WHERE i.character_id=c.character_id)
+                          WHERE i.character_id=c.character_id))
         """)]
     return characters, raids, signups, absences, gear
 
@@ -130,7 +130,7 @@ def character_discord_ids(db_path):
     from cogs.raid_schedule import database
     with database(db_path) as con:
         return [int(row[0]) for row in con.execute(
-            "SELECT DISTINCT discord_id FROM characters ORDER BY discord_id"
+            "SELECT DISTINCT discord_id FROM characters WHERE roster_visible=1 ORDER BY discord_id"
         )]
 
 

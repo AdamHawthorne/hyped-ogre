@@ -524,7 +524,7 @@ class ClassroomLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 stack.enter_context(patch.object(raid, "GUILD_ID", config.GUILD_ID))
                 for name, original in wrappers.items():
                     stack.enter_context(patch.object(raid, name, side_effect=(
-                        lambda *args, original=original: original(*args, path=path))))
+                        lambda *args, original=original, **kwargs: original(*args, path=path, **kwargs))))
                 stack.enter_context(patch.object(raid, "refresh_character_signups", AsyncMock()))
                 stack.enter_context(patch.object(raid, "refresh_lfg_for_member", AsyncMock()))
                 modal = raid.CharacterNameModal(PLAYER, "Warrior", "Protection", "Tank")

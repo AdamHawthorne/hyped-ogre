@@ -74,7 +74,7 @@ class LiveCharacterPicker(discord.ui.View):
             if interaction.user.id != owner_id:
                 await interaction.response.send_message("That character menu isn't yours.", ephemeral=True)
                 return
-            await interaction.response.send_message(view=raid.CharacterActionView(owner_id, purpose="update"), ephemeral=True)
+            await interaction.response.send_message(view=raid.CharacterActionView(owner_id, purpose="lfg"), ephemeral=True)
 
         button.callback = edit
         self.add_item(button)
@@ -82,12 +82,12 @@ class LiveCharacterPicker(discord.ui.View):
 
 class LivePlanButton(discord.ui.Button):
     def __init__(self, cog, channel_id):
-        super().__init__(label="Add / Update", style=discord.ButtonStyle.primary,
+        super().__init__(label="Other", style=discord.ButtonStyle.secondary,
                          custom_id="hyped_lfg_live_plan_v1")
         self.cog, self.channel_id = cog, channel_id
 
     async def callback(self, interaction):
-        await interaction.response.send_message("Choose a character for your levelling, dungeon or PvP group plan.",
+        await interaction.response.send_message("Choose a character for PvP, levelling or another group plan.",
             view=LiveCharacterPicker(self.cog, self.channel_id, interaction.user.id), ephemeral=True)
 
 

@@ -69,6 +69,10 @@ def record_signup(con, raid_id, discord_id, character_id, path, note,
                 THEN signups.submitted_at
                 ELSE excluded.submitted_at END
     """, (raid_id, discord_id, character_id, note, now_iso(), note, note))
+    # Signing a real raid makes an LFG-only character eligible for the
+    # persistent Characters board and Forever Roster, reusing the same ID.
+    from hyped_ogre.features.characters.mutations import promote_to_roster
+    promote_to_roster(con, discord_id, character_id)
     # Returning after an absence restores the player's Available status.
     con.execute(
         "DELETE FROM raid_absences WHERE raid_id=? AND discord_id=?",

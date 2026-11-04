@@ -1308,8 +1308,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
              patch.object(raid, "save_signup") as save_signup_mock, \
              patch.object(raid, "has_wowsims_export", return_value=False), \
              patch.object(raid, "read_raid", return_value=None), \
-             patch.object(raid, "member_characters", return_value=[
-                 (12, "Firstname Lastname", "Mage", "Frost", "DPS", None),
+             patch.object(raid, "member_characters", side_effect=[
+                 [], [(12, "Firstname Lastname", "Mage", "Frost", "DPS", None)],
              ]):
             modal = raid.CharacterNameModal(42, "Mage", "Frost", "DPS", signup_raid_id=9)
             modal.name._value = "Firstname Lastname"
@@ -1321,7 +1321,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
             )
             await modal.on_submit(interaction)
             save_character_mock.assert_called_once_with(
-                42, "Firstname Lastname", "Mage", "Frost", "DPS"
+                42, "Firstname Lastname", "Mage", "Frost", "DPS",
+                roster_visible=True,
             )
             save_signup_mock.assert_not_called()
             sent = interaction.response.send_message.await_args

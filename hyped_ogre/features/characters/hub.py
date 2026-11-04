@@ -18,6 +18,65 @@ LOG = logging.getLogger(__name__)
 CHARACTERS_MESSAGE = "Add yer name to mighty Hyped roster!"
 
 
+class RosterAddView(discord.ui.View):
+    """Choose a saved LFG character or create a genuinely new roster entry."""
+
+    def __init__(self, cog, channel_id, owner_id):
+        super().__init__(timeout=300)
+        self.cog, self.channel_id, self.owner_id = cog, channel_id, owner_id
+        existing = raid.member_characters(owner_id)
+        if existing:
+            picker = discord.ui.Select(
+                placeholder="Add a saved character to the roster",
+                options=[
+                    discord.SelectOption(
+                        label=row[1][:100], value=str(row[0]),
+                        description=f"{row[2]} / {row[3]} · {row[4]}"[:100],
+                    ) for row in existing[:25]
+                ],
+            )
+
+            async def choose(interaction):
+                if interaction.user.id != owner_id or interaction.guild_id != GUILD_ID:
+                    await interaction.response.send_message(
+                        "Only you can add your characters.", ephemeral=True)
+                    return
+                try:
+                    changed = raid.promote_character_to_roster(owner_id, int(picker.values[0]))
+                except (ValueError, sqlite3.Error) as exc:
+                    await interaction.response.send_message(
+                        f"Ogre couldn't add that character: {exc}", ephemeral=True)
+                    return
+                await interaction.response.edit_message(
+                    content=("Added existing character to the guild roster."
+                             if changed else "That character is already on the roster."),
+                    view=None,
+                )
+                try:
+                    saved = next((row for row in cog.panels() if row[0] == channel_id), None)
+                    if saved:
+                        await cog.refresh(channel_id, saved[1])
+                except (ValueError, sqlite3.Error, discord.HTTPException):
+                    LOG.warning("Roster will refresh automatically after character promotion.")
+
+            picker.callback = choose
+            self.add_item(picker)
+
+        create = discord.ui.Button(label="New character", style=discord.ButtonStyle.success)
+
+        async def new_character(interaction):
+            if interaction.user.id != owner_id or interaction.guild_id != GUILD_ID:
+                await interaction.response.send_message(
+                    "Only you can add your characters.", ephemeral=True)
+                return
+            await interaction.response.edit_message(
+                content=None, view=raid.ClassPickerView(owner_id, roster_visible=True),
+            )
+
+        create.callback = new_character
+        self.add_item(create)
+
+
 class HubView(discord.ui.View):
     def __init__(self, cog, channel_id):
         super().__init__(timeout=None)
@@ -32,7 +91,11 @@ class HubView(discord.ui.View):
     @discord.ui.button(label="Add", style=discord.ButtonStyle.success,
                        custom_id="hyped_characters:add:v2")
     async def add(self, interaction, button):
-        await interaction.response.send_message(view=raid.ClassPickerView(interaction.user.id), ephemeral=True)
+        await interaction.response.send_message(
+            "Add a saved character, or register a new one. Existing names are reused.",
+            view=RosterAddView(self.cog, self.channel_id, interaction.user.id),
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Manage", style=discord.ButtonStyle.secondary,
                        custom_id="hyped_characters:update:v1")

@@ -115,6 +115,7 @@ def latest_profiles(db_path):
                   AND g2.format='wowsims_json'
                 ORDER BY g2.export_id DESC LIMIT 1
             )
+            WHERE c.roster_visible=1
             ORDER BY LOWER(c.name), c.character_id
         """)]
 

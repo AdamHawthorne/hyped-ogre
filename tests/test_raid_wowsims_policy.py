@@ -147,8 +147,8 @@ class WoWSimsPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def test_first_time_registration_can_attend_when_optional(self):
         with patch.object(raid, "GUILD_ID", 77), \
              patch.object(raid, "save_character") as create, \
-             patch.object(raid, "member_characters", return_value=[
-                 (99, "NewMage", "Mage", "Frost", "DPS", None)
+             patch.object(raid, "member_characters", side_effect=[
+                 [], [(99, "NewMage", "Mage", "Frost", "DPS", None)],
              ]), \
              patch.object(raid, "wowsims_requirement_for_signup", return_value=None), \
              patch.object(raid, "save_signup") as sign, \
@@ -164,7 +164,8 @@ class WoWSimsPolicyTests(unittest.IsolatedAsyncioTestCase):
                 response=SimpleNamespace(send_message=AsyncMock()),
             )
             await modal.on_submit(interaction)
-            create.assert_called_once()
+            create.assert_called_once_with(
+                42, "NewMage", "Mage", "Frost", "DPS", roster_visible=True)
             sign.assert_called_once()
             self.assertIn(
                 "registered and signed up",
