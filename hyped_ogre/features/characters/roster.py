@@ -10,6 +10,43 @@ from . import equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
 
+# Short enough to keep two primary professions aligned on one Discord row.
+PROFESSION_SHORT_NAMES = {
+    "alchemy": "Alch",
+    "blacksmithing": "BS",
+    "enchanting": "Ench",
+    "engineering": "Eng",
+    "herbalism": "Herb",
+    "inscription": "Insc",
+    "jewelcrafting": "JC",
+    "leatherworking": "LW",
+    "mining": "Min",
+    "skinning": "Skin",
+    "tailoring": "Tail",
+}
+
+
+def profession_text(profile):
+    """Two latest exported primary professions; never invent skill levels."""
+    if not profile:
+        return "N/A"
+    details = profile.get("profession_details") or ()
+    labels = []
+    for entry in details[:2]:
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        name = name.strip()
+        short = PROFESSION_SHORT_NAMES.get(name.casefold(), name[:20])
+        skill = entry.get("level")
+        label = f"{short}: {skill}" if (
+            isinstance(skill, int) and not isinstance(skill, bool)
+            and 1 <= skill <= 999
+        ) else short
+        labels.append(discord.utils.escape_mentions(discord.utils.escape_markdown(label)))
+    return " / ".join(labels) if labels else "N/A"
+
+
 def rows(path):
     with raid.database(path) as con:
         con.row_factory = sqlite3.Row
@@ -37,6 +74,7 @@ def rows(path):
         character["level"] = (level if isinstance(level, int)
                               and not isinstance(level, bool)
                               and 1 <= level <= 60 else None)
+        character["professions"] = profession_text(parsed)
         average, known, equipped = equipment.average_item_level(parsed, catalog)
         character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
     return characters
@@ -73,7 +111,7 @@ def render(characters):
     def new_embed(first):
         # A thumbnail reserves width beside the role fields on desktop.
         # The author icon keeps the guild mark beside the heading without
-        # narrowing the character / attendance / level columns.
+        # narrowing the character / level / profession columns.
         result = discord.Embed(
             title=None if first else "Characters (continued)",
             colour=0xB84A3A,
@@ -101,7 +139,7 @@ def render(characters):
             level_text = (str(level) if isinstance(level, int)
                           and not isinstance(level, bool)
                           and 1 <= level <= 60 else "N/A")
-            block.append((name, level_text, row["attendance"]))
+            block.append((name, level_text, row.get("professions") or "N/A"))
             length += len(name) + 1
         if block:
             blocks.append(block)
@@ -110,7 +148,7 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "Lvl", "Attendance")
+            names = (heading, "Level", "Professions")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
             if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:

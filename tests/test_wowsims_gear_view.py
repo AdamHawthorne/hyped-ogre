@@ -38,10 +38,36 @@ class GearParserTests(unittest.TestCase):
         self.assertEqual(data["slots"][14]["random_suffix"], 3)
         self.assertEqual(data["slots"][15]["slot"], "Off Hand")
         self.assertEqual(data["professions"], ["Alchemy"])
+        self.assertEqual(data["profession_details"], [{"name": "Alchemy", "level": 34}])
         self.assertEqual(gear.summary(data),
                          "iLvl ? (0/9 known) · 6 enchant gaps")
         self.assertIsNone(gear.parse_export('{"invalid":true}'))
         self.assertIsNone(gear.parse_export("not-json"))
+
+    def test_profession_level_is_never_guessed_from_incomplete_exports(self):
+        sample = json.loads(export())
+        sample["professions"] = [
+            {"name": "Mining", "level": "65"},
+            {"name": "Blacksmithing", "level": 120},
+            {"name": "Tailoring", "level": 60},
+        ]
+        result = gear.parse_export(json.dumps(sample))
+        self.assertEqual(result["professions"], ["Mining", "Blacksmithing"])
+        self.assertEqual(result["profession_details"], [
+            {"name": "Mining", "level": 65},
+            {"name": "Blacksmithing", "level": 120},
+        ])
+        sample["professions"] = [
+            {"name": "Mining", "level": True},
+            {"name": "Blacksmithing", "level": 0},
+        ]
+        result = gear.parse_export(json.dumps(sample))
+        self.assertEqual(result["profession_details"], [
+            {"name": "Mining", "level": None},
+            {"name": "Blacksmithing", "level": None},
+        ])
+        sample["professions"] = None
+        self.assertEqual(gear.parse_export(json.dumps(sample))["profession_details"], [])
 
     def test_sheet_rows_contain_clickable_numeric_urls_not_false_enchant_flags(self):
         rows, headings = gear.sheet_rows([{

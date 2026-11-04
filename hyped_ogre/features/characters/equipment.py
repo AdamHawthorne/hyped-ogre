@@ -63,10 +63,28 @@ def parse_export(raw):
             "enchant": _positive_id(spec.get("enchant")),
             "random_suffix": _positive_id(spec.get("random_suffix")),
         })
-    professions = [
-        str(p.get("name", "")) for p in (value.get("professions") or [])
-        if isinstance(p, dict) and p.get("name")
-    ]
+    # Keep legacy profession-name output for the Gear tab, but also
+    # retain the skill levels supplied by WoWSims for the Character board.
+    # Missing/invalid skill values must never be presented as real levels.
+    profession_details = []
+    raw_professions = value.get("professions")
+    if isinstance(raw_professions, list):
+        for profession in raw_professions:
+            if not isinstance(profession, dict):
+                continue
+            name = profession.get("name")
+            if not isinstance(name, str):
+                continue
+            name = " ".join(name.split())[:48]
+            if not name:
+                continue
+            level = _positive_id(profession.get("level"))
+            profession_details.append({
+                "name": name,
+                "level": level if level is not None and level <= 999 else None,
+            })
+            if len(profession_details) == 2:
+                break
     return {
         "name": str(value.get("name") or ""),
         "level": _positive_id(value.get("level")),
@@ -74,7 +92,8 @@ def parse_export(raw):
         "race": str(value.get("race") or ""),
         "spec": str(value.get("spec") or ""),
         "version": str(value.get("version") or ""),
-        "professions": professions[:2],
+        "professions": [p["name"] for p in profession_details],
+        "profession_details": profession_details,
         "slots": slots,
         "equipped": sum(bool(x["id"]) for x in slots),
         "enchanted": sum(bool(x["id"] and x["enchant"]) for x in slots),
