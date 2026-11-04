@@ -83,6 +83,57 @@ class RaidHistoryTests(unittest.TestCase):
             )
         self.assertIn("Attend", raid_history.history_for_raid(self.db, 4)["42"])
 
+    def test_raid_two_history_uses_forever_attendance_after_raid_one_archive(self):
+        # Raid #3 stands in for an archived previous raid, Raid #4 the next
+        # raid being planned. A player's saved absence is not the final ruling.
+        signup_with_export(3, 42, self.owner_char, self.db)
+        raid.save_absence(3, 42, "Unavailable", self.db)
+        with schedule.database(self.db) as con:
+            con.execute("UPDATE raids SET archived_at='2026-12-07T23:00:00+00:00' "
+                        "WHERE raid_id=3")
+            con.execute(
+                "INSERT INTO attendance (raid_id, discord_id, character_id, status) "
+                "VALUES (3, 42, ?, 'No-show')", (self.owner_char,),
+            )
+        self.assertIn("Absent", raid_history.history_for_raid(
+            self.db, 4, attendance_rows=[["header"] * 15])["42"])
+
+        # A leadership edit to Forever Attendance wins even if the archived
+        # Raid #3 sign-up still says Absent and SQLite is still No-show.
+        row = [""] * 15
+        row[0], row[2], row[9] = "3", "42", "Excused"
+        official = [["Raid ID"] * 15, row]
+        timeline = raid_history.history_for_raid(
+            self.db, 4, attendance_rows=official)
+        self.assertEqual(timeline["42"],
+                         "Missing · Missing · Excused | Missing · Missing · Missing")
+
+        signup_with_export(4, 42, self.owner_char, self.db)
+        event = schedule.read_raid(self.db, 4)
+        visible = sheets._rows(self.db, event, {}, attendance_rows=official)
+        self.assertEqual(next(r for r in visible if r[16] == "42")[19],
+                         timeline["42"])
+        # Changing the officer outcome after the archive updates the history
+        # without touching the archived raid's original signup or absence.
+        row[9] = "Attended"
+        self.assertIn("Attended", raid_history.history_for_raid(
+            self.db, 4, attendance_rows=official)["42"])
+        with schedule.database(self.db) as con:
+            self.assertTrue(con.execute(
+                "SELECT 1 FROM raid_absences WHERE raid_id=3 AND discord_id=42"
+            ).fetchone())
+
+    def test_future_raids_use_signups_not_forever_attendance(self):
+        signup_with_export(5, 42, self.owner_char, self.db)
+        raid.save_absence(6, 42, "Unavailable", self.db)
+        # A stray future-date entry must not overwrite live registration.
+        row = [""] * 15
+        row[0], row[2], row[9] = "5", "42", "Excused"
+        history = raid_history.history_for_raid(
+            self.db, 4, attendance_rows=[["header"] * 15, row])
+        self.assertEqual(history["42"],
+                         "Missing · Missing · Missing | Attend · Absent · Missing")
+
     def test_owner_first_in_tanks_without_changing_character_ids(self):
         signup_with_export(4, 43, self.other_char, self.db)
         signup_with_export(4, 42, self.owner_char, self.db)
