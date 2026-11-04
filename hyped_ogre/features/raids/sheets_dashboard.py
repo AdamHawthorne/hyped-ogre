@@ -255,7 +255,7 @@ def _legacy_choices(session, event):
     return migrated
 
 
-def _rows(db_path, event, names, old_rows=(), legacy=None):
+def _rows(db_path, event, names, old_rows=(), legacy=None, attendance_rows=None):
     """Build sorted role sections and preserve leadership choices by member ID."""
     characters, _, signups, absences, gear = raid_sheets._raid_snapshot(db_path)
     chars = {str(item["character_id"]): item for item in characters}
@@ -264,7 +264,9 @@ def _rows(db_path, event, names, old_rows=(), legacy=None):
         str(item["character_id"]): wowsims_gear.parse_export(item["raw_text"])
         for item in wowsims_gear.latest_profiles(db_path)
     }
-    history = raid_history.history_for_raid(db_path, event["raid_id"])
+    history = raid_history.history_for_raid(
+        db_path, event["raid_id"], attendance_rows=attendance_rows
+    )
     catalog = forever_item_data.cached_catalog(db_path)
     owner_id = str(os.getenv("OWNER_ID", "0"))
     absent_by_member = {
@@ -784,7 +786,7 @@ def _cache_signup_visibility(db_path, raid_id, body):
             )
 
 
-def _one(session, db_path, event, names, titles):
+def _one(session, db_path, event, names, titles, attendance_rows=None):
     number = event["raid_id"]
     matches = [name for name in titles if name.startswith(f"Raid #{number} - ")]
     title = tab_title(event)
@@ -866,7 +868,8 @@ def _one(session, db_path, event, names, titles):
     invalid_notes = _apply_notes_from_sheet(db_path, event, existing)
     # Also recover a sheet created just before an interrupted first write.
     legacy = _legacy_choices(session, event) if new or not existing else None
-    body = _rows(db_path, event, names, old_rows=existing, legacy=legacy)
+    body = _rows(db_path, event, names, old_rows=existing, legacy=legacy,
+                 attendance_rows=attendance_rows)
     full = _header(event, body, title)
     if invalid_wcl is not None:
         # Retain an invalid entry for leadership to correct; don't echo it to Discord.
@@ -1379,6 +1382,13 @@ def sync_once(db_path, discord_names=None):
     try:
         _, raids, signups, absences, _ = raid_sheets._raid_snapshot(db_path)
         titles = _list_tabs(session)
+        # Read the leadership-owned attendance outcome once each sync.
+        # In particular, do not copy an archived test raid's old Absent signup
+        # into the Past 3 timeline after a manager changes it to Excused.
+        attendance_rows = (
+            _permanent_read(session, "Forever Attendance")
+            if "Forever Attendance" in titles else None
+        )
         counts, published = {"raid_tabs": 0}, {}
         metadata_changed = set()
         raid_rosters = {}
@@ -1395,7 +1405,8 @@ def sync_once(db_path, discord_names=None):
                     not props.get("hidden") for title, props in titles.items()):
                 continue
             before_wcl = event.get("wcl_url") or ""
-            changes, rows = _one(session, db_path, event, discord_names, titles)
+            changes, rows = _one(session, db_path, event, discord_names, titles,
+                                 attendance_rows=attendance_rows)
             if (event.get("wcl_url") or "") != before_wcl:
                 metadata_changed.add(raid_id)
             counts["raid_tabs"] += changes
