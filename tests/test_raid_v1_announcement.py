@@ -90,8 +90,11 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         embeds = announcer.roster_embeds(self.event, self.selected())
         self.assertEqual(len(embeds), 1)
         self.assertEqual(embeds[0].title,
-                         "<Hyped> Raid #1 | Roster announced")
-        self.assertEqual(embeds[0].author.name, "<Hyped> Raid Roster")
+                         "<Hyped> Raid #1 | Confirmed roster")
+        self.assertEqual(embeds[0].url,
+                         f"https://discord.com/channels/{GUILD_ID}/111/222")
+        self.assertIn(embeds[0].author.name,
+                      ("Hyped raid team", "Created by Snore"))
         self.assertEqual(embeds[0].author.icon_url, schedule.RAID_PANEL_IMAGE)
         self.assertEqual(len(embeds[0].fields), 18)  # all three groups, one embed
         self.assertEqual([f.name for f in embeds[0].fields[:6]],
