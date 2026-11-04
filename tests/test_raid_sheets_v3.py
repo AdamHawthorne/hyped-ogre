@@ -214,7 +214,7 @@ class RaidTabsTests(unittest.TestCase):
             mage = next(row for row in rows if row[16] == "44")
             mage[9:14] = ["Selected", "Yes", "No", "No", "No"]
             session = unittest.mock.MagicMock()
-            def fake_one(_session, db_path, _event, _names, _titles):
+            def fake_one(_session, db_path, _event, _names, _titles, attendance_rows=None):
                 # The real _one caches visibility following a successful
                 # sheet read/write before the public roster is calculated.
                 sheet._cache_signup_visibility(db_path, 1, rows[7:])
@@ -257,6 +257,36 @@ class RaidTabsTests(unittest.TestCase):
                 self.assertEqual(sheet._approved(rows, event), [
                     ("43", "Fast Rogue", "Barrows 🔸")
                 ])
+
+    def test_sync_passes_permanent_attendance_to_current_raid_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            raid_schedule.record_panel(path, 1, 12345, 98765)
+            event = raid_schedule.read_raid(path, 1)
+            official = [["Raid ID"] * 15, ["1", "", "42", "", "", "", "", "", "", "Excused"]]
+            observed = []
+            def fake_one(session, db_path, raid_event, names, titles, attendance_rows=None):
+                observed.append(attendance_rows)
+                return 0, [[""] * len(sheet.COLUMNS)] * 7
+            with patch.object(sheet.raid_sheets, "configured", return_value=True), \
+                 patch.object(sheet.raid_sheets, "_session", return_value=unittest.mock.MagicMock()), \
+                 patch.object(sheet.raid_sheets, "_raid_snapshot",
+                              return_value=([], {1: event}, [], [], [])), \
+                 patch.object(sheet, "_list_tabs", return_value={
+                     sheet.tab_title(event): {"sheetId": 1},
+                     "Forever Attendance": {"sheetId": 2},
+                 }), \
+                 patch.object(sheet, "_permanent_read", return_value=official) as read, \
+                 patch.object(sheet, "_one", side_effect=fake_one), \
+                 patch.object(sheet, "_sync_permanent"), \
+                 patch.object(sheet, "_sync_gear_tab"), \
+                 patch.object(sheet, "_hide_legacy"), \
+                 patch.object(sheet, "_hide_archived"):
+                sheet.sync_once(path)
+            read.assert_called_once()
+            self.assertEqual(read.call_args.args[1], "Forever Attendance")
+            self.assertEqual(observed, [official])
 
     def test_confirm_keeps_signups_open_absences_and_archive_keep_history(self):
         with tempfile.TemporaryDirectory() as tmp:
