@@ -96,17 +96,22 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].url,
                          f"https://discord.com/channels/{GUILD_ID}/111/222")
         self.assertNotIn("author", embeds[0].to_dict())
-        self.assertEqual(len(embeds[0].fields), 18)  # all three groups, one embed
-        self.assertEqual([f.name for f in embeds[0].fields[:6]],
-                         ["Hyjal (6) 🔹🔸 · Unassigned", "Tanks (1)", "Healers (1)",
-                          "\u200b", "Melee (2)", "Ranged (2)"])
-        self.assertEqual([f.inline for f in embeds[0].fields[:6]],
-                         [False, True, True, False, True, True])
-        self.assertEqual(embeds[0].fields[6].name, "Barrows (2) 🔸 · Unassigned")
-        self.assertEqual(embeds[0].fields[12].name, "Barrows (2) 🔹 · Unassigned")
-        self.assertIn("Survival", embeds[0].fields[4].value)
-        self.assertIn("Beast", embeds[0].fields[5].value)
-        self.assertIn("Frost", embeds[0].fields[5].value)
+        self.assertEqual(len(embeds[0].fields), 15)  # three groups, five fields each
+        self.assertEqual([f.name for f in embeds[0].fields[:5]],
+                         ["Hyjal (6) 🔹🔸 · Unassigned", "\u200b", "\u200b",
+                          "Melee (2)", "Ranged (2)"])
+        self.assertEqual([f.inline for f in embeds[0].fields[:5]],
+                         [True, True, False, True, True])
+        self.assertIn("**Tanks (1)**", embeds[0].fields[0].value)
+        self.assertIn("**Healers (1)**", embeds[0].fields[1].value)
+        self.assertEqual(embeds[0].fields[5].name, "Barrows (2) 🔸 · Unassigned")
+        self.assertEqual(embeds[0].fields[10].name, "Barrows (2) 🔹 · Unassigned")
+        self.assertIn("Survival", embeds[0].fields[3].value)
+        self.assertIn("Beast", embeds[0].fields[4].value)
+        self.assertIn("Frost", embeds[0].fields[4].value)
+        self.assertEqual(embeds[0].thumbnail.url, schedule.RAID_PANEL_IMAGE)
+        self.assertEqual(embeds[0].footer.text,
+                         "Contact: @Leadership or mark absent if needed")
         self.assertNotIn("Fresh export", str([e.to_dict() for e in embeds]))
         for embed in embeds:
             self.assertLessEqual(len(embed.fields), 25)
@@ -120,7 +125,7 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         embeds = announcer.roster_embeds(self.event, selection)
         self.assertEqual(embeds[0].fields[0].name,
                          "Hyjal (7) 🔹🔸 · Unassigned")
-        self.assertIn("GuestShaman", embeds[0].fields[4].value)
+        self.assertIn("GuestShaman", embeds[0].fields[3].value)
         self.assertNotIn("<@None>", str([e.to_dict() for e in embeds]))
 
     def test_four_instance_groups_stay_in_single_v1_embed(self):
@@ -130,9 +135,9 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.event["instance_3"] = "Ony (40m)"
         embeds = announcer.roster_embeds(self.event, selected)
         self.assertEqual(len(embeds), 1)
-        self.assertEqual(len(embeds[0].fields), 24)
-        self.assertEqual(embeds[0].fields[18].name, "Ony (1) · Unassigned")
-        self.assertEqual(embeds[0].fields[18].value, "\u200b")
+        self.assertEqual(len(embeds[0].fields), 20)
+        self.assertEqual(embeds[0].fields[15].name, "Ony (1) · Unassigned")
+        self.assertIn("**Tanks (1)**", embeds[0].fields[15].value)
 
     def test_thirty_guild_players_fit_without_losing_names(self):
         people = [
@@ -199,7 +204,7 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(schedule.read_raid(self.path, 1)["panel_message_id"], 555)
         self.message.add_reaction.assert_awaited_once_with(ack.ACK_EMOJI)
 
-    async def test_ogre_invite_commands_follow_registered_leader_character(self):
+    async def test_confirmation_no_longer_contains_early_invite_commands(self):
         import os
         with patch.dict(os.environ, {"OWNER_ID": "101"}):
             await announcer.announce(
@@ -210,7 +215,7 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 "React below to confirm raid spot " + ack.ACK_EMOJI
             ))
             self.assertIn("**Still need nod (1/1):** <@101>", text)
-            self.assertIn("`/w Mage inv`", text)
+            self.assertNotIn("/w", text)
             self.assertNotIn("View raid roster", text)
             self.assertNotIn("Ogre cross name off list", text)
             from cogs import raid_sheets_v3 as sheets
@@ -229,7 +234,7 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 await announcer.refresh(self.bot, self.path, 1, GUILD_ID)
             updated = edited.edit.await_args.kwargs["content"]
             self.assertIn("**All 1 acknowledged.** Ogre got nod from everyone!", updated)
-            self.assertIn("`/w Mage inv`", updated)
+            self.assertNotIn("/w", updated)
             self.assertNotIn("View raid roster", updated)
 
     async def test_reaction_refresh_updates_outstanding_mentions_without_reping(self):
