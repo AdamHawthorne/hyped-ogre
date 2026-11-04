@@ -259,7 +259,7 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(kw["allowed_mentions"].users)
         self.assertEqual(ack.dirty_announcements(self.path), [])
         self.assertEqual(self.channel.send.await_count, 1)
-        self.assertIn(ack.ACK_EMOJI, kw["embeds"][0].fields[5].value)
+        self.assertIn(ack.ACK_EMOJI, kw["embeds"][0].fields[0].value)
 
 
 if __name__ == "__main__":
