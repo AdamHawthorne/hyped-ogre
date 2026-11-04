@@ -2007,10 +2007,8 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
             event, on_signup=signup, on_update=self.on_update,
             on_remind=remind,
             on_gear=self.on_gear, on_absent=absent,
-            public_roster=(
-                read_public_roster(RAID_DB, event["raid_id"], include_identity=True)
-                if event.get("roster_published") else
-                read_signup_roster(RAID_DB, event["raid_id"], include_identity=True)
+            public_roster=read_signup_roster(
+                RAID_DB, event["raid_id"], include_identity=True
             ),
             emoji_map=self.raid_emoji_map(),
         )
