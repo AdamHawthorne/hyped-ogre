@@ -181,7 +181,7 @@ class FlyReleaseTests(unittest.TestCase):
 
 
 class DeploymentWiringTests(unittest.TestCase):
-    def test_main_push_and_manual_fallback_require_the_shared_checks(self):
+    def test_main_push_and_manual_fallback_deploy_after_pr_checks(self):
         workflow = (ROOT / ".github/workflows/deploy-manual.yml").read_text()
         safety = (ROOT / ".github/workflows/safety.yml").read_text()
         self.assertIn("  push:\n    branches: [main]", workflow)
@@ -189,16 +189,17 @@ class DeploymentWiringTests(unittest.TestCase):
         self.assertNotIn("inputs:", workflow)
         self.assertNotIn("pull_request:", workflow)
         self.assertIn("if: github.ref == 'refs/heads/main'", workflow)
-        self.assertIn("uses: ./.github/workflows/safety.yml", workflow)
-        self.assertIn("needs: checks", workflow)
+        # The full Linux/Windows/Docker suite is run on the PR *before*
+        # merging; never repeat those expensive jobs on the main push.
+        self.assertNotIn("uses: ./.github/workflows/safety.yml", workflow)
+        self.assertNotIn("needs: checks", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("environment: production", workflow)
         self.assertIn("  workflow_call:", safety)
         self.assertIn("  pull_request:", safety)
-        self.assertNotIn(
-            "  push:", safety
-        )  # main runs them through the deployment caller
+        self.assertNotIn("  push:", safety)
         self.assertIn("verify-windows:", safety)
+        self.assertIn("Run migration regression guards", safety)
         self.assertLess(
             workflow.index("fly_release.py prepare"), workflow.index("flyctl deploy")
         )
