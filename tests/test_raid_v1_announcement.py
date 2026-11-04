@@ -88,20 +88,22 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
 
     def test_v1_two_by_two_role_grid_and_instance_split_counts(self):
         embeds = announcer.roster_embeds(self.event, self.selected())
-        self.assertEqual([embed.title for embed in embeds],
-                         ["Hyjal (6) 🔹🔸", "Barrows (2) 🔸", "Barrows (2) 🔹"])
-        self.assertEqual(embeds[0].author.name,
+        self.assertEqual(len(embeds), 1)
+        self.assertEqual(embeds[0].title,
                          "<Hyped> Raid #1 | Roster announced")
-        self.assertEqual(embeds[0].author.icon_url,
-                         schedule.RAID_PANEL_IMAGE)
-        self.assertEqual([f.name for f in embeds[0].fields],
-                         ["Tanks (1)", "Healers (1)", "\u200b",
-                          "Melee (2)", "Ranged (2)"])
-        self.assertEqual([f.inline for f in embeds[0].fields],
-                         [True, True, False, True, True])
-        self.assertIn("Survival", embeds[0].fields[3].value)
-        self.assertIn("Beast", embeds[0].fields[4].value)
-        self.assertIn("Frost", embeds[0].fields[4].value)
+        self.assertEqual(embeds[0].author.name, "<Hyped> Raid Roster")
+        self.assertEqual(embeds[0].author.icon_url, schedule.RAID_PANEL_IMAGE)
+        self.assertEqual(len(embeds[0].fields), 18)  # all three groups, one embed
+        self.assertEqual([f.name for f in embeds[0].fields[:6]],
+                         ["Hyjal (6) 🔹🔸", "Tanks (1)", "Healers (1)",
+                          "\u200b", "Melee (2)", "Ranged (2)"])
+        self.assertEqual([f.inline for f in embeds[0].fields[:6]],
+                         [False, True, True, False, True, True])
+        self.assertEqual(embeds[0].fields[6].name, "Barrows (2) 🔸")
+        self.assertEqual(embeds[0].fields[12].name, "Barrows (2) 🔹")
+        self.assertIn("Survival", embeds[0].fields[4].value)
+        self.assertIn("Beast", embeds[0].fields[5].value)
+        self.assertIn("Frost", embeds[0].fields[5].value)
         self.assertNotIn("Fresh export", str([e.to_dict() for e in embeds]))
         for embed in embeds:
             self.assertLessEqual(len(embed.fields), 25)
@@ -113,9 +115,20 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
             ("", "GuestShaman", "Hyjal", "Shaman", "DPS", "Enhancement"),
         ]
         embeds = announcer.roster_embeds(self.event, selection)
-        self.assertEqual(embeds[0].title, "Hyjal (7) 🔹🔸")
-        self.assertIn("GuestShaman", embeds[0].fields[3].value)
+        self.assertEqual(embeds[0].fields[0].name, "Hyjal (7) 🔹🔸")
+        self.assertIn("GuestShaman", embeds[0].fields[4].value)
         self.assertNotIn("<@None>", str([e.to_dict() for e in embeds]))
+
+    def test_four_instance_groups_stay_in_single_v1_embed(self):
+        selected = self.selected() + [
+            ("107", "OnyTank", "Ony", "Warrior", "Tank", "Protection"),
+        ]
+        self.event["instance_3"] = "Ony (40m)"
+        embeds = announcer.roster_embeds(self.event, selected)
+        self.assertEqual(len(embeds), 1)
+        self.assertEqual(len(embeds[0].fields), 24)
+        self.assertEqual(embeds[0].fields[18].name, "Ony (1)")
+        self.assertEqual(embeds[0].fields[18].value, "Leader: Unassigned")
 
     def test_thirty_guild_players_fit_without_losing_names(self):
         people = [
@@ -170,7 +183,8 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(link, self.message.jump_url)
         call = self.channel.send.await_args.kwargs
         self.assertIn("<@101>", call["content"])
-        self.assertEqual(call["embeds"][0].title, "Hyjal (2) 🔹🔸")
+        self.assertEqual(len(call["embeds"]), 1)
+        self.assertEqual(call["embeds"][0].fields[0].name, "Hyjal (2) 🔹🔸")
         self.assertIn("GuestMage", call["embeds"][0].fields[-1].value)
         self.assertNotIn("GuestMage", call["content"])
         self.assertTrue(all(isinstance(e, discord.Embed) for e in call["embeds"]))
@@ -202,6 +216,7 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(kw["allowed_mentions"].users)
         self.assertEqual(ack.dirty_announcements(self.path), [])
         self.assertEqual(self.channel.send.await_count, 1)
+        self.assertIn(ack.ACK_EMOJI, kw["embeds"][0].fields[5].value)
 
 
 if __name__ == "__main__":
