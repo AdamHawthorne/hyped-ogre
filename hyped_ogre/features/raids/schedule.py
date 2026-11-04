@@ -794,12 +794,12 @@ def raid_panel_intro(event):
         "fresh": "Fresh export required",
         "optional": "Optional",
     }.get(wse_policy, "Required if character has no export")
-    # WoWSims instructions belong to collecting sign-ups, not an announced
-    # roster. The roster confirmation link is only Ogre's own reaction post.
+    # The V2 post stays the original sign-up panel after roster publication.
+    # Keep WoWSims instructions here; only the separate V1 announcement
+    # leaves them out. The confirmation link leads to Ogre's V1 reaction post.
     wse_line = (
-        (f"\n**WoWSims:** {wse_label} · "
-         "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)")
-        if not event.get("roster_published") else ""
+        f"\n**WoWSims:** {wse_label} · "
+        "[Get addon](https://www.curseforge.com/wow/addons/wowsims-exporter)"
     )
     confirmation = event.get("confirmation_url") if event.get("roster_published") else None
     return (
