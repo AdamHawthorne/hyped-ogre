@@ -64,11 +64,17 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    Discord's limits permit. Each group has a leader followed by the four
    class-role sections as two rows: Tanks beside Healers and Melee beside
    Ranged. Role totals, class icons, diamond markers and raid links remain.
-   The embed title links back to the original V2 sign-up post, and its
-   creator header links to the person who originally posted that sign-up.
-   Only selected Discord members are pinged in the normal message content.
+   The embed title links back to the original V2 sign-up post. There is no
+   separate creator/author line or founder crown. Instance leaders appear
+   on the same heading line as the instance name and player count. Only
+   selected Discord members are pinged in the normal message content.
    They react to Ogre's check emoji; the corresponding V1 roster name gets
    a check, and the outstanding mentions are removed without a fresh ping.
+   The ordinary acknowledgement text shows a short reaction prompt and
+   current status, followed by copyable `/w <leader character> inv` commands
+   for each distinct assigned group leader. Duplicate leaders get one invite
+   command. Discord renders ordinary message text **above** a V1 embed, so
+   these lines cannot be placed below its box in the same Discord message.
    PUGs stay on the roster but are not pinged or acknowledged. The V2 panel's
    **Confirm raid spot** link points to the actual new V1 reaction message.
    The sign-up post and its existing buttons are never replaced or deleted.
@@ -337,11 +343,9 @@ The **current raid** is excluded from the six statuses.
 The Sheet and Discord rosters are sorted with the Discord account identified by
 `OWNER_ID` first within its Tanks, Healers, Melee or Ranged section,
 before the remaining class/character order. No hidden character IDs are
-modified by this presentation choice. Discord adds
-`<:ogrecrown:1566947968760946948>` after that account's character name. The crown
-is based on the saved member ID, not a matching display name, and is never
-written into character names or Sheet cells. Existing sign-ups, notes, selections
-and attendance records are preserved when this display update rolls out.
+modified by this presentation choice. The raid sign-up, confirmation and
+leadership preview no longer display a founder crown. Existing sign-ups,
+notes, selections and attendance records are preserved.
 
 This view is bot-maintained. Don't manually edit the tab; use the
 WoWSims paste function in Discord to update equipment. Existing raid
