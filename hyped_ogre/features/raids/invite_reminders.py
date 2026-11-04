@@ -32,6 +32,16 @@ def due_invites(path, *, now=None):
         start = datetime.fromisoformat(event["raid_at"]).astimezone(timezone.utc)
         if not start - timedelta(minutes=INVITE_LEAD_MINUTES) <= now < start:
             continue
+        # Post only after Ogre has actually issued the separate V1 roster
+        # confirmation. A selected draft is not enough.
+        with database(path) as con:
+            announcement = con.execute(
+                "SELECT 1 FROM raid_ack_announcements "
+                "WHERE raid_id=? AND retracted_at IS NULL AND deleted_at IS NULL",
+                (event["raid_id"],),
+            ).fetchone()
+        if not announcement:
+            continue
         selected = [
             (member, name, assignment, klass, role, spec)
             for name, assignment, klass, role, spec, member
@@ -51,6 +61,11 @@ def claim_invite(path, event, now):
             SELECT raid_id, ? FROM raids
             WHERE raid_id=? AND roster_published=1 AND archived_at IS NULL
               AND panel_channel_id=?
+              AND EXISTS (
+                SELECT 1 FROM raid_ack_announcements
+                WHERE raid_ack_announcements.raid_id=raids.raid_id
+                  AND retracted_at IS NULL AND deleted_at IS NULL
+              )
             """,
             (now.astimezone(timezone.utc).isoformat(), event["raid_id"],
              event["panel_channel_id"]),
