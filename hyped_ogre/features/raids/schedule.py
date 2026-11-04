@@ -670,7 +670,8 @@ def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None, *,
     return " ".join(part for part in (guild_emoji(klass), name, crown) if part)
 
 
-def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
+def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
+                  acknowledged_ids=()):
     """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
     Only leadership-approved names are passed in from the Sheet. One raider
@@ -705,6 +706,10 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False):
         )
         if not clean_name:
             continue
+        # The custom check appears beside a player's name in Ogre's separate
+        # V1 confirmation once they react. The V2 signup remains unchanged.
+        if (len(entry) > 5 and str(entry[5]) in acknowledged_ids):
+            clean_name += " <:check:1566948806535159808>"
         if by_role:
             if by_role == "four":
                 # V1 roster announcements use the same four roles as sign-ups;
