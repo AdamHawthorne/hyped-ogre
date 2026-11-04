@@ -123,7 +123,8 @@ async def refresh_character_signups(interaction, owner_id, character_id):
         await refresh_player_signup_panel(interaction, raid_id)
 
 
-def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
+def save_character(discord_id, name, class_name, spec, role, path=RAID_DB, *,
+                   roster_visible=True):
     """Update by player + character name, including records from the old realm form.
 
     Keep the legacy realm column in SQLite for migration compatibility, but never
@@ -136,8 +137,16 @@ def save_character(discord_id, name, class_name, spec, role, path=RAID_DB):
         raise ValueError("Choose a valid class, spec and raid role.")
     with database(path) as con:
         return character_mutations.register_character(
-            con, discord_id, name, class_name, spec, role
+            con, discord_id, name, class_name, spec, role,
+            roster_visible=roster_visible,
         )
+
+
+def promote_character_to_roster(discord_id, character_id, path=RAID_DB):
+    """Make an existing LFG character roster-visible without creating a copy."""
+    with database(path) as con:
+        return character_mutations.promote_to_roster(con, discord_id, character_id)
+
 
 def list_characters(discord_id, path=RAID_DB):
     with database(path) as con:
@@ -651,11 +660,13 @@ class CharacterActionView(discord.ui.LayoutView):
         self.owner_id, self.raid_id, self.purpose = owner_id, raid_id, purpose
         rows = member_characters(owner_id)
         main_ids = main_character_ids(owner_id)
-        title = {"signup": "Attend", "gear": "WoWSims", "update": "Characters"}[purpose]
+        title = {"signup": "Attend", "gear": "WoWSims", "update": "Characters",
+                 "lfg": "LFG Characters"}[purpose]
         hint = {
             "signup": "Choose the character you will raid on. Add an optional note next.",
             "gear": "Choose a character to paste /wse export. [Get addon](" + WOWSIMS_ADDON_URL + ").",
             "update": "Choose a character to manage, or add an alt.",
+            "lfg": "Use a saved character or register one for LFG. LFG-only characters are not added to the raid roster.",
         }[purpose]
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(f"## {title}\n{hint}"),
@@ -669,7 +680,7 @@ class CharacterActionView(discord.ui.LayoutView):
             )
             for char_id, name, class_name, spec, role, _ in rows[:24]
         ]
-        if purpose == "update" and len(rows) < 25:
+        if purpose in ("update", "lfg") and len(rows) < 25:
             options.append(discord.SelectOption(
                 label="Add character", value="add", emoji="➕",
                 description="Register a new main or alt",
@@ -677,7 +688,7 @@ class CharacterActionView(discord.ui.LayoutView):
         if not options:
             return
         selection = discord.ui.Select(
-            placeholder="Choose character or add an alt" if purpose == "update" else "Choose your character",
+            placeholder="Choose character or add an alt" if purpose in ("update", "lfg") else "Choose your character",
             options=options,
         )
 
@@ -686,7 +697,8 @@ class CharacterActionView(discord.ui.LayoutView):
                 await interaction.response.send_message("That character isn't yours.", ephemeral=True)
                 return
             if selection.values[0] == "add":
-                await interaction.response.edit_message(view=ClassPickerView(self.owner_id))
+                await interaction.response.edit_message(
+                    view=ClassPickerView(self.owner_id, roster_visible=self.purpose != "lfg"))
                 return
             char_id = int(selection.values[0])
             match = next((r for r in rows if r[0] == char_id), None)
@@ -704,7 +716,7 @@ class CharacterActionView(discord.ui.LayoutView):
                     await interaction.response.edit_message(
                         view=WoWSimsInstructionsView(self.owner_id, char_id, match[1])
                     )
-            elif self.purpose == "update":
+            elif self.purpose in ("update", "lfg"):
                 await interaction.response.edit_message(
                     view=CharacterManageView(self.owner_id, char_id, match)
                 )
@@ -1010,13 +1022,15 @@ class ConfirmCharacterDeleteView(discord.ui.LayoutView):
 
 
 class CharacterNameModal(discord.ui.Modal):
-    def __init__(self, owner_id, class_name, spec, role, signup_raid_id=None):
+    def __init__(self, owner_id, class_name, spec, role, signup_raid_id=None,
+                 *, roster_visible=True):
         super().__init__(title="Save character")
         self.owner_id = owner_id
         self.class_name = class_name
         self.spec = spec
         self.role = role
         self.signup_raid_id = signup_raid_id
+        self.roster_visible = roster_visible
         self.name = discord.ui.TextInput(
             label="Character name", placeholder="Firstname Lastname", max_length=40
         )
@@ -1033,9 +1047,26 @@ class CharacterNameModal(discord.ui.Modal):
         if not is_test_member(interaction) or interaction.user.id != self.owner_id:
             await interaction.response.send_message("This action is available to members of the Hyped Discord server.", ephemeral=True)
             return
+        # A new-character form must not silently edit or duplicate an existing
+        # entry, regardless of case or whether it came from LFG.
+        existing = next(
+            (r for r in member_characters(self.owner_id)
+             if r[1].casefold() == " ".join(self.name.value.split()).casefold()),
+            None,
+        )
+        if existing is not None:
+            await interaction.response.send_message(
+                "That character is already registered. Select it from your saved "
+                "characters instead; Ogre won't create a duplicate.",
+                ephemeral=True,
+            )
+            return
         try:
-            outcome = save_character(interaction.user.id, self.name.value,
-                                     self.class_name, self.spec, self.role)
+            outcome = save_character(
+                interaction.user.id, self.name.value,
+                self.class_name, self.spec, self.role,
+                roster_visible=self.roster_visible or self.signup_raid_id is not None,
+            )
         except (ValueError, sqlite3.Error) as exc:
             await interaction.response.send_message(
                 f"Ogre couldn't save character: {exc}", ephemeral=True
@@ -1103,11 +1134,13 @@ class CharacterNameModal(discord.ui.Modal):
 
 
 class ClassPickerView(discord.ui.LayoutView):
-    def __init__(self, owner_id, signup_raid_id=None, editing_character_id=None):
+    def __init__(self, owner_id, signup_raid_id=None, editing_character_id=None,
+                 *, roster_visible=True):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.signup_raid_id = signup_raid_id
         self.editing_character_id = editing_character_id
+        self.roster_visible = roster_visible
         title = (f"## Sign up · Raid #{signup_raid_id}\n"
                  if signup_raid_id is not None else
                  "## Update character\n" if editing_character_id is not None
@@ -1132,6 +1165,7 @@ class ClassPickerView(discord.ui.LayoutView):
                     self.owner_id, select.values[0],
                     signup_raid_id=self.signup_raid_id,
                     editing_character_id=self.editing_character_id,
+                    roster_visible=self.roster_visible,
                 )
             )
 
@@ -1141,12 +1175,13 @@ class ClassPickerView(discord.ui.LayoutView):
 
 class SpecPickerView(discord.ui.LayoutView):
     def __init__(self, owner_id, class_name, signup_raid_id=None,
-                 editing_character_id=None):
+                 editing_character_id=None, *, roster_visible=True):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.class_name = class_name
         self.signup_raid_id = signup_raid_id
         self.editing_character_id = editing_character_id
+        self.roster_visible = roster_visible
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {class_name}\n"
@@ -1171,6 +1206,7 @@ class SpecPickerView(discord.ui.LayoutView):
                         self.owner_id, self.class_name, spec, roles,
                         signup_raid_id=self.signup_raid_id,
                         editing_character_id=self.editing_character_id,
+                        roster_visible=self.roster_visible,
                     )
                 )
             elif self.editing_character_id is not None:
@@ -1181,7 +1217,8 @@ class SpecPickerView(discord.ui.LayoutView):
             else:
                 await interaction.response.send_modal(
                     CharacterNameModal(self.owner_id, self.class_name, spec, roles[0],
-                                       signup_raid_id=self.signup_raid_id)
+                                       signup_raid_id=self.signup_raid_id,
+                                       roster_visible=self.roster_visible)
                 )
 
         select.callback = select_spec
@@ -1190,13 +1227,14 @@ class SpecPickerView(discord.ui.LayoutView):
 
 class RolePickerView(discord.ui.LayoutView):
     def __init__(self, owner_id, class_name, spec, roles, signup_raid_id=None,
-                 editing_character_id=None):
+                 editing_character_id=None, *, roster_visible=True):
         super().__init__(timeout=300)
         self.owner_id = owner_id
         self.class_name = class_name
         self.spec = spec
         self.signup_raid_id = signup_raid_id
         self.editing_character_id = editing_character_id
+        self.roster_visible = roster_visible
         self.add_item(discord.ui.Container(
             discord.ui.TextDisplay(
                 f"## {class_name} · {spec}\n"
@@ -1223,6 +1261,7 @@ class RolePickerView(discord.ui.LayoutView):
                     CharacterNameModal(
                         self.owner_id, self.class_name, self.spec, select.values[0],
                         signup_raid_id=self.signup_raid_id,
+                        roster_visible=self.roster_visible,
                     )
                 )
 
