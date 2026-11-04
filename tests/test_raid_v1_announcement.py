@@ -201,7 +201,8 @@ class RaidAnnouncementWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(call["embeds"]), 1)
         self.assertTrue(call["embeds"][0].fields[0].name.startswith(
             "Hyjal (2) 🔹🔸"))
-        self.assertIn("GuestMage", call["embeds"][0].fields[-1].value)
+        self.assertIn("GuestMage", call["embeds"][0].fields[-2].value)
+        self.assertFalse(call["embeds"][0].fields[-1].inline)
         self.assertNotIn("GuestMage", call["content"])
         self.assertTrue(all(isinstance(e, discord.Embed) for e in call["embeds"]))
         self.assertEqual(ack.announcement(self.path, 1), (333, 444))
