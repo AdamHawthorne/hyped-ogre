@@ -65,16 +65,23 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    class-role sections as two rows: Tanks beside Healers and Melee beside
    Ranged. Role totals, class icons, diamond markers and raid links remain.
    The embed title links back to the original V2 sign-up post. There is no
-   separate creator/author line or founder crown. Instance leaders appear
-   on the same heading line as the instance name and player count. Only
+   separate creator/author line or founder crown. The image
+   `https://i.vgy.me/asI88C.png` is shown as the right-hand thumbnail.
+   Instance leaders appear on the same heading line as the instance name
+   and player count. The group heading and Tanks share a single left-hand
+   field to avoid an empty row before the role selection. A small footer
+   reads `Contact: @Leadership or mark absent if needed` (plain text). Only
    selected Discord members are pinged in the normal message content.
    They react to Ogre's check emoji; the corresponding V1 roster name gets
    a check, and the outstanding mentions are removed without a fresh ping.
-   The ordinary acknowledgement text shows a short reaction prompt and
-   current status, followed by copyable `/w <leader character> inv` commands
-   for each distinct assigned group leader. Duplicate leaders get one invite
-   command. Discord renders ordinary message text **above** a V1 embed, so
-   these lines cannot be placed below its box in the same Discord message.
+   The V1 confirmation text contains only the short reaction prompt and
+   outstanding/acknowledged status. Exactly **15 minutes before raid start**,
+   Ogre posts a **separate, ordinary Discord message** in the raid's posted
+   channel: `Raid starting, good luck.`, followed by one copyable
+   `/w <leader character> inv` line for each distinct assigned leader.
+   Snore comes first when leading a group; no member or role is pinged.
+   The message is recorded so a restart cannot duplicate it, and is skipped
+   when the roster is unpublished or the raid archived.
    PUGs stay on the roster but are not pinged or acknowledged. The V2 panel's
    **Confirm raid spot** link points to the actual new V1 reaction message.
    The sign-up post and its existing buttons are never replaced or deleted.
