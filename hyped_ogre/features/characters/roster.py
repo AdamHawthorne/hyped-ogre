@@ -52,7 +52,7 @@ def rows(path):
         con.row_factory = sqlite3.Row
         characters = [dict(row) for row in con.execute(
             "SELECT character_id,discord_id,name,class_name,spec,role,is_main,off_spec,off_role "
-            "FROM characters ORDER BY is_main DESC,LOWER(name),character_id")]
+            "FROM characters WHERE roster_visible=1 ORDER BY is_main DESC,LOWER(name),character_id")]
         window = [r[0] for r in con.execute(
             "SELECT raid_id FROM raids WHERE archived_at IS NOT NULL ORDER BY raid_at DESC LIMIT 4")]
         credits = {}
