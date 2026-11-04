@@ -90,17 +90,19 @@ class RaidGroupLeaderTests(unittest.TestCase):
             f"https://discord.com/channels/{GUILD_ID}/333/444")
         self.assertFalse(embed.author.name)
         self.assertNotIn("author", embed.to_dict())
-        self.assertEqual(len(embed.fields), 20)
-        self.assertEqual([field.inline for field in embed.fields[:5]],
-                         [True, True, False, True, True])
-        self.assertEqual(embed.fields[0].name, "Hyjal (2) 🔹🔸 <@42>")
+        self.assertEqual(len(embed.fields), 24)
+        self.assertEqual([field.inline for field in embed.fields[:6]],
+                         [True, True, False, True, True, False])
+        self.assertEqual(embed.fields[0].name, "Hyjal (2) 🔹🔸")
         self.assertIn("**Tanks (2)**", embed.fields[0].value)
-        self.assertEqual(embed.fields[5].name, "Barrows (2) 🔸 <@42>")
-        self.assertEqual(embed.fields[10].name,
-                         "Barrows (1) 🔹 · Unassigned")
-        self.assertEqual(embed.fields[15].name, "Ony (2) <@42>")
+        self.assertEqual(embed.fields[6].name, "Barrows (2) 🔸")
+        self.assertEqual(embed.fields[12].name, "Barrows (1) 🔹")
+        self.assertEqual(embed.fields[18].name, "Ony (2)")
         self.assertEqual(embed.thumbnail.url, schedule.RAID_PANEL_IMAGE)
-        self.assertIn("Contact: @Leadership", embed.footer.text)
+        self.assertNotIn("footer", embed.to_dict())
+        self.assertNotIn("<@", str(embed.to_dict()))
+        self.assertTrue(all(not embed.fields[i].inline
+                            for i in (5, 11, 17, 23)))
         self.assertNotIn("\\n", embed.fields[0].value)
         self.assertLess(len(embed), 5900)
 
