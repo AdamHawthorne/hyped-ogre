@@ -873,21 +873,19 @@ def raid_panel_text(event, public_roster=(), *, emoji_map=None):
 
 
 def roster_components(event, public_roster, *, emoji_map=None):
-    """Role-grouped live sign-ups before confirmation; team rosters afterwards."""
+    """The original V2 message always shows live sign-ups, never the confirmed grid.
+
+    Leadership's selected instance roster is posted separately as a V1
+    announcement. Keep the V2 look, role groups and member actions intact.
+    """
     if not public_roster:
         return []
-    if not event.get("roster_published"):
-        return [
-            discord.ui.TextDisplay(
-                "-# **" + role + " (" + str(len(players)) + ")**\n" +
-                "\n".join("-# " + player for player in players))
-            for role, players in signup_role_groups(
-                public_roster, emoji_map=emoji_map)
-        ]
     return [
-        discord.ui.TextDisplay(_roster_group_text(title, players))
-        for title, players in roster_groups(
-            event, public_roster, emoji_map=emoji_map, by_role=True)
+        discord.ui.TextDisplay(
+            "-# **" + role + " (" + str(len(players)) + ")**\n" +
+            "\n".join("-# " + player for player in players))
+        for role, players in signup_role_groups(
+            public_roster, emoji_map=emoji_map)
     ]
 
 
@@ -906,7 +904,6 @@ class RaidEventPanel(discord.ui.LayoutView):
                 ),
             ),
             *( [discord.ui.TextDisplay(
-                   "### Roster" if event.get("roster_published") else
                    f"**Sign-ups ({len(public_roster)})**"
                )] + roster_components(event, public_roster, emoji_map=emoji_map)
                if public_roster else [] ),
