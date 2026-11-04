@@ -18,11 +18,7 @@ INVITE_LEAD_MINUTES = 15
 
 def invite_text(raid_id, commands):
     """Plain Discord message: copyable lines, never a ping or an embed."""
-    return (
-        f"**Raid #{raid_id} invites!**\n"
-        "Ogre say whisper your raid leader for invite:\n"
-        + "\n".join(f"`{command}`" for command in commands)
-    )
+    return "Raid starting, good luck.\n\n" + "\n".join(commands)
 
 
 def due_invites(path, *, now=None):
