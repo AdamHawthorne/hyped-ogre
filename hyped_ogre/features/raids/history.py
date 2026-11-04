@@ -10,9 +10,11 @@ from datetime import datetime
 
 STATES = {
     "Attended": "Attended", "Late": "Late", "AFK": "AFK",
-    "No-show": "No-show", "Absent": "Absent", "Excused": "Excused",
-    "Pending": "Pending",
+    "No-show": "No-show", "Excused": "Excused",
 }
+# The official Sheet also records pre-final outcomes. Keep STATES unchanged
+# for old callers: a local Pending entry is not proof of attendance.
+SHEET_STATES = {**STATES, "Absent": "Absent", "Pending": "Pending"}
 
 
 def history_for_raid(db_path, current_raid_id, attendance_rows=None):
@@ -25,10 +27,18 @@ def history_for_raid(db_path, current_raid_id, attendance_rows=None):
     from cogs.raid_schedule import database
     with database(db_path) as con:
         raids = list(con.execute(
-            "SELECT raid_id, raid_at, archived_at FROM raids "
-            "ORDER BY raid_at, raid_id"
+            "SELECT raid_id, raid_at FROM raids ORDER BY raid_at, raid_id"
         ))
-        completed = {row[0] for row in raids if row[2]}
+        # Legacy migration fixtures may not yet have the archived_at column.
+        # Normal bot databases have it, but no extra query is needed for the
+        # local-only fallback.
+        completed = set()
+        if attendance_rows is not None:
+            columns = {row[1] for row in con.execute("PRAGMA table_info(raids)")}
+            if "archived_at" in columns:
+                completed = {row[0] for row in con.execute(
+                    "SELECT raid_id FROM raids WHERE archived_at IS NOT NULL"
+                )}
         positions = [r[0] for r in raids]
         if current_raid_id not in positions:
             return {}
@@ -55,7 +65,7 @@ def history_for_raid(db_path, current_raid_id, attendance_rows=None):
             for raid_id, member_id, status in con.execute(
                 "SELECT raid_id, discord_id, status FROM attendance"
             ):
-                if raid_id in previous and status in STATES and status != "Pending":
+                if raid_id in previous and status in STATES:
                     statuses[(raid_id, member_id)] = STATES[status]
         else:
             # The permanent worksheet wins for completed raids. Do not copy
@@ -70,8 +80,8 @@ def history_for_raid(db_path, current_raid_id, attendance_rows=None):
                 if raid_id not in previous or raid_id not in completed:
                     continue
                 status = str(raw[9]).strip()
-                if status in STATES:
-                    statuses[(raid_id, member_id)] = STATES[status]
+                if status in SHEET_STATES:
+                    statuses[(raid_id, member_id)] = SHEET_STATES[status]
         members = set(r[0] for r in con.execute(
             "SELECT DISTINCT discord_id FROM characters"
         ))
