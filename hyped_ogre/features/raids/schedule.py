@@ -151,6 +151,16 @@ def ensure_raid_fields(path):
                 PRIMARY KEY (raid_id, group_name)
             )
         """)
+        # Claim each scheduled invite notice *before* posting. A restart
+        # cannot send a duplicate, and an archived or deleted raid is ignored.
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_invite_posts (
+                raid_id INTEGER PRIMARY KEY REFERENCES raids(raid_id),
+                claimed_at TEXT NOT NULL,
+                posted_at TEXT,
+                message_id INTEGER
+            )
+        """)
         ack_cols = {row[1] for row in con.execute(
             "PRAGMA table_info(raid_ack_announcements)"
         )}
@@ -489,6 +499,7 @@ def delete_raid(path, number):
         con.execute("DELETE FROM raid_ack_members WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_ack_announcements WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_group_leaders WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_invite_posts WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True

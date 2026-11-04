@@ -1,12 +1,13 @@
 """Public raid acknowledgement messages: opt-in pings, durable ✅ reactions."""
 import asyncio
 import logging
+import os
 
 import discord
 
 from cogs import raid_acknowledgements as store, raid_sheets_v3
 from cogs.raid_schedule import (
-    RAID_PANEL_ACCENT, read_raid, read_public_roster,
+    RAID_PANEL_ACCENT, RAID_PANEL_IMAGE, read_raid, read_public_roster,
     raid_panel_when, roster_groups,
 )
 from hyped_ogre.features.raids.leaders import (
@@ -35,9 +36,16 @@ def leader_invite_commands(path, event, selected):
     }
     invited = set()
     commands = []
-    for group in GROUPS:
-        leader = leaders.get(group)
-        if not leader or leader in invited:
+    # Snore (configured owner) always appears first when leading a group,
+    # even if their only assigned instance is listed after Hyjal.
+    owner = os.getenv("OWNER_ID", "").strip()
+    leader_order = [leaders.get(group) for group in GROUPS]
+    leader_order = sorted(
+        (member for member in leader_order if member),
+        key=lambda member: 0 if owner and member == owner else 1,
+    )
+    for leader in leader_order:
+        if leader in invited:
             continue
         name = names.get(leader, "").replace("\r", " ").replace("\n", " ").replace("`", "")
         if not name:
@@ -66,9 +74,10 @@ def _member_chunks(names):
 def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     """One standard V1 embed for all normal raid instances and both splits.
 
-    Exactly six embed fields per group: full-width group/leader header, two
-    inline Tank/Healer cells, a full-width spacer, two inline Melee/Ranged
-    cells. Four nonempty groups therefore fit in 24 of Discord's 25 fields.
+    Each group uses five fields: an inline group-heading/Tanks field beside
+    Healers, one full-width row break between the upper and lower pairs, and
+    then the two Melee/Ranged fields. No empty full-width heading row.
+    Four nonempty groups fit within Discord's 25-field limit.
     Create a continuation embed only if the full roster exceeds Discord limits.
     The V2 sign-up post is never modified by this renderer.
     """
@@ -98,6 +107,9 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
     if event.get("wcl_url"):
         detail += f"\n[Warcraft Logs]({event['wcl_url']})"
     main.description = detail
+    main.set_thumbnail(url=RAID_PANEL_IMAGE)
+    # Footer strings cannot mention Discord roles; this is guidance only.
+    main.set_footer(text="Contact: @Leadership or mark absent if needed")
     current = main
 
     for group, players in roster_groups(
@@ -126,23 +138,24 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
             f"{title} <@{leader}>" if leader else f"{title} · Unassigned"
         )
         for page in range(pages):
-            fields = [(
-                group_heading if page == 0 else f"{title} · continued",
-                "\u200b", False,
-            )]
-            for role in ("Tanks", "Healers"):
-                names = chunks[role][page] if page < len(chunks[role]) else []
-                fields.append((
-                    f"{role} ({len(members[role])})" if page == 0 else role,
-                    "\n".join(names) or "—", True,
-                ))
-            fields.append(("\u200b", "\u200b", False))
-            for role in ("Melee", "Ranged"):
-                names = chunks[role][page] if page < len(chunks[role]) else []
-                fields.append((
-                    f"{role} ({len(members[role])})" if page == 0 else role,
-                    "\n".join(names) or "—", True,
-                ))
+            tanks = chunks["Tanks"][page] if page < len(chunks["Tanks"]) else []
+            healers = chunks["Healers"][page] if page < len(chunks["Healers"]) else []
+            melee = chunks["Melee"][page] if page < len(chunks["Melee"]) else []
+            ranged = chunks["Ranged"][page] if page < len(chunks["Ranged"]) else []
+            group_name = group_heading if page == 0 else f"{title} · continued"
+            fields = [
+                (group_name,
+                 f"**Tanks ({len(members['Tanks'])})**\n" + ("\n".join(tanks) or "—"),
+                 True),
+                ("\u200b",
+                 f"**Healers ({len(members['Healers'])})**\n" + ("\n".join(healers) or "—"),
+                 True),
+                ("\u200b", "\u200b", False),
+                (f"Melee ({len(members['Melee'])})" if page == 0 else "Melee",
+                 "\n".join(melee) or "—", True),
+                (f"Ranged ({len(members['Ranged'])})" if page == 0 else "Ranged",
+                 "\n".join(ranged) or "—", True),
+            ]
             addition = sum(len(n) + len(v) for n, v, _ in fields)
             if (len(current.fields) + len(fields) > 25 or
                     len(current) + addition > 5850):
@@ -179,10 +192,7 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
               if str(row[0]).isdigit() and int(row[0]) > 0]
     if not pinged:
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
-    content = store.render(
-        raid_id, pinged, len(pinged),
-        invite_commands=leader_invite_commands(path, event, selected),
-    )
+    content = store.render(raid_id, pinged, len(pinged))
     embeds = roster_embeds(event, selected, path=path)
     if not embeds:
         raise ValueError("Selected roster lacks class and raid assignment details.")
@@ -255,10 +265,7 @@ async def refresh(bot, path, raid_id, guild_id):
         for name, assignment, klass, role, spec, member_id
         in read_public_roster(path, raid_id, include_identity=True)
     ]
-    content = store.render(
-        raid_id, waiting, len(entries),
-        invite_commands=leader_invite_commands(path, event, selected),
-    )
+    content = store.render(raid_id, waiting, len(entries))
     embeds = roster_embeds(
         event, selected, path=path,
         acknowledged_ids={member_id for member_id, _, acked in entries

@@ -23,6 +23,7 @@ from hyped_ogre.features.characters import mutations as character_mutations
 from hyped_ogre.features.raids import signup_queries
 from hyped_ogre.features.raids import signup_mutations
 from hyped_ogre.features.raids.leaders import set_group_leader, GROUPS
+from hyped_ogre.features.raids import invite_reminders
 from hyped_ogre.features.raids.signup_reference import (
     SHEET_TABS, ATTENDANCE_OPTIONS, CLASS_SPECS,
 )
@@ -1585,6 +1586,7 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
     def __init__(self, bot):
         self.bot = bot
         self._sheet_task = None
+        self._invite_task = None
         self._discord_name_cache = {}
         self._last_sheet_error = None
         self._last_sheet_sync = None
@@ -1774,10 +1776,25 @@ class RaidPrototype(commands.GroupCog, group_name="raid", group_description="Hyp
                 self.bot.add_view(self.make_panel(event), message_id=event["panel_message_id"])
         if raid_sheets.configured():
             self._sheet_task = asyncio.create_task(self.sheet_sync_loop())
+        # Invite posts are Discord-only and must continue when Sheets is down.
+        self._invite_task = asyncio.create_task(self.invite_reminder_loop())
 
     def cog_unload(self):
         if self._sheet_task:
             self._sheet_task.cancel()
+        if self._invite_task:
+            self._invite_task.cancel()
+
+    async def invite_reminder_loop(self):
+        await self.bot.wait_until_ready()
+        while True:
+            try:
+                await invite_reminders.send_due_invites(
+                    self.bot, RAID_DB, GUILD_ID
+                )
+            except (discord.HTTPException, sqlite3.Error, ValueError) as exc:
+                LOGGER.warning("Raid invite scheduler error: %s", exc)
+            await asyncio.sleep(30)
 
     async def sheet_sync_loop(self):
         await self.bot.wait_until_ready()

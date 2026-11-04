@@ -46,9 +46,7 @@ class RaidFollowupTests(unittest.TestCase):
         self.assertNotIn("View raid roster", text)
         self.assertIn("**All 1 acknowledged.** Ogre got nod from everyone!",
                       ack.render(1, [], 1))
-        self.assertIn("`/w Snore Mon inv`",
-                      ack.render(1, [], 1,
-                                 invite_commands=["/w Snore Mon inv"]))
+        self.assertNotIn("/w", ack.render(1, [], 1))
         self.assertNotIn("Ogre picked raid team", text)
         self.assertNotIn("Raid spot stay yours", text)
         self.assertNotIn("<@42>", ack.render(1, [], 1))
