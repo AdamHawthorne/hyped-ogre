@@ -11,6 +11,7 @@ Usage on the existing Fly machine (after deployment):
       --expect-characters N --expect-raids N --expect-lfg N
 """
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 import os
@@ -82,7 +83,7 @@ def _rows(db, query):
 
 def audit(root=Path("/data")):
     raid, lfg = _paths(root)
-    with _connect(raid, readonly=True) as db:
+    with closing(_connect(raid, readonly=True)) as db:
         if not REQUIRED_RAID.issubset(_tables(db)):
             raise RuntimeError("Unexpected raid database schema; no changes made")
         raid_counts = _counts(db, RAID_DATA)
@@ -94,7 +95,7 @@ def audit(root=Path("/data")):
             "ORDER BY raid_id") if "raid_ack_announcements" in _tables(db) else []
         if _rows(db, "PRAGMA foreign_key_check"):
             raise RuntimeError("Existing raid foreign key violations; no changes made")
-    with _connect(lfg, readonly=True) as db:
+    with closing(_connect(lfg, readonly=True)) as db:
         if not REQUIRED_LFG.issubset(_tables(db)):
             raise RuntimeError("Unexpected LFG database schema; no changes made")
         lfg_counts = _counts(db, LFG_DATA)
@@ -122,8 +123,8 @@ def audit(root=Path("/data")):
 def _backup_sqlite(source, destination):
     # sqlite3.backup gives a consistent image even when the bot is online
     # and the live database uses WAL; file-copying a live .db would not.
-    with _connect(source, readonly=True) as source_db:
-        with sqlite3.connect(destination) as backup_db:
+    with closing(_connect(source, readonly=True)) as source_db:
+        with closing(sqlite3.connect(destination)) as backup_db:
             source_db.backup(backup_db)
             if backup_db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("Backup integrity check failed")
@@ -188,8 +189,8 @@ def execute(root, *, confirm, expected_characters, expected_raids, expected_lfg)
             raise RuntimeError("Raid relational integrity check failed")
         if _rows(db, "PRAGMA lfg.foreign_key_check"):
             raise RuntimeError("LFG relational integrity check failed")
-        assert not sum(_counts(db, RAID_DATA).values())
-        assert not sum(_counts(db, LFG_DATA, "lfg").values())
+        if sum(_counts(db, RAID_DATA).values()) or sum(_counts(db, LFG_DATA, "lfg").values()):
+            raise RuntimeError("Reset verification found leftover data")
         db.execute("COMMIT")
     except Exception:
         if db.in_transaction:
