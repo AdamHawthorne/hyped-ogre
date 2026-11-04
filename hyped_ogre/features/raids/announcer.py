@@ -18,6 +18,23 @@ LOGGER = logging.getLogger(__name__)
 ROLES = ("Tanks", "Healers", "Melee", "Ranged")
 
 
+def _creator_display(bot, event):
+    creator_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
+    if not creator_id.isdigit() or int(creator_id) <= 0:
+        return None
+    person = None
+    if hasattr(bot, "get_guild"):
+        guild = bot.get_guild(GUILD_ID)
+        if guild is not None and hasattr(guild, "get_member"):
+            person = guild.get_member(int(creator_id))
+    if person is None and hasattr(bot, "get_user"):
+        person = bot.get_user(int(creator_id))
+    return (getattr(person, "display_name", None) or
+            getattr(person, "name", None) or
+            ("Snore" if creator_id == str(os.getenv("OWNER_ID", "")) else
+             "Guild leadership"))
+
+
 def _member_chunks(names):
     """No role field exceeds 1,024 characters or hides a raider."""
     chunks, current = [], []
@@ -67,7 +84,7 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=(),
     creator_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
     if creator_id.isdigit() and int(creator_id) > 0:
         main.set_author(
-            name=f"Created by {creator_name or 'Snore'}",
+            name=f"Created by {creator_name or 'Guild leadership'}",
             url=f"https://discord.com/users/{creator_id}",
             icon_url=RAID_PANEL_IMAGE,
         )
@@ -157,11 +174,9 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
     panel_url = f"https://discord.com/channels/{guild_id}/{channel_id}/{panel_id}"
     content = store.render(raid_id, pinged, len(pinged), panel_url)
-    owner_id = str(event.get("created_by") or os.getenv("OWNER_ID") or "")
-    owner = (bot.get_user(int(owner_id)) if owner_id.isdigit()
-             and hasattr(bot, "get_user") else None)
-    name = getattr(owner, "display_name", None) or getattr(owner, "name", None)
-    embeds = roster_embeds(event, selected, path=path, creator_name=name)
+    embeds = roster_embeds(
+        event, selected, path=path, creator_name=_creator_display(bot, event)
+    )
     if not embeds:
         raise ValueError("Selected roster lacks class and raid assignment details.")
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
@@ -243,6 +258,7 @@ async def refresh(bot, path, raid_id, guild_id):
         path=path,
         acknowledged_ids={member_id for member_id, _, acked in entries
                           if acked is not None},
+        creator_name=_creator_display(bot, event),
     )
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
     message = await channel.fetch_message(message_id)
