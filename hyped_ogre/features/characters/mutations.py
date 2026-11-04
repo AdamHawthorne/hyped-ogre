@@ -103,11 +103,20 @@ def set_character_race(con, discord_id, character_id, race, race_classes):
 def set_main_character(con, discord_id, character_id):
     """Keep exactly one owned Main without deleting linked records."""
     row = con.execute(
-        "SELECT 1 FROM characters WHERE discord_id=? AND character_id=?",
+        "SELECT roster_visible FROM characters WHERE discord_id=? AND character_id=?",
         (discord_id, character_id),
     ).fetchone()
     if not row:
         raise ValueError("Ogre cannot edit someone else's character.")
+    if not row[0]:
+        # An LFG-only character cannot displace a registered roster main.
+        visible = con.execute(
+            "SELECT 1 FROM characters WHERE discord_id=? AND roster_visible=1 LIMIT 1",
+            (discord_id,),
+        ).fetchone()
+        if visible:
+            raise ValueError(
+                "Add this LFG character to the roster before making it Main.")
     con.execute("UPDATE characters SET is_main=0 WHERE discord_id=?", (discord_id,))
     con.execute(
         "UPDATE characters SET is_main=1 WHERE discord_id=? AND character_id=?",
