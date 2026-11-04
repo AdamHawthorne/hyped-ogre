@@ -75,7 +75,7 @@ class RaidFollowupTests(unittest.TestCase):
         )
         # The manual Check URL is no longer a confirmation link.
         self.assertNotIn("**Required:**", text)
-        self.assertNotIn("WoWSims:", text)
+        self.assertIn("WoWSims:", text)
         self.assertLess(text.index("**Warcraft Logs:**"), text.index("[SoftRes"))
 
     def test_existing_sheet_format_uses_overflow_and_equal_management_widths(self):
