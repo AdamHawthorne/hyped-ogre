@@ -6,9 +6,14 @@ import discord
 from cogs import raid_signup as raid
 from cogs.emojis import markup
 from hyped_ogre.features.raids.schedule import signup_role_group
+from hyped_ogre.features.guild_sync import latest_levels_by_name
 from . import equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
+
+
+def character_key(name):
+    return name.split("-", 1)[0].strip().casefold()
 
 def rows(path):
     with raid.database(path) as con:
@@ -27,6 +32,7 @@ def rows(path):
                 credits[row[0]] = row[1]
     catalog = items.cached_catalog(path)
     gear = {r["character_id"]: r for r in equipment.latest_profiles(path)}
+    synced_levels = latest_levels_by_name()
     for character in characters:
         character["attendance"] = (f"{100 * credits.get(character['discord_id'], 0) / len(window):.0f}%"
                                    if window else "N/A")
@@ -34,9 +40,16 @@ def rows(path):
         parsed = equipment.parse_export(export["raw_text"]) if export else None
         # A saved WoWSims export contains a snapshot, not a live character level.
         level = parsed.get("level") if parsed else None
-        character["level"] = (level if isinstance(level, int)
-                              and not isinstance(level, bool)
-                              and 1 <= level <= 60 else None)
+        live_level = synced_levels.get(character_key(character["name"]))
+        if live_level:
+            character["level"] = live_level["level"]
+            character["level_source"] = "guild"
+            character["level_captured_at"] = live_level["captured_at"]
+        else:
+            character["level"] = (level if isinstance(level, int)
+                                  and not isinstance(level, bool)
+                                  and 1 <= level <= 60 else None)
+            character["level_source"] = "wowsims" if character["level"] is not None else None
         average, known, equipped = equipment.average_item_level(parsed, catalog)
         character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
     return characters
@@ -83,6 +96,7 @@ def render(characters):
         return result
 
     embeds = [new_embed(True)]
+    embeds[0].set_footer(text="Levels use the latest guild roster sync when available; otherwise the last WoWSims export.")
     roles = ("Tanks", "Healers", "Melee", "Ranged")
     for label in roles:
         members = sorted(

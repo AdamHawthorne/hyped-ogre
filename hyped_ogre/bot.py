@@ -276,17 +276,22 @@ async def topgg_webhook(request):
 
 async def start_webhook():
 
-    app = web.Application()
+    app = web.Application(client_max_size=256 * 1024)
 
     async def remove_server_header(request, response):
         response.headers.pop("Server", None)
 
     app.on_response_prepare.append(remove_server_header)
 
-    app.router.add_post(
-        "/topgg",
-        topgg_webhook
-    )
+    if os.getenv("ENABLE_WEBHOOK") == "true":
+        app.router.add_post(
+            "/topgg",
+            topgg_webhook
+        )
+
+    if os.getenv("HYPED_SYNC_ENABLED") == "true":
+        from hyped_ogre.features.guild_sync import register_route
+        register_route(app, bot)
 
     app.router.add_get(
         "/privacy",
@@ -2154,7 +2159,7 @@ async def on_ready():
                 log_error(f"PUBLIC LEDGER REFRESH FAILED: {exc!r}")
         asyncio.create_task(public_ledger_job())
 
-    if os.getenv("ENABLE_WEBHOOK") == "true":
+    if os.getenv("ENABLE_WEBHOOK") == "true" or os.getenv("HYPED_SYNC_ENABLED") == "true":
         await start_webhook()
 
     log_event(
