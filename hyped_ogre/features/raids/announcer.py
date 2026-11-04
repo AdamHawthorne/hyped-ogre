@@ -39,7 +39,7 @@ def leader_invite_commands(path, event, selected):
         leader = leaders.get(group)
         if not leader or leader in invited:
             continue
-        name = names.get(leader, "").replace("\\r", " ").replace("\\n", " ").replace("`", "")
+        name = names.get(leader, "").replace("\r", " ").replace("\n", " ").replace("`", "")
         if not name:
             continue
         commands.append(f"/w {name} inv")
@@ -128,7 +128,7 @@ def roster_embeds(event, selected, *, path=None, acknowledged_ids=()):
         for page in range(pages):
             fields = [(
                 group_heading if page == 0 else f"{title} · continued",
-                "\\u200b", False,
+                "\u200b", False,
             )]
             for role in ("Tanks", "Healers"):
                 names = chunks[role][page] if page < len(chunks[role]) else []
