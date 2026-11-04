@@ -77,18 +77,18 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
                 row[14] = "Keep leadership note"
         return sheets._header(self.event, body, sheets.tab_title(self.event))
 
-    async def test_collecting_panel_matches_sheet_owner_order_and_adds_crown(self):
+    async def test_collecting_panel_preserves_owner_order_without_crown(self):
         before = self.snapshot()
         sheet_tanks = [row[1] for row in self.selected_rows() if row[4] == "Tank"]
         self.assertEqual(sheet_tanks, ["Zulu", "Alpha"])
         text = self.panel_text(self.panel(self.event))
         tanks = text.split("**Tanks (2)**", 1)[1].split("**Ranged", 1)[0]
         self.assertLess(tanks.index("Zulu"), tanks.index("Alpha"))
-        self.assertIn("Zulu " + schedule.CREATOR_CROWN, tanks)
-        self.assertEqual(text.count(schedule.CREATOR_CROWN), 1)
+        self.assertIn("Zulu", tanks)
+        self.assertNotIn("ogrecrown", text)
         self.assertEqual(self.snapshot(), before)
 
-    async def test_creator_uses_member_id_not_character_name_or_lowest_id(self):
+    async def test_identical_character_names_never_receive_creator_crowns(self):
         sheets._save_public_for_one(
             self.path,
             1,
@@ -100,12 +100,10 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         entries = schedule.read_public_roster(self.path, 1, include_identity=True)
         groups = schedule.roster_groups(self.event, entries)
         names = dict(groups)["Hyjal · 20-player"]
-        self.assertTrue(names[0].endswith("Same Name " + schedule.CREATOR_CROWN))
-        self.assertNotIn(schedule.CREATOR_CROWN, names[1])
-        # Guest and legacy rows with no saved identity cannot inherit a crown.
-        self.assertNotIn(
-            schedule.CREATOR_CROWN, schedule.roster_name_with_emojis("Zulu")
-        )
+        self.assertEqual(names[0], names[1])
+        self.assertIn("Same Name", names[0])
+        self.assertNotIn("ogrecrown", names[0] + names[1])
+        self.assertNotIn("ogrecrown", schedule.roster_name_with_emojis("Zulu"))
         mixed = schedule.roster_groups(self.event, [("Guest", "Hyjal"), *entries])
         self.assertEqual(sum(len(names) for _, names in mixed), 3)
 
@@ -159,7 +157,8 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         text = self.panel_text(self.panel(schedule.read_raid(self.path, 1)))
         # The V2 post now always shows live sign-ups; the separate V1
         # confirmation roster is the only instance-specific layout.
-        self.assertEqual(text.count("Zulu " + schedule.CREATOR_CROWN), 1)
+        self.assertEqual(text.count("Zulu"), 1)
+        self.assertNotIn("ogrecrown", text)
         self.assertEqual(self.snapshot(), before)
         self.assertTrue(
             all(row[14] == "Keep leadership note" for row in rows if row[16].isdigit())
@@ -204,7 +203,8 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(text.count("**Hyjal** 🔹🔸"), 1)
         self.assertEqual(text.count("**Barrows** 🔸"), 1)
         self.assertEqual(text.count("**Barrows** 🔹"), 1)
-        self.assertEqual(text.count("-# Zulu " + schedule.CREATOR_CROWN), 2)
+        self.assertEqual(text.count("-# Zulu"), 2)
+        self.assertNotIn("ogrecrown", text)
         self.assertIn("-# Mage", text)
         self.assertNotIn("Hyjal, Barrows", text)
         self.assertNotIn("**1.", text)
