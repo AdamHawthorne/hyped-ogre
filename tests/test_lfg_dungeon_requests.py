@@ -247,16 +247,20 @@ class DungeonRequestTests(unittest.TestCase):
 
     def test_board_uses_latest_canonical_character_and_plain_text_items(self):
         self.save()
+        with lfg.database() as db:
+            lfg.live_plans.set_mode(db, 111, "live")
         board = lfg.BoardLayout(SimpleNamespace(), 111, guild=None)
         payload = json.dumps(board.to_components())
         self.assertIn("LF Dungeons", payload)
         self.assertIn("Characters", payload)
-        self.assertIn("Add / Update", payload)
+        self.assertIn("Other", payload)
         self.assertIn("Alcaz Prison", payload)
         self.assertIn("Blackrock Depths", payload)
         self.assertIn("Hand of Justice, a better shield", payload)
         self.assertNotIn("wowhead.com", payload)
-        self.assertIn("Remove Dungeon", payload)
+        self.assertIn("Edit", payload)
+        self.assertNotIn("Remove Dungeon", payload)
+        self.assertNotIn("Remove Plan", payload)
         self.assertIn("Evenings 19:00 onwards", payload)
         self.assertIn("Snore", payload)
         self.assertIn("Warrior", payload)
