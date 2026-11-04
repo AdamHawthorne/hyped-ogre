@@ -96,22 +96,27 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].url,
                          f"https://discord.com/channels/{GUILD_ID}/111/222")
         self.assertNotIn("author", embeds[0].to_dict())
-        self.assertEqual(len(embeds[0].fields), 15)  # three groups, five fields each
-        self.assertEqual([f.name for f in embeds[0].fields[:5]],
-                         ["Hyjal (6) 🔹🔸 · Unassigned", "\u200b", "\u200b",
-                          "Melee (2)", "Ranged (2)"])
-        self.assertEqual([f.inline for f in embeds[0].fields[:5]],
-                         [True, True, False, True, True])
+        self.assertEqual(len(embeds[0].fields), 18)  # three groups, six fields each
+        self.assertEqual([f.name for f in embeds[0].fields[:6]],
+                         ["Hyjal (6) 🔹🔸", "\u200b", "\u200b",
+                          "Melee (2)", "Ranged (2)", "\u200b"])
+        self.assertEqual([f.inline for f in embeds[0].fields[:6]],
+                         [True, True, False, True, True, False])
         self.assertIn("**Tanks (1)**", embeds[0].fields[0].value)
         self.assertIn("**Healers (1)**", embeds[0].fields[1].value)
-        self.assertEqual(embeds[0].fields[5].name, "Barrows (2) 🔸 · Unassigned")
-        self.assertEqual(embeds[0].fields[10].name, "Barrows (2) 🔹 · Unassigned")
+        self.assertEqual(embeds[0].fields[6].name, "Barrows (2) 🔸")
+        self.assertEqual(embeds[0].fields[12].name, "Barrows (2) 🔹")
         self.assertIn("Survival", embeds[0].fields[3].value)
         self.assertIn("Beast", embeds[0].fields[4].value)
         self.assertIn("Frost", embeds[0].fields[4].value)
         self.assertEqual(embeds[0].thumbnail.url, schedule.RAID_PANEL_IMAGE)
-        self.assertEqual(embeds[0].footer.text,
-                         "Contact: @Leadership or mark absent if needed")
+        self.assertNotIn("footer", embeds[0].to_dict())
+        self.assertNotIn("<@", str([e.to_dict() for e in embeds]))
+        # A non-inline field ends each group, so Discord cannot place the
+        # next instance beside Melee/Ranged as a third column.
+        self.assertTrue(all(
+            embeds[0].fields[i].inline is False for i in (5, 11, 17)
+        ))
         self.assertNotIn("Fresh export", str([e.to_dict() for e in embeds]))
         for embed in embeds:
             self.assertLessEqual(len(embed.fields), 25)
@@ -123,8 +128,7 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
             ("", "GuestShaman", "Hyjal", "Shaman", "DPS", "Enhancement"),
         ]
         embeds = announcer.roster_embeds(self.event, selection)
-        self.assertEqual(embeds[0].fields[0].name,
-                         "Hyjal (7) 🔹🔸 · Unassigned")
+        self.assertEqual(embeds[0].fields[0].name, "Hyjal (7) 🔹🔸")
         self.assertIn("GuestShaman", embeds[0].fields[3].value)
         self.assertNotIn("<@None>", str([e.to_dict() for e in embeds]))
 
@@ -135,9 +139,11 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.event["instance_3"] = "Ony (40m)"
         embeds = announcer.roster_embeds(self.event, selected)
         self.assertEqual(len(embeds), 1)
-        self.assertEqual(len(embeds[0].fields), 20)
-        self.assertEqual(embeds[0].fields[15].name, "Ony (1) · Unassigned")
-        self.assertIn("**Tanks (1)**", embeds[0].fields[15].value)
+        self.assertEqual(len(embeds[0].fields), 24)
+        self.assertEqual(embeds[0].fields[18].name, "Ony (1)")
+        self.assertIn("**Tanks (1)**", embeds[0].fields[18].value)
+        self.assertTrue(all(not embeds[0].fields[i].inline
+                            for i in (5, 11, 17, 23)))
 
     def test_thirty_guild_players_fit_without_losing_names(self):
         people = [
