@@ -158,13 +158,11 @@ def mark_deleted(path, raid_id):
         )
 
 
-def render(raid_id, awaiting, total, panel_url=None, *, invite_commands=()):
-    """Plain text accompanies the V1 embed (Discord displays it above embeds).
+def render(raid_id, awaiting, total, panel_url=None):
+    """Keep acknowledgement prompts separate from T-15 leader invites.
 
-    Only the outstanding names are mentioned. Invitation commands use the
-    saved selected characters of active instance leaders, not Discord names.
-    panel_url remains an accepted legacy argument but is no longer displayed;
-    the linked V1 embed title already opens the original V2 sign-up post.
+    panel_url remains accepted for older callers; the linked V1 embed
+    title already takes players to the original V2 signup message.
     """
     intro = f"React below to confirm raid spot {ACK_EMOJI}"
     if awaiting:
@@ -172,10 +170,7 @@ def render(raid_id, awaiting, total, panel_url=None, *, invite_commands=()):
         status = f"**Still need nod ({len(awaiting)}/{total}):** {mentions}"
     else:
         status = f"**All {total} acknowledged.** Ogre got nod from everyone!"
-    commands = "\n".join(
-        f"`{command}`" for command in dict.fromkeys(invite_commands) if command
-    )
-    result = intro + "\n\n" + status + ("\n\n" + commands if commands else "")
+    result = intro + "\n\n" + status
     if len(result) > 2000:
         raise ValueError("Too many selected raiders for one Discord announcement.")
     return result
