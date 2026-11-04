@@ -756,26 +756,24 @@ def get_user_stats(user_id: int):
             """
             SELECT
                 COUNT(*) AS rolls,
-                SUM(value) AS score,
-                MAX(value) AS best,
-                AVG(value) AS avg,
-                SUM(CASE WHEN value = 100 THEN 1 ELSE 0 END) AS perfects
-            FROM rolls
+                SUM(score) AS score,
+                MAX(score) AS best,
+                AVG(score) AS avg,
+                SUM(CASE WHEN score = 100 THEN 1 ELSE 0 END) AS perfects
+            FROM daily_scores
             WHERE user_id = ?
-            AND actor_type = 'user'
             """,
             (user_id,)
         ).fetchone()
 
         last10 = con.execute(
             """
-            SELECT AVG(value)
+            SELECT AVG(score)
             FROM (
-                SELECT value
-                FROM rolls
+                SELECT score
+                FROM daily_scores
                 WHERE user_id = ?
-                  AND actor_type = 'user'
-                ORDER BY rolled_at DESC
+                ORDER BY roll_date DESC
                 LIMIT 10
             )
             """,
@@ -869,39 +867,40 @@ def calculate_streaks(user_id: int):
     return current, best
 
 def get_period_stats(user_id: int, start_ts: int, end_ts: int):
-    with db() as con:
-        total = con.execute("""
-            SELECT COUNT(*), SUM(value), MAX(value)
+    """One scored participation per day: max(free roll, gamble)."""
+    sql = """
+        WITH daily AS (
+            SELECT user_id, roll_date, MAX(value) AS score
             FROM rolls
-            WHERE user_id = ?
-              AND actor_type = 'user'
+            WHERE actor_type IN ('user', 'gamble')
               AND rolled_at >= ? AND rolled_at < ?
-        """, (user_id, start_ts, end_ts)).fetchone()
-
-        rank = con.execute("""
-            SELECT COUNT(*) + 1
-            FROM (
-                SELECT user_id, SUM(value) AS score
-                FROM rolls
-                WHERE actor_type = 'user'
-                  AND rolled_at >= ? AND rolled_at < ?
-                GROUP BY user_id
+            GROUP BY user_id, roll_date
+        )
+    """
+    with db() as con:
+        total = con.execute(
+            sql + "SELECT COUNT(*), SUM(score), MAX(score) "
+                  "FROM daily WHERE user_id=?",
+            (start_ts, end_ts, user_id),
+        ).fetchone()
+        rank = con.execute(
+            sql + """
+            SELECT COUNT(*) + 1 FROM (
+                SELECT user_id, SUM(score) AS overall
+                FROM daily GROUP BY user_id
+            ) WHERE overall > (
+                SELECT SUM(score) FROM daily WHERE user_id=?
             )
-            WHERE score > (
-                SELECT SUM(value)
-                FROM rolls
-                WHERE user_id = ?
-                  AND actor_type = 'user'
-                  AND rolled_at >= ? AND rolled_at < ?
-            )
-        """, (start_ts, end_ts, user_id, start_ts, end_ts)).fetchone()[0]
-
+            """,
+            (start_ts, end_ts, user_id),
+        ).fetchone()[0]
     return {
         "rolls": total[0] or 0,
         "score": total[1] or 0,
         "best": total[2] or 0,
-        "rank": None if (total[0] or 0) == 0 else rank
+        "rank": None if (total[0] or 0) == 0 else rank,
     }
+
 
 def get_bot_stats():
 
@@ -2310,12 +2309,11 @@ async def stats(
     with db() as con:
         today_row = con.execute(
             """
-            SELECT value
+            SELECT MAX(value)
             FROM rolls
             WHERE user_id = ?
-              AND actor_type = 'user'
+              AND actor_type IN ('user', 'gamble')
               AND rolled_at >= ? AND rolled_at < ?
-            LIMIT 1
             """,
             (target.id, start, end)
         ).fetchone()
@@ -2325,15 +2323,18 @@ async def stats(
     if today_row:
         with db() as con:
             ranking_today = con.execute("""
-                SELECT user_id, MAX(value) AS score
+                SELECT user_id, value
                 FROM rolls
-                WHERE actor_type = 'user'
+                WHERE actor_type IN ('user', 'gamble')
                   AND rolled_at >= ? AND rolled_at < ?
-                GROUP BY user_id
-                ORDER BY score DESC
+                ORDER BY value DESC, rolled_at ASC, rowid ASC
             """, (start, end)).fetchall()
 
-        for index, (uid, _) in enumerate(ranking_today, start=1):
+        ranked_users = []
+        for uid, _ in ranking_today:
+            if uid not in ranked_users:
+                ranked_users.append(uid)
+        for index, uid in enumerate(ranked_users, start=1):
             if uid == target.id:
                 today_rank = index
                 break
