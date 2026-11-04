@@ -143,6 +143,14 @@ def ensure_raid_fields(path):
                 PRIMARY KEY(raid_id, discord_id)
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS raid_group_leaders (
+                raid_id INTEGER NOT NULL REFERENCES raids(raid_id),
+                group_name TEXT NOT NULL,
+                discord_id TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (raid_id, group_name)
+            )
+        """)
         ack_cols = {row[1] for row in con.execute(
             "PRAGMA table_info(raid_ack_announcements)"
         )}
@@ -473,6 +481,7 @@ def delete_raid(path, number):
         con.execute("DELETE FROM raid_confirmed_roster WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_ack_members WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raid_ack_announcements WHERE raid_id=?", (number,))
+        con.execute("DELETE FROM raid_group_leaders WHERE raid_id=?", (number,))
         con.execute("DELETE FROM attendance WHERE raid_id=?", (number,))
         con.execute("DELETE FROM raids WHERE raid_id=?", (number,))
     return True
