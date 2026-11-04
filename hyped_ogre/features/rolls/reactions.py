@@ -32,12 +32,11 @@ class RollReactions:
                 "AND rolled_at >= ? AND rolled_at < ? ORDER BY rolled_at ASC, rowid ASC",
                 (start, end),
             ).fetchall()
-        # Only original free rolls (plus Ogre's bot roll) compete for highest.
-        # Gambles may still count for the cosmetic lowest-individual-roll marker.
+        # A higher gamble competes exactly like a free roll, with its own
+        # timestamp for the earliest-highest tie rule.
         all_scores = {}
         for user_id, value, actor_type in rows:
-            if actor_type in ("user", "bot"):
-                all_scores[user_id] = max(value, all_scores.get(user_id, 0))
+            all_scores[user_id] = max(value, all_scores.get(user_id, 0))
         scores = {uid: value for uid, value in all_scores.items() if uid != 0}
         if not scores:
             return
@@ -50,6 +49,7 @@ class RollReactions:
         messages = []
         latest_by_user = {}
         first_by_user = {}
+        gamble_by_user = {}
         messages_by_user = {}
         async for message in channel.history(
             limit=None, after=datetime.fromtimestamp(start, timezone.utc),
@@ -90,9 +90,11 @@ class RollReactions:
                         )
                 messages.append((user_id, message))
                 latest_by_user[user_id] = message.id
-                # Do not place the daily-high icon on a gamble if a user's
-                # original free-roll message was removed from Discord.
-                if "risked a coin to roll again:" not in message.content:
+                # Reconstruct the matching message for the *winning roll*.
+                # The user's original and gamble posts remain distinct.
+                if "risked a coin to roll again:" in message.content:
+                    gamble_by_user.setdefault(user_id, message.id)
+                else:
                     first_by_user.setdefault(user_id, message.id)
                 messages_by_user.setdefault(user_id, []).append(message)
 
@@ -104,7 +106,17 @@ class RollReactions:
         scores = {user_id: value for user_id, value in scores.items() if user_id in latest_by_user}
         if not scores:
             return
-        high = max(scores, key=scores.get)
+        # Rows are oldest-first. Ties retain the earliest *actual* 85/100,
+        # not the oldest user's earlier low free roll. The coin emoji is on
+        # the very message that achieved today's highest eligible value.
+        high, high_value, high_kind = None, -1, None
+        for user_id, value, kind in rows:
+            if user_id in scores and value > high_value:
+                high, high_value, high_kind = user_id, value, kind
+        high_message_id = (
+            gamble_by_user.get(high) if high_kind == "gamble"
+            else first_by_user.get(high)
+        )
         # Rank poop by individual free/gamble rolls, not personal bests.
         # Ogre can block poop, but never receives it; ties favour the first roll.
         eligible = [(uid, value, kind) for uid, value, kind in rows
@@ -149,7 +161,7 @@ class RollReactions:
                     except Exception as exc:
                         self.log_error(f"LEGACY POOP CLEANUP FAILED message={message.id}: {exc!r}")
             for emoji, wanted in (
-                (high_emoji, user_id == high and message.id == first_by_user.get(user_id)),
+                (high_emoji, user_id == high and message.id == high_message_id),
                 (poop_emoji, low is not None and user_id == low
                  and message.id == low_message_id),
             ):
