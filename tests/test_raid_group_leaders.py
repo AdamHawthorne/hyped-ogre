@@ -9,6 +9,7 @@ from cogs import raid_schedule as schedule, raid_signup as signup
 from cogs import raid_sheets_v3 as sheets
 from hyped_ogre.features.raids import announcer
 from hyped_ogre.features.raids.leaders import effective_leaders, set_group_leader, read_leaders
+from hyped_ogre.features.classrooms.config import GUILD_ID
 
 
 class RaidGroupLeaderTests(unittest.TestCase):
@@ -44,7 +45,7 @@ class RaidGroupLeaderTests(unittest.TestCase):
     def test_select_explicit_leader_and_reject_double_lead(self):
         self.assertEqual(set_group_leader(self.path, 2, "Barrows 🔹", 43), "43")
         self.assertEqual(read_leaders(self.path, 2)["Barrows 🔹"], "43")
-        with self.assertRaisesRegex(ValueError, "already leads"):
+        with self.assertRaisesRegex(ValueError, "assigned"):
             set_group_leader(self.path, 2, "Hyjal", 43)
         # Member 43 isn't in Hyjal: the membership check also blocks this.
         self.assertEqual(set_group_leader(self.path, 2, "Hyjal", 44), "44")
@@ -68,7 +69,7 @@ class RaidGroupLeaderTests(unittest.TestCase):
         embed = embeds[0]
         self.assertEqual(embed.title, "<Hyped> Raid #2 | Confirmed roster")
         self.assertEqual(embed.url,
-            "https://discord.com/channels/451518969417957376/333/444")
+            f"https://discord.com/channels/{GUILD_ID}/333/444")
         self.assertEqual(embed.author.name, "Created by Snore")
         self.assertEqual(embed.author.url, "https://discord.com/users/42")
         self.assertEqual(len(embed.fields), 24)
