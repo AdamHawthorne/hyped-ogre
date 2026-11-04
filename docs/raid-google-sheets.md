@@ -67,10 +67,13 @@ daily roll, gold coin, leaderboard or other bot SQLite tables.
    The embed title links back to the original V2 sign-up post. There is no
    separate creator/author line or founder crown. The image
    `https://i.vgy.me/asI88C.png` is shown as the right-hand thumbnail.
-   Instance leaders appear on the same heading line as the instance name
-   and player count. The group heading and Tanks share a single left-hand
-   field to avoid an empty row before the role selection. A small footer
-   reads `Contact: @Leadership or mark absent if needed` (plain text). Only
+   The confirmation embed shows **only** instance headings and role
+   selections; unresolved Discord leader tags and the unlinked contact
+   footer have been removed. Leader assignments remain saved for the
+   separate T-15 invite message. The group heading and Tanks share the
+   first left-hand field so names follow their instance immediately.
+   Each instance's two role rows end with a full-width row break to
+   prevent the next instance appearing in a third column. Only
    selected Discord members are pinged in the normal message content.
    They react to Ogre's check emoji; the corresponding V1 roster name gets
    a check, and the outstanding mentions are removed without a fresh ping.
