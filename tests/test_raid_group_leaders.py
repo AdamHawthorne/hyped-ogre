@@ -77,29 +77,54 @@ class RaidGroupLeaderTests(unittest.TestCase):
                 set_group_leader(self.path, 2, "Barrows 🔹", 42)
         self.assertNotIn("Barrows 🔹", read_leaders(self.path, 2))
 
-    def test_embed_is_single_grid_and_links_title_and_creator(self):
+    def test_embed_is_single_grid_and_links_title_without_creator_author(self):
         with patch.dict(os.environ, {"OWNER_ID": "42"}):
             embeds = announcer.roster_embeds(
                 schedule.read_raid(self.path, 2),
-                self.selected, path=self.path, creator_name="Snore",
+                self.selected, path=self.path,
             )
         self.assertEqual(len(embeds), 1)
         embed = embeds[0]
         self.assertEqual(embed.title, "<Hyped> Raid #2 | Confirmed roster")
         self.assertEqual(embed.url,
             f"https://discord.com/channels/{GUILD_ID}/333/444")
-        self.assertEqual(embed.author.name, "Created by Snore")
-        self.assertEqual(embed.author.url, "https://discord.com/users/42")
+        self.assertFalse(embed.author.name)
+        self.assertNotIn("author", embed.to_dict())
         self.assertEqual(len(embed.fields), 24)
         self.assertEqual([field.inline for field in embed.fields[:6]],
                          [False, True, True, False, True, True])
-        self.assertEqual(embed.fields[0].name, "Hyjal (2) 🔹🔸")
-        self.assertEqual(embed.fields[0].value, "Leader: <@42>")
-        self.assertEqual(embed.fields[6].name, "Barrows (2) 🔸")
-        self.assertEqual(embed.fields[12].name, "Barrows (1) 🔹")
-        self.assertEqual(embed.fields[18].name, "Ony (2)")
+        self.assertEqual(embed.fields[0].name, "Hyjal (2) 🔹🔸 <@42>")
+        self.assertEqual(embed.fields[0].value, "\u200b")
+        self.assertEqual(embed.fields[6].name, "Barrows (2) 🔸 <@42>")
+        self.assertEqual(embed.fields[12].name,
+                         "Barrows (1) 🔹 · Unassigned")
+        self.assertEqual(embed.fields[18].name, "Ony (2) <@42>")
         self.assertNotIn("\\n", embed.fields[1].value)
         self.assertLess(len(embed), 5900)
+
+    def test_invite_lines_use_selected_character_names_and_deduplicate_leaders(self):
+        with patch.dict(os.environ, {"OWNER_ID": "42"}):
+            commands = announcer.leader_invite_commands(
+                self.path, schedule.read_raid(self.path, 2), self.selected,
+            )
+        self.assertEqual(commands, ["/w Snore inv"])
+        self.assertNotIn("ogrecrown", str(commands))
+        self.assertEqual(set_group_leader(self.path, 2, "Barrows 🔹", 43), "43")
+        with patch.dict(os.environ, {"OWNER_ID": "42"}):
+            commands = announcer.leader_invite_commands(
+                self.path, schedule.read_raid(self.path, 2), self.selected,
+            )
+        self.assertEqual(commands, ["/w Snore inv", "/w Other inv"])
+
+    def test_copyable_invite_contains_spaces_in_actual_character_name(self):
+        selected = [
+            ("42", "Snore Mon", "Hyjal, Barrows 🔸", "Warrior", "Tank", "Protection"),
+        ]
+        with patch.dict(os.environ, {"OWNER_ID": "42"}):
+            commands = announcer.leader_invite_commands(
+                self.path, schedule.read_raid(self.path, 2), selected,
+            )
+        self.assertEqual(commands, ["/w Snore Mon inv"])
 
     def test_reaction_tick_inside_v1_not_in_v2(self):
         event = schedule.read_raid(self.path, 2)
