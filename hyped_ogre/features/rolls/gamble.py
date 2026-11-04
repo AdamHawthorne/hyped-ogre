@@ -21,8 +21,10 @@ def gamble_once(con, guild_id, user_id, username, *,
     The member must choose to make their free roll first. Gambling never
     generates a free roll. The stake is returned if and only if the extra
     roll beats their original free roll; equal or lower costs one coin.
-    Gambling only settles the coin stake. The original free roll remains the
-    player's daily competition score, even when the gamble is higher.
+    A higher gamble becomes the player's official daily best for ranks,
+    reactions, high-roller role and the next coin award. A lower/equal gamble
+    leaves the original roll as the daily best. It does not add a second day's
+    score or mint an extra coin.
 
     A BEGIN IMMEDIATE write lock serialises the balance check across processes.
     The savepoints in roll_writer are nested and rolled back with this action.
@@ -79,7 +81,7 @@ def gamble_once(con, guild_id, user_id, username, *,
     return {
         "base": base,
         "extra": extra_value,
-        "best": base,  # Official score remains the original free roll.
+        "best": max(base, extra_value),  # Daily competitive score.
         "stake_returned": returned,
         "balance": balance,
         "date": day,
