@@ -1,6 +1,10 @@
 name: Deploy Hyped Ogre
 
-# A main push includes a merged PR. Keep the filename for saved workflow links.
+# Full Linux, Windows and Docker safety tests run on the pull request via
+# safety.yml before merge. Do not run the entire suite a second time here.
+# Keep this workflow limited to the release snapshot, Fly deploy and verification.
+# Require green PR checks before merging; protect main with required status checks.
+# Keep the filename for existing deployment links.
 on:
   push:
     branches: [main]
@@ -14,13 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/safety.yml
-
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: checks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: production
@@ -38,7 +37,7 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: python scripts/fly_release.py prepare "$RUNNER_TEMP/hyped-release.json"
-      - name: Deploy checked commit to the existing app
+      - name: Deploy merged commit to the existing app
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy -a hyped-diceman --remote-only --ha=false
