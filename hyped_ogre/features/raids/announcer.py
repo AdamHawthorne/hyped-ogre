@@ -1,6 +1,7 @@
 """Public raid acknowledgement messages: opt-in pings, durable ✅ reactions."""
 import asyncio
 import logging
+import os
 
 import discord
 
@@ -35,9 +36,16 @@ def leader_invite_commands(path, event, selected):
     }
     invited = set()
     commands = []
-    for group in GROUPS:
-        leader = leaders.get(group)
-        if not leader or leader in invited:
+    # Snore (configured owner) always appears first when leading a group,
+    # even if their only assigned instance is listed after Hyjal.
+    owner = os.getenv("OWNER_ID", "").strip()
+    leader_order = [leaders.get(group) for group in GROUPS]
+    leader_order = sorted(
+        (member for member in leader_order if member),
+        key=lambda member: 0 if owner and member == owner else 1,
+    )
+    for leader in leader_order:
+        if leader in invited:
             continue
         name = names.get(leader, "").replace("\r", " ").replace("\n", " ").replace("`", "")
         if not name:
@@ -179,10 +187,7 @@ async def announce(bot, path, raid_id, guild_id, selected=None):
               if str(row[0]).isdigit() and int(row[0]) > 0]
     if not pinged:
         raise ValueError("No selected Discord members to ping. PUGs cannot be tagged.")
-    content = store.render(
-        raid_id, pinged, len(pinged),
-        invite_commands=leader_invite_commands(path, event, selected),
-    )
+    content = store.render(raid_id, pinged, len(pinged))
     embeds = roster_embeds(event, selected, path=path)
     if not embeds:
         raise ValueError("Selected roster lacks class and raid assignment details.")
@@ -255,10 +260,7 @@ async def refresh(bot, path, raid_id, guild_id):
         for name, assignment, klass, role, spec, member_id
         in read_public_roster(path, raid_id, include_identity=True)
     ]
-    content = store.render(
-        raid_id, waiting, len(entries),
-        invite_commands=leader_invite_commands(path, event, selected),
-    )
+    content = store.render(raid_id, waiting, len(entries))
     embeds = roster_embeds(
         event, selected, path=path,
         acknowledged_ids={member_id for member_id, _, acked in entries
