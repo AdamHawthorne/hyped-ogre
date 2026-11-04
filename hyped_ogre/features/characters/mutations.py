@@ -12,7 +12,7 @@ def promote_to_roster(con, discord_id, character_id):
     If this is a member's first roster character, make it their visible main.
     Never remove existing roster membership or set another member's data.
     """
-    if not con.in_transaction:
+    if not getattr(con, "in_transaction", True):
         con.execute("BEGIN IMMEDIATE")
     row = con.execute(
         "SELECT roster_visible FROM characters WHERE discord_id=? AND character_id=?",
