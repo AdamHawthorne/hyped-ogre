@@ -41,7 +41,14 @@ class RaidFollowupTests(unittest.TestCase):
         text = ack.render(1, [(42, "Player")], 1)
         self.assertIn("<:check:1566948806535159808>", text)
         self.assertIn("<@42>", text)
-        self.assertIn("React below to confirm raid spot. Ogre cross name off list.", text)
+        self.assertIn("React below to confirm raid spot <:check:1566948806535159808>", text)
+        self.assertNotIn("Ogre cross name off list", text)
+        self.assertNotIn("View raid roster", text)
+        self.assertIn("**All 1 acknowledged.** Ogre got nod from everyone!",
+                      ack.render(1, [], 1))
+        self.assertIn("`/w Snore Mon inv`",
+                      ack.render(1, [], 1,
+                                 invite_commands=["/w Snore Mon inv"]))
         self.assertNotIn("Ogre picked raid team", text)
         self.assertNotIn("Raid spot stay yours", text)
         self.assertNotIn("<@42>", ack.render(1, [], 1))

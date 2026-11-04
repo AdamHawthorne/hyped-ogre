@@ -21,7 +21,6 @@ RAID_PANEL_IMAGE = "https://i.vgy.me/asI88C.png"
 ACCENT = 0xA87535  # Keep the private raid poster setup colour.
 RAID_PANEL_ACCENT = 0xB84A3A  # Public raid panel side colour.
 DEFAULT_CHECK_CHANNEL_ID = 1563663258047619123
-CREATOR_CROWN = "<:ogrecrown:1566947968760946948>"
 _UNCHANGED = object()  # Older /raid setup calls must keep poster-specific settings.
 RAID_COLUMNS = {
     "instance_1": "TEXT",
@@ -676,9 +675,9 @@ def roster_name_with_emojis(name, klass="", role="", spec="", emoji_map=None, *,
         return ""
     klass = (klass or "").strip().title()
     role = combat_role((role or "").strip().title(), klass, spec)
-    owner = os.getenv("OWNER_ID", "0").strip()
-    crown = CREATOR_CROWN if owner not in ("", "0") and str(member_id) == owner else ""
-    return " ".join(part for part in (guild_emoji(klass), name, crown) if part)
+    # Character names show class icon only; the founder crown is intentionally
+    # absent from both the V2 sign-up and the separate V1 confirmation.
+    return " ".join(part for part in (guild_emoji(klass), name) if part)
 
 
 def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
