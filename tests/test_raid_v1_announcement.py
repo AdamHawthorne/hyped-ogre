@@ -53,7 +53,7 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         self.assertFalse(event.get("confirmation_url"))
         self.assertIsInstance(schedule.RaidEventPanel(event), discord.ui.LayoutView)
 
-    def test_published_v2_uses_ogre_ack_permalink_and_no_wowsims(self):
+    def test_published_v2_links_v1_and_keeps_original_signup_wowsims(self):
         schedule.raid_status(
             self.path, 1, "confirm",
             confirmed_entries=[("101", "Prot", "Hyjal", "Warrior", "Tank", "Protection")],
@@ -67,8 +67,8 @@ class RaidAnnouncementLayoutTests(unittest.TestCase):
         text = schedule.raid_panel_intro(after)
         self.assertIn(f"[Confirm raid spot]({url})", text)
         self.assertNotIn("1565538887076679731", text)
-        self.assertNotIn("WoWSims:", text)
-        self.assertNotIn("Get addon", text)
+        self.assertIn("WoWSims:", text)
+        self.assertIn("Get addon", text)
         self.assertIn("Instances:", text)
         # Even a cached event without its computed link renders correctly;
         # the persistent V2 panel reloads the recorded message ID.
