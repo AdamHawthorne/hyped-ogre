@@ -159,7 +159,7 @@ def main_roster_names(raid_db_path: str | None = None) -> dict[str, str]:
         with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True, timeout=3) as con:
             rows = con.execute("SELECT name FROM characters WHERE is_main=1").fetchall()
     except sqlite3.Error:
-        return {}
+        raise
     candidates: dict[str, list[str]] = {}
     for row in rows:
         name = row[0]
@@ -173,7 +173,10 @@ def persist_payload(payload: dict[str, Any], raid_db_path: str | None = None,
     validated = validate_payload(payload, now=now)
     ensure_schema(database_path)
     now_value = int(time.time()) if now is None else int(now)
-    allowed_mains = main_roster_names(raid_db_path)
+    resolved_raid_db = raid_db_path or os.getenv("RAID_DB_PATH", "raid_signup.db")
+    if validated["roster"] and not Path(resolved_raid_db).is_file():
+        raise sqlite3.OperationalError("raid character roster database is not available")
+    allowed_mains = main_roster_names(resolved_raid_db)
     updated = ignored = inserted_events = 0
     with sqlite3.connect(_db_path(database_path), timeout=5) as con:
         for row in validated["roster"]:
@@ -272,7 +275,7 @@ async def announce_pending(bot: Any, database_path: str | None = None, channel_i
     with sqlite3.connect(_db_path(database_path), timeout=5) as con:
         con.row_factory = sqlite3.Row
         rows = con.execute("SELECT * FROM guild_bank_events WHERE announced_at IS NULL "
-                           "ORDER BY received_at,event_id LIMIT 200").fetchall()
+                           "ORDER BY received_at,event_id LIMIT 50").fetchall()
     sent = 0
     now_value = int(time.time())
     for start in range(0, len(rows), 10):

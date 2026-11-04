@@ -29,7 +29,7 @@ Keep sync disabled until a private channel has been selected and a shared secret
 
 The route is `POST /hyped/sync`. It is registered only when `HYPED_SYNC_ENABLED=true`, requires HMAC-SHA256 over `<timestamp>.<raw JSON body>`, and accepts timestamps within five minutes. It validates payload sizes and values, rejects data captured more than 30 days ago, and ignores repeated bank event IDs. The Discord token remains in the bot process.
 
-If Discord cannot accept a bank announcement, the endpoint returns HTTP 503 and retains the event for retry. The companion does not mark those events as sent until it receives a successful response. There is a narrow process-crash window between Discord accepting a message and the bot marking it sent, so a rare duplicate announcement is possible.
+If Discord cannot accept a bank announcement, the endpoint returns HTTP 503 and retains the event for retry. It announces at most 50 queued entries per request; a larger first-time history is drained over later retries so one initial scan cannot flood the channel. The companion does not mark those events as sent until it receives a successful response. There is a narrow process-crash window between Discord accepting a message and the bot marking it sent, so a rare duplicate announcement is possible.
 
 ## Checks and live validation
 
