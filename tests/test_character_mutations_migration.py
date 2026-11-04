@@ -31,7 +31,7 @@ class CharacterMutationsMigrationTests(unittest.TestCase):
         self.assertEqual(raid.RaidPrototype.__module__, "cogs.raid_signup")
         self.assertEqual(raid.setup.__module__, "cogs.raid_signup")
         for func, count in (
-            (raid.save_character, 6),
+            (raid.save_character, 7),
             (raid.set_character_race, 4),
             (raid.set_main_character, 3),
             (raid.update_character_profile, 6),
