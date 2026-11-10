@@ -351,8 +351,13 @@ def wowsims_requirement_for_signup(raid_id, discord_id, character_id, path=RAID_
     return None if updated > enabled else "fresh"
 
 
-def save_wowsims_export(discord_id, character_id, raw, path=RAID_DB):
-    """Accept a copied /wse export, not arbitrary text or legacy SimC text."""
+def save_wowsims_export(discord_id, character_id, raw, path=RAID_DB, *,
+                        entered_name=None):
+    """Verify the registered full name, then match only its first word to /wse.
+
+    Forever WSE exports the first name in "name" (e.g. Big for Big Snore).
+    Retain the complete registered name and the original export JSON.
+    """
     raw = (raw or "").strip()
     if not 50 <= len(raw) <= 4000:
         raise ValueError("Ogre need complete WoWSims JSON (50-4,000 characters).")
@@ -376,10 +381,24 @@ def save_wowsims_export(discord_id, character_id, raw, path=RAID_DB):
         ).fetchone()
         if not row:
             raise ValueError("Ogre not know that character belongs to you.")
-        if export["name"].strip().casefold() != row[0].strip().casefold():
+        registered_name = " ".join(row[0].split())
+        if entered_name is not None:
+            if (not isinstance(entered_name, str)
+                    or " ".join(entered_name.split()).casefold()
+                    != registered_name.casefold()):
+                raise ValueError(
+                    "Confirmed name does not match the selected character (" +
+                    registered_name + "). Choose the correct character or "
+                    "enter its full registered name.")
+        # WSE's "realm" may contain the surname. Do not compare it or
+        # replace the stored name. WSE first-name matching is intentionally
+        # case-insensitive and never identifies two same-first-name alts.
+        exported_first = export["name"].split()[0].casefold()
+        registered_first = registered_name.split()[0].casefold()
+        if exported_first != registered_first:
             raise ValueError("WoWSims export says " + export["name"][:40] +
-                             ", but selected character is " + row[0] +
-                             ". Export correct character.")
+                             ", but selected character is " + registered_name +
+                             ". Export the correct character (first name must match).")
         con.execute(
             "INSERT INTO gear_exports (character_id, submitted_at, format, raw_text) "
             "VALUES (?, ?, 'wowsims_json', ?)",
@@ -558,6 +577,12 @@ class WoWSimsExportModal(discord.ui.Modal):
         super().__init__(title="WoWSims · " + char_name[:30])
         self.member_id, self.char_id, self.char_name = member_id, char_id, char_name
         self.raid_id, self.pending_note = raid_id, note
+        self.confirm_name = discord.ui.TextInput(
+            label="Confirm full character name", default=char_name,
+            required=True, max_length=40,
+            placeholder="First Last (e.g. Big Snore)",
+        )
+        self.add_item(self.confirm_name)
         self.export_text = discord.ui.TextInput(
             label="Paste /wse export here", required=True,
             style=discord.TextStyle.paragraph,
@@ -581,7 +606,8 @@ class WoWSimsExportModal(discord.ui.Modal):
             return
         try:
             save_wowsims_export(
-                self.member_id, self.char_id, self.export_text.value
+                self.member_id, self.char_id, self.export_text.value,
+                entered_name=self.confirm_name.value,
             )
         except (ValueError, sqlite3.Error) as exc:
             await interaction.response.send_message(
@@ -630,7 +656,9 @@ class WoWSimsInstructionsView(discord.ui.LayoutView):
                 + f"1. [Get WoWSims Exporter addon]({WOWSIMS_ADDON_URL}).\n"
                 "2. In game, type `/wse export`. Export window opens, "
                 "your data already selected. Press **Ctrl+C**.\n"
-                "3. Come back and press **Paste export**, then **Ctrl+V**.\n\n"
+                "3. Come back, press **Paste export**, confirm your full "
+                "character name and paste with **Ctrl+V**. Only the first "
+                "name is checked against the WSE export.\n\n"
                 f"Ogre prefer latest export {hint}. "
                 "Ogre take updates until raid completed. "
                 "One export per character, reused for future raids."
@@ -1032,7 +1060,7 @@ class CharacterNameModal(discord.ui.Modal):
         self.signup_raid_id = signup_raid_id
         self.roster_visible = roster_visible
         self.name = discord.ui.TextInput(
-            label="Character name", placeholder="Firstname Lastname", max_length=40
+            label="Full character name", placeholder="First Last (e.g. Big Snore)", max_length=40
         )
         self.add_item(self.name)
         if signup_raid_id is not None:

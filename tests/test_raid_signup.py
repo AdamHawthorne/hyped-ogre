@@ -1220,8 +1220,8 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"label": "DPS"', roles)
         modal = raid.CharacterNameModal(42, "Mage", "Frost", "DPS")
         self.assertEqual(len(modal.children), 1)
-        self.assertEqual(modal.children[0].label, "Character name")
-        self.assertEqual(modal.children[0].placeholder, "Firstname Lastname")
+        self.assertEqual(modal.children[0].label, "Full character name")
+        self.assertEqual(modal.children[0].placeholder, "First Last (e.g. Big Snore)")
         self.assertNotIn("no realm needed", json.dumps(raid.ClassPickerView(42).to_components()))
 
     async def test_signup_button_defers_and_sends_v2_view_without_content(self):
