@@ -25,7 +25,7 @@ COLUMNS = (
     "Sign-up Notes", "Signed At", "Status", "Selection", "Show",
     "Hyjal", "Barrows", "Ony", "Leadership Notes", "WoWSims gear",
     "Discord ID (internal)", "Character ID (internal)", "Absent At",
-    "Past 3 | Next 3"
+    "Past 3 | Next 3", "UBRS"
 )
 SECTIONS = ("Tanks", "Healers", "Melee", "Ranged", "Absent")
 MELEE = {
@@ -39,6 +39,7 @@ VALUES = {
     11: ("No", "Yes"),
     12: ("No", "🔸", "🔹"),
     13: ("No", "Yes"),
+    20: ("No", "Yes"),
 }
 MAX_BODY_ROWS = 460
 
@@ -47,9 +48,10 @@ MAX_BODY_ROWS = 460
 _FORMATTED_SECTION_LAYOUTS = {}
 
 
-# A-F identity, G-K assignments, L gear, M timeline, N-O notes,
-# P-Q hidden IDs, R-S timestamps, T signup status.
-DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 9, 11, 12, 13, 10, 15, 19, 6, 14, 16, 17, 18, 7, 8)
+# A-F identity; G Selection, H-K instance assignments, L Show,
+# M gear, N timeline, O-P notes, Q-R hidden IDs, S-T timestamps, U status.
+# Stored indices stay stable: the new UBRS field is appended at 20.
+DISPLAY_ORDER = (0, 1, 2, 3, 4, 5, 9, 11, 12, 13, 20, 10, 15, 19, 6, 14, 16, 17, 18, 7, 8)
 
 
 def _uk_timestamp(value):
@@ -88,7 +90,7 @@ def tab_title(event):
 
 
 def _q(tab):
-    return quote(f"'{tab}'!A1:T500", safe="'!:")
+    return quote(f"'{tab}'!A1:U500", safe="'!:")
 
 
 def _read(session, tab):
@@ -325,6 +327,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None, attendance_rows=None)
             gear_status, member_id, char_id,
             (absence.get("signed_off_at") or "") if absence else "",
             history.get(member_id, "— · — · — | — · — · —"),
+            choice(20, "ubrs", "No"),
         ]
         groups[_group(signup, absent)].append(row)
 
@@ -344,6 +347,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None, attendance_rows=None)
             previous[14], previous[15], member_id, previous[17],
             absence.get("signed_off_at") or "",
             history.get(member_id, "— · — · — | — · — · —"),
+            "No",
         ])
 
     for guest in guests:
@@ -379,7 +383,8 @@ def _approved(rows, event, *, include_details=False):
     has_hyjal = "hyjal" in instance_names
     has_barrows = "barrows" in instance_names
     has_ony = "ony" in instance_names
-    any_known = has_hyjal or has_barrows or has_ony
+    has_ubrs = "ubrs" in instance_names or "upper blackrock spire" in instance_names
+    any_known = has_hyjal or has_barrows or has_ony or has_ubrs
     for source in rows[7:]:
         row = (source + [""] * len(COLUMNS))[:len(COLUMNS)]
         if (row[8].strip().casefold() != "signed" or
@@ -393,6 +398,8 @@ def _approved(rows, event, *, include_details=False):
             assignment.append("Barrows " + row[12].strip())
         if has_ony and row[13].strip().casefold() == "yes":
             assignment.append("Ony")
+        if has_ubrs and row[20].strip().casefold() == "yes":
+            assignment.append("UBRS")
         if any_known and not assignment:
             continue
         if not assignment:
@@ -496,7 +503,7 @@ def _make_tab(session, title):
                       "userEnteredFormat.textFormat"}},
         {"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
-                      "startIndex": 15, "endIndex": 17},
+                      "startIndex": 16, "endIndex": 18},
             "properties": {"hiddenByUser": True},
             "fields": "hiddenByUser"}},
     ]
@@ -542,10 +549,10 @@ def _make_tab(session, title):
                             "textFormat": {"foregroundColor": {
                                 "red": .08, "green": .25, "blue": .12}}}}}}})
     for col, width in ((0, 125), (1, 210), (2, 120), (3, 130),
-                       (4, 90), (5, 90), (6, 160), (7, 340),
-                       (8, 130), (9, 85), (10, 75), (11, 220),
-                       (12, 330), (13, 210), (14, 210),
-                       (17, 195), (18, 195), (19, 95)):
+                       (4, 90), (5, 90), (6, 160), (7, 120),
+                       (8, 130), (9, 130), (10, 115), (11, 75),
+                       (12, 220), (13, 330), (14, 210), (15, 210),
+                       (18, 195), (19, 195), (20, 95)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sid, "dimension": "COLUMNS",
                       "startIndex": col, "endIndex": col + 1},
@@ -655,11 +662,11 @@ def _paint_sections(session, sid, rows):
     # management area and reapply only the actual selection controls.
     requests.append({"setDataValidation": {"range": {
         "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
-        "startColumnIndex": 6, "endColumnIndex": 15}}})
-    # Leadership Notes (display column O) is free text, not a dropdown.
+        "startColumnIndex": 6, "endColumnIndex": 16}}})
+    # Leadership Notes (display column P) is free text, not a dropdown.
     requests.append({"setDataValidation": {"range": {
         "sheetId": sid, "startRowIndex": 7, "endRowIndex": 500,
-        "startColumnIndex": 14, "endColumnIndex": 15}}})
+        "startColumnIndex": 15, "endColumnIndex": 16}}})
     for old_col, options in VALUES.items():
         col = DISPLAY_ORDER.index(old_col)
         requests.append({"setDataValidation": {
@@ -695,7 +702,7 @@ def _write(session, title, sid, existing, rows):
     if changed:
         raid_sheets._json(
             session, "PUT", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-            + quote(f"'{title}'!A1:T{len(needed)}", safe="'!:"),
+            + quote(f"'{title}'!A1:U{len(needed)}", safe="'!:"),
             params={"valueInputOption": "RAW"},
             json={"values": new_display},
         )
@@ -817,7 +824,7 @@ def _one(session, db_path, event, names, titles, attendance_rows=None):
                 session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
                 json={"requests": [
                     {"appendDimension": {
-                        "sheetId": sid, "dimension": "COLUMNS", "length": 2}},
+                        "sheetId": sid, "dimension": "COLUMNS", "length": 3}},
                     {"moveDimension": {
                         "source": {"sheetId": sid, "dimension": "COLUMNS",
                                    "startIndex": 17, "endIndex": 18},
@@ -854,15 +861,50 @@ def _one(session, db_path, event, names, titles, attendance_rows=None):
                 f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
                 json={"requests": [
                     {"appendDimension": {"sheetId": sid,
-                                         "dimension": "COLUMNS", "length": 1}},
+                                         "dimension": "COLUMNS", "length": 2}},
                     {"updateDimensionProperties": {
                         "range": {"sheetId": sid, "dimension": "COLUMNS",
-                                  "startIndex": 19, "endIndex": 20},
+                                  "startIndex": 19, "endIndex": 21},
                         "properties": {"pixelSize": 340}, "fields": "pixelSize"}},
                 ]},
             )
+        elif count == 20:
+            # Add one column without shifting values. _read migrates old
+            # rows by header label before _write places UBRS near Ony.
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [{"appendDimension": {
+                    "sheetId": sid, "dimension": "COLUMNS", "length": 1,
+                }}]},
+            )
         elif count < len(COLUMNS):
             raise RuntimeError("Raid tab has an unexpected number of columns.")
+        if count < len(COLUMNS):
+            # Older tabs hide physical P/Q for the two internal IDs.
+            # With UBRS inserted beside Ony those IDs move to Q/R;
+            # explicitly unhide P (Leadership Notes) and hide R as well.
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 15, "endIndex": 16},
+                        "properties": {"hiddenByUser": False},
+                        "fields": "hiddenByUser"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 16, "endIndex": 18},
+                        "properties": {"hiddenByUser": True},
+                        "fields": "hiddenByUser"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 10, "endIndex": 11},
+                        "properties": {"pixelSize": 120},
+                        "fields": "pixelSize"}},
+                ]},
+            )
     existing = [] if new else _read(session, title)
     invalid_wcl = _apply_wcl_from_sheet(db_path, event, existing)
     invalid_notes = _apply_notes_from_sheet(db_path, event, existing)

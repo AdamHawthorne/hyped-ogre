@@ -918,7 +918,7 @@ class RaidPrototypeTests(unittest.IsolatedAsyncioTestCase):
     async def test_poster_only_offers_forever_raid_instances(self):
         self.assertEqual(
             raid_poster.INSTANCES,
-            ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)"),
+            ("Hyjal (20m)", "Barrows (10m)", "UBRS (10m)", "Ony (40m)"),
         )
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")

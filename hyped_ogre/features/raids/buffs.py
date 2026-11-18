@@ -26,7 +26,7 @@ SPEC_COVERAGE = (
 def _selected(body, flag, expected):
     selected = []
     for row in body:
-        if len(row) < 14 or row[8] != "Signed" or row[9] != "Selected":
+        if len(row) <= max(flag, 9) or row[8] != "Signed" or row[9] != "Selected":
             continue
         if row[flag] != expected:
             continue
@@ -60,15 +60,22 @@ def missing_coverage(assigned):
 
 
 def instance_summaries(body, event):
-    """Four G/H rows, independent of public Show visibility setting."""
-    names = " ".join(str(event.get(key) or "").lower()
+    """Four G/H rows for the raid's active teams, irrespective of Show."""
+    names = " ".join(str(event.get(key) or "").casefold()
                      for key in ("instance_1", "instance_2", "instance_3"))
+    # Keep the existing four dashboard positions stable for earlier raids:
+    # Barrows diamond groups, Hyjal, Ony. At most three instances can be
+    # chosen; when UBRS is selected at least one old slot is free.
     output = [
         ("Barrows 🔸", _selected(body, 12, "🔸")) if "barrows" in names else None,
         ("Barrows 🔹", _selected(body, 12, "🔹")) if "barrows" in names else None,
         ("Hyjal", _selected(body, 11, "Yes")) if "hyjal" in names else None,
         ("Ony", _selected(body, 13, "Yes")) if "ony" in names else None,
     ]
+    if "ubrs" in names or "upper blackrock spire" in names:
+        available = next((i for i, entry in enumerate(output) if entry is None), None)
+        if available is not None:
+            output[available] = ("UBRS", _selected(body, 20, "Yes"))
     return [
         (f"{name} ({len(missing_entries(assigned))})",
          missing_coverage(assigned)) if entry else ("", "")

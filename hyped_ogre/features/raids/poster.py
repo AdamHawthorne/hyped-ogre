@@ -16,7 +16,7 @@ from cogs.raid_schedule import (
 UK = ZoneInfo("Europe/London")
 # Prefer the guild raid channel; never accidentally publish a new raid to #ogre.
 DEFAULT_RAID_CHANNEL_ID = 1563663151323553802
-INSTANCES = ("Hyjal (20m)", "Barrows (10m)", "Ony (40m)")
+INSTANCES = ("Hyjal (20m)", "Barrows (10m)", "UBRS (10m)", "Ony (40m)")
 TIMES = ("18:00", "18:30", "19:00", "19:30", "20:00", "20:30",
          "21:00", "21:30", "22:00")
 WOWSIMS_POLICIES = {
