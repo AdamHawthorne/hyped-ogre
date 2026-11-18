@@ -38,13 +38,13 @@ class LayoutAndBuffTests(unittest.TestCase):
 
     def test_new_columns_put_notes_together_history_after_gear_status_at_end(self):
         labels = [sheets.COLUMNS[index] for index in sheets.DISPLAY_ORDER]
-        self.assertEqual(labels[6:15], [
-            "Selection", "Hyjal", "Barrows", "Ony", "Show",
+        self.assertEqual(labels[6:16], [
+            "Selection", "Hyjal", "Barrows", "Ony", "UBRS", "Show",
             "WoWSims gear", "Past 3 | Next 3",
             "Sign-up Notes", "Leadership Notes",
         ])
         self.assertEqual(labels[-1], "Status")
-        self.assertEqual(labels[15:19], [
+        self.assertEqual(labels[16:20], [
             "Discord ID (internal)", "Character ID (internal)",
             "Absent At", "Signed At",
         ])
@@ -84,9 +84,9 @@ class LayoutAndBuffTests(unittest.TestCase):
         later = next(r for r in updated if r[16] == "42")
         self.assertEqual(later[14], "Leadership's manual note")
         visible = sheets._display(later)
-        self.assertEqual(visible[13], "Sign-up note")
-        self.assertEqual(visible[14], "Leadership's manual note")
-        self.assertEqual(visible[19], "Signed")
+        self.assertEqual(visible[14], "Sign-up note")
+        self.assertEqual(visible[15], "Leadership's manual note")
+        self.assertEqual(visible[20], "Signed")
 
     def test_buff_dashboard_g2_h5_and_absence_of_coverage(self):
         body = sheets._rows(self.path, self.event, {})
@@ -175,7 +175,7 @@ class LayoutAndBuffTests(unittest.TestCase):
         self.assertEqual(physical[3][1], top[3][1])
         self.assertEqual(physical[3][3], "Keep these notes in D4")
         self.assertEqual(physical[6][6], "Selection")
-        self.assertEqual(physical[6][13], "Sign-up Notes")
+        self.assertEqual(physical[6][14], "Sign-up Notes")
 
     def test_read_keeps_top_cells_at_absolute_coordinates(self):
         body = sheets._rows(self.path, self.event, {})
