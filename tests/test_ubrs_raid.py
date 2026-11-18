@@ -110,7 +110,7 @@ class UBRSRaidTests(unittest.TestCase):
         self.assertEqual(imported_row[14], "Keep current team")
         self.assertEqual((imported_row[16], imported_row[17]), ("42", "1"))
         self.assertEqual(imported_row[20], "")
-        self.assertEqual(sheet._display(imported[6])[10], "UBRS")
+        self.assertEqual(sheet._display(sheet._header(self.event, [], "")[6])[10], "UBRS")
         self.assertEqual(sheet._display(imported_row)[15], "Keep current team")
 
 
