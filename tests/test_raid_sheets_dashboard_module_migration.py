@@ -46,8 +46,8 @@ class RaidSheetDashboardMigrationTests(unittest.TestCase):
         rows = canonical._header(
             self.event, body, canonical.tab_title(self.event),
         )
-        self.assertEqual(len(canonical.COLUMNS), 20)
-        self.assertEqual(len(rows[0]), 20)
+        self.assertEqual(len(canonical.COLUMNS), 21)
+        self.assertEqual(len(rows[0]), 21)
         self.assertEqual(rows[0][0], "<Hyped> Raid #7 - Guild raid")
         self.assertEqual(rows[3][0], "Warcraft Logs")
         self.assertEqual(rows[3][1], self.event["wcl_url"])
