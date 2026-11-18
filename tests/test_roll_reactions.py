@@ -57,8 +57,73 @@ class ReactionTests(unittest.IsolatedAsyncioTestCase):
         self.messages.append(m)
         return m
 
+    def add_ogre(self, score, stamp=1):
+        """Mirror the actual daily bot post, which has no user mention."""
+        self.con.execute("INSERT INTO rolls VALUES (0, ?, 'bot', ?)", (score, stamp))
+        message = Message(0)
+        message.id = len(self.messages) + 1
+        rendered = "💯" if score == 100 else f"**{score}**"
+        message.content = (
+            f"Me rolled {rendered} <:ogreivory:1566177408556605460>"
+        )
+        self.messages.append(message)
+        return message
+
     def has(self, message, emoji):
         return any(r.emoji == emoji and r.me for r in message.reactions)
+
+    async def test_ogre_alone_receives_high_coin_not_poop(self):
+        ogre = self.add_ogre(100)
+        await self.tracker.sync()
+        self.assertTrue(self.has(ogre, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(ogre, '<:ogrepoop:1566195860746928290>'))
+        await self.tracker.sync()  # Reconnection must not double-react.
+        self.assertEqual(len(ogre.reactions), 1)
+        self.assertEqual(self.errors, [])
+
+    async def test_ogre_highest_receives_coin_and_human_receives_poop(self):
+        human = self.add(1, 40, 1)
+        ogre = self.add_ogre(95, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(ogre, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(human, '<:ogrecoin:1564336079430099035>'))
+        self.assertTrue(self.has(human, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(ogre, '<:ogrepoop:1566195860746928290>'))
+        self.assertEqual(self.errors, [])
+
+    async def test_ogre_lowest_receives_poop_and_human_receives_coin(self):
+        ogre = self.add_ogre(12, 1)
+        human = self.add(2, 85, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(ogre, '<:ogrepoop:1566195860746928290>'))
+        self.assertTrue(self.has(human, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(ogre, '<:ogrecoin:1564336079430099035>'))
+        await self.tracker.sync()
+        self.assertEqual(len(ogre.reactions), 1)
+        self.assertEqual(self.errors, [])
+
+    async def test_ogre_lowest_tie_receives_poop_not_human(self):
+        human_low = self.add(1, 14, 1)
+        self.add(2, 80, 2)
+        ogre = self.add_ogre(14, 3)
+        await self.tracker.sync()
+        self.assertTrue(self.has(ogre, '<:ogrepoop:1566195860746928290>'))
+        self.assertFalse(self.has(human_low, '<:ogrepoop:1566195860746928290>'))
+
+    async def test_ogre_highest_tie_uses_first_roll_timestamp(self):
+        human = self.add(1, 90, 1)
+        ogre = self.add_ogre(90, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(human, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(ogre, '<:ogrecoin:1564336079430099035>'))
+
+    async def test_ogre_early_highest_tie_keeps_coin(self):
+        ogre = self.add_ogre(90, 1)
+        human = self.add(1, 90, 2)
+        await self.tracker.sync()
+        self.assertTrue(self.has(ogre, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(human, '<:ogrecoin:1564336079430099035>'))
+        self.assertFalse(self.has(human, '<:ogrepoop:1566195860746928290>'))
 
     async def test_transfer_ties_restart_and_preserve_member_reactions(self):
         a = self.add(1, 50)
