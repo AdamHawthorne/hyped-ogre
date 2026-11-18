@@ -1,4 +1,4 @@
-"""Reconcile daily player roll reactions, including after a bot restart."""
+"""Reconcile daily player and Ogre roll reactions, including after a restart."""
 import asyncio
 import re
 from datetime import datetime, timezone
@@ -37,8 +37,7 @@ class RollReactions:
         all_scores = {}
         for user_id, value, actor_type in rows:
             all_scores[user_id] = max(value, all_scores.get(user_id, 0))
-        scores = {uid: value for uid, value in all_scores.items() if uid != 0}
-        if not scores:
+        if not all_scores:
             return
         channel = self.bot.get_channel(self.channel_id)
         if channel is None:
@@ -57,14 +56,18 @@ class RollReactions:
         ):
             if message.author.id != self.bot.user.id:
                 continue
+            # The Ogre's daily post says "Me rolled", not "<@id> rolled".
+            # Record it under the existing DB sentinel (user_id=0).
             match = re.match(
-                r"^<@!?(\d+)> rolled (?:💯|\*\*[\d,]+\*\*) (?:🎲|<:(?:ogredice|ogreivory|ogredie):\d+>|:(?:ogredice|ogreivory|ogredie):)",
+                r"^(?:<@!?(\d+)>|Me) rolled (?:💯|\*\*[\d,]+\*\*) "
+                r"(?:🎲|<:(?:ogredice|ogreivory|ogredie):\d+>|"
+                r":(?:ogredice|ogreivory|ogredie):)",
                 message.content,
             )
             if not match:
                 continue
-            user_id = int(match.group(1))
-            if user_id in scores:
+            user_id = int(match.group(1)) if match.group(1) else 0
+            if user_id in all_scores:
                 # Convert bot-authored roll messages to the custom dice.
                 # Preserve message identity, score text and all reactions.
                 from hyped_ogre.core.emojis import roll_dice_markup
@@ -98,12 +101,12 @@ class RollReactions:
                     first_by_user.setdefault(user_id, message.id)
                 messages_by_user.setdefault(user_id, []).append(message)
 
-        # Only visible human roll messages count for reaction ranking.
-        # Keep Ogre's saved roll even though his message has no user mention.
-        all_scores = {user_id: value for user_id, value in all_scores.items()
-                      if user_id == 0 or user_id in latest_by_user}
+        # A visible post is required to place a reaction on a human roll.
+        # The Ogre's saved roll remains competitive even if Discord failed
+        # to publish it: it already counts for coins and tie decisions.
         # Rank by stored values, never by April Fools' display values.
-        scores = {user_id: value for user_id, value in scores.items() if user_id in latest_by_user}
+        scores = {user_id: value for user_id, value in all_scores.items()
+                  if user_id == 0 or user_id in latest_by_user}
         if not scores:
             return
         # Rows are oldest-first. Ties retain the earliest *actual* 85/100,
@@ -117,21 +120,21 @@ class RollReactions:
             gamble_by_user.get(high) if high_kind == "gamble"
             else first_by_user.get(high)
         )
-        # Rank poop by individual free/gamble rolls, not personal bests.
-        # Ogre can block poop, but never receives it; ties favour the first roll.
+        # Rank poop by individual free/gamble/bot rolls, not personal bests.
+        # Preserve the existing Ogre-lowest tie behaviour: an Ogre tie
+        # prevents a human receiving poop; now the Ogre's own post gets it.
         eligible = [(uid, value, kind) for uid, value, kind in rows
                     if uid == 0 or uid in scores]
         lowest_value = min(value for _, value, _ in eligible)
-        lowest_roll = next((entry for entry in eligible if entry[1] == lowest_value))
-        # An Ogre tie for the lowest score blocks poop, regardless of
-        # who rolled first. Ogre himself never receives the reaction.
+        lowest_roll = next(entry for entry in eligible if entry[1] == lowest_value)
         ogre_tied_lowest = any(uid == 0 and value == lowest_value
                               for uid, value, _ in eligible)
-        low = (lowest_roll[0] if not ogre_tied_lowest
-               and lowest_roll[0] != 0
-               and lowest_value < max(all_scores.values()) else None)
+        low = (0 if ogre_tied_lowest else lowest_roll[0]) if (
+            lowest_value < max(scores.values())) else None
         low_message_id = None
-        if low is not None:
+        if low == 0:
+            low_message_id = first_by_user.get(0)
+        elif low is not None:
             # Match the chronologically ordered DB rolls to visible messages.
             user_rolls = [(value, kind) for uid, value, kind in rows
                           if uid == low and kind in ('user', 'gamble')]
