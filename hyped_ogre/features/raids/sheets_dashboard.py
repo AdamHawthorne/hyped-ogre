@@ -880,6 +880,31 @@ def _one(session, db_path, event, names, titles, attendance_rows=None):
             )
         elif count < len(COLUMNS):
             raise RuntimeError("Raid tab has an unexpected number of columns.")
+        if count < len(COLUMNS):
+            # Older tabs hide physical P/Q for the two internal IDs.
+            # With UBRS inserted beside Ony those IDs move to Q/R;
+            # explicitly unhide P (Leadership Notes) and hide R as well.
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                json={"requests": [
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 15, "endIndex": 16},
+                        "properties": {"hiddenByUser": False},
+                        "fields": "hiddenByUser"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 16, "endIndex": 18},
+                        "properties": {"hiddenByUser": True},
+                        "fields": "hiddenByUser"}},
+                    {"updateDimensionProperties": {
+                        "range": {"sheetId": sid, "dimension": "COLUMNS",
+                                  "startIndex": 10, "endIndex": 11},
+                        "properties": {"pixelSize": 120},
+                        "fields": "pixelSize"}},
+                ]},
+            )
     existing = [] if new else _read(session, title)
     invalid_wcl = _apply_wcl_from_sheet(db_path, event, existing)
     invalid_notes = _apply_notes_from_sheet(db_path, event, existing)
