@@ -155,7 +155,7 @@ jobs:
           assert rows[1][6] == "Barrows 🔸 (9)"
           assert rows[3][1] == event["wcl_url"]
           assert rows[3][3] == "Manual notes"
-          assert len(rows[6]) == 20
+          assert len(rows[6]) == 21
           print("Per-raid Sheets dashboard import and fixed cells validated")
           '
 
