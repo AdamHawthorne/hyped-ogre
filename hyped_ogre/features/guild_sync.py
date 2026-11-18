@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sqlite3
+from contextlib import closing
 import time
 from pathlib import Path
 from typing import Any
@@ -128,7 +129,7 @@ def validate_payload(payload: Any, now: int | None = None, expected_guild: str |
 def ensure_schema(path: str | None = None) -> None:
     database_path = _db_path(path)
     Path(database_path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(database_path, timeout=5) as con:
+    with closing(sqlite3.connect(database_path, timeout=5)) as con, con:
         con.execute("""CREATE TABLE IF NOT EXISTS guild_sync_levels (
             character_key TEXT PRIMARY KEY,
             character_name TEXT NOT NULL,
@@ -158,7 +159,7 @@ def main_roster_names(raid_db_path: str | None = None) -> dict[str, str]:
     if not Path(path).is_file():
         return {}
     try:
-        with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True, timeout=3) as con:
+        with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=3)) as con, con:
             rows = con.execute("SELECT name FROM characters WHERE is_main=1").fetchall()
     except sqlite3.Error:
         raise
@@ -180,7 +181,7 @@ def persist_payload(payload: dict[str, Any], raid_db_path: str | None = None,
         raise sqlite3.OperationalError("raid character roster database is not available")
     allowed_mains = main_roster_names(resolved_raid_db)
     updated = ignored = inserted_events = 0
-    with sqlite3.connect(_db_path(database_path), timeout=5) as con:
+    with closing(sqlite3.connect(_db_path(database_path), timeout=5)) as con, con:
         for row in validated["roster"]:
             registered_name = allowed_mains.get(row["key"])
             if not registered_name:
@@ -216,7 +217,7 @@ def latest_levels_by_name(database_path: str | None = None, now: int | None = No
         return {}
     now_value = int(time.time()) if now is None else int(now)
     try:
-        with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True, timeout=3) as con:
+        with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=3)) as con, con:
             con.row_factory = sqlite3.Row
             rows = con.execute("SELECT character_key,character_name,class_token,level,captured_at "
                                "FROM guild_sync_levels WHERE captured_at>=?",
@@ -260,7 +261,7 @@ async def announce_pending(bot: Any, database_path: str | None = None, channel_i
 
     channel_value = channel_id or int(os.getenv("HYPED_SYNC_BANK_CHANNEL_ID") or 0)
     if not channel_value:
-        with sqlite3.connect(_db_path(database_path), timeout=5) as con:
+        with closing(sqlite3.connect(_db_path(database_path), timeout=5)) as con, con:
             pending = con.execute("SELECT COUNT(*) FROM guild_bank_events WHERE announced_at IS NULL").fetchone()[0]
         if pending:
             raise SyncDeliveryError("bank announcement channel is not configured")
@@ -274,7 +275,7 @@ async def announce_pending(bot: Any, database_path: str | None = None, channel_i
     if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
         raise SyncDeliveryError("bank announcement destination must be a regular Hyped text channel")
 
-    with sqlite3.connect(_db_path(database_path), timeout=5) as con:
+    with closing(sqlite3.connect(_db_path(database_path), timeout=5)) as con, con:
         con.row_factory = sqlite3.Row
         rows = con.execute("SELECT * FROM guild_bank_events WHERE announced_at IS NULL "
                            "ORDER BY received_at,event_id LIMIT 50").fetchall()
@@ -289,11 +290,11 @@ async def announce_pending(bot: Any, database_path: str | None = None, channel_i
         except Exception as exc:
             LOG.warning("Guild bank announcement deferred (%s)", type(exc).__name__)
             raise SyncDeliveryError("Discord could not accept the bank announcement") from exc
-        with sqlite3.connect(_db_path(database_path), timeout=5) as con:
+        with closing(sqlite3.connect(_db_path(database_path), timeout=5)) as con, con:
             con.executemany("UPDATE guild_bank_events SET announced_at=? WHERE event_id=? AND announced_at IS NULL",
                             [(now_value, row["event_id"]) for row in batch])
         sent += len(batch)
-    with sqlite3.connect(_db_path(database_path), timeout=5) as con:
+    with closing(sqlite3.connect(_db_path(database_path), timeout=5)) as con, con:
         remaining = con.execute("SELECT COUNT(*) FROM guild_bank_events WHERE announced_at IS NULL").fetchone()[0]
     if remaining:
         raise SyncDeliveryError("additional bank entries remain queued for the next sync retry")

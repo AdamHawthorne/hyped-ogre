@@ -6,6 +6,7 @@ import io
 import json
 import os
 import sqlite3
+from contextlib import closing
 import time
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ class RankExportError(ValueError):
 def registered_characters(path: str) -> list[dict]:
     if not Path(path).is_file():
         raise RankExportError("The registered character database is unavailable.")
-    with sqlite3.connect(f"file:{Path(path).resolve()}?mode=ro", uri=True, timeout=3) as con:
+    with closing(sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=3)) as con, con:
         con.row_factory = sqlite3.Row
         rows = con.execute("SELECT character_id,discord_id,name,is_main FROM characters ORDER BY discord_id,character_id LIMIT 1001").fetchall()
     if len(rows) > 1000:

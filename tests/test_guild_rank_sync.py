@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import sqlite3
+from contextlib import closing
 import tempfile
 import time
 import unittest
@@ -22,7 +23,7 @@ class DiscordExportTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = str(Path(self.tmp.name)/"raid.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.execute("CREATE TABLE characters(character_id,discord_id,name,is_main)")
             con.executemany("INSERT INTO characters VALUES(?,?,?,?)",[(1,42,"Big Snore",1),(2,42,"Snore Bis",0),(3,99,"Another Person",1)])
         self.role=SimpleNamespace(id=12345,name="Forever")
@@ -64,6 +65,21 @@ class DiscordExportTests(unittest.IsolatedAsyncioTestCase):
             await cog.export_roles.callback(cog,interaction)
         create.assert_not_awaited()
         self.assertTrue(interaction.response.send_message.call_args.kwargs["ephemeral"])
+
+    async def test_character_reader_closes_database_handle(self):
+        opened = []
+        real_connect = sqlite3.connect
+
+        def connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        with patch.object(ranks.sqlite3, "connect", side_effect=connect):
+            self.assertEqual(len(ranks.registered_characters(self.path)), 3)
+        self.assertEqual(len(opened), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
 
 
 class SignedRoutesTests(unittest.IsolatedAsyncioTestCase):

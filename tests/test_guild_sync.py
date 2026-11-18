@@ -1,9 +1,11 @@
 import sqlite3
+from contextlib import closing
 import hashlib
 import hmac
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from hyped_ogre.features.guild_sync import (
     SyncPayloadError,
@@ -41,7 +43,7 @@ class GuildSyncTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.raid_db = str(Path(self.temp.name) / "raid.db")
         self.sync_db = str(Path(self.temp.name) / "sync.db")
-        with sqlite3.connect(self.raid_db) as con:
+        with closing(sqlite3.connect(self.raid_db)) as con, con:
             con.execute("CREATE TABLE characters (name TEXT, is_main INTEGER)")
             con.executemany("INSERT INTO characters VALUES (?,?)", [("Mainone", 1), ("Altone", 0)])
 
@@ -75,6 +77,24 @@ class GuildSyncTests(unittest.TestCase):
         digest = hmac.new(secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
         self.assertTrue(_valid_signature(secret, timestamp, "sha256=" + digest, body, NOW))
         self.assertFalse(_valid_signature(secret, str(NOW - 301), "sha256=" + digest, body, NOW))
+
+    def test_database_handles_close_after_sync_and_read(self):
+        opened = []
+        real_connect = sqlite3.connect
+
+        def connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        # Retain the handles so garbage collection cannot mask a resource leak.
+        with patch("hyped_ogre.features.guild_sync.sqlite3.connect", side_effect=connect):
+            persist_payload(payload(), self.raid_db, self.sync_db, now=NOW)
+            self.assertEqual(latest_levels_by_name(self.sync_db, now=NOW)["mainone"]["level"], 60)
+        self.assertGreaterEqual(len(opened), 4)
+        for connection in opened:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
 
 
 if __name__ == "__main__":
