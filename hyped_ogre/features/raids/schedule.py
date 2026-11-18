@@ -695,8 +695,8 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
                   acknowledged_ids=()):
     """Hyjal uses one 20-player roster; Barrows retains two diamond teams.
 
-    Only leadership-approved names are passed in from the Sheet. One raider
-    may appear in the Hyjal roster and one Barrows team on the same raid night.
+    UBRS has one 10-player roster. Leadership approves assignments in Sheets;
+    one raider can be assigned to more than one instance on a raid night.
     """
     instances = [
         (event.get(key) or "").casefold()
@@ -704,6 +704,7 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
     ]
     has_hyjal = any("hyjal" in name for name in instances)
     has_barrows = any("barrows" in name for name in instances)
+    has_ubrs = any("ubrs" in name or "upper blackrock spire" in name for name in instances)
     has_ony = any("ony" in name for name in instances)
 
     group_titles = []
@@ -711,6 +712,8 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
         group_titles.append("Hyjal · 20-player")
     if has_barrows:
         group_titles.extend(("Barrows · 10-player 🔸", "Barrows · 10-player 🔹"))
+    if has_ubrs:
+        group_titles.append("UBRS · 10-player")
     if has_ony:
         group_titles.append("Ony · 40-player")
     if not group_titles:
@@ -753,6 +756,9 @@ def roster_groups(event, public_roster, *, emoji_map=None, by_role=False,
              "group a", "group b", "🔸", "🔹"} & tokens
         ):
             groups[f"Barrows · 10-player {split}"].append(clean_name)
+            matched = True
+        if has_ubrs and ("ubrs" in tokens or "upper blackrock spire" in tokens):
+            groups["UBRS · 10-player"].append(clean_name)
             matched = True
         if has_ony and "ony" in tokens:
             groups["Ony · 40-player"].append(clean_name)
@@ -852,13 +858,15 @@ def roster_group_heading(title):
         return "**Hyjal** 🔹🔸"
     if title == "Ony · 40-player":
         return "**Ony**"
+    if title == "UBRS · 10-player":
+        return "**UBRS**"
     return f"**{title}**"
 
 
 def _roster_group_text(title, players):
     """Always show muted Tanks / Healers / DPS placeholders per raid roster."""
     heading = roster_group_heading(title)
-    for instance in ("Hyjal", "Barrows", "Ony"):
+    for instance in ("Hyjal", "Barrows", "UBRS", "Ony"):
         heading = heading.replace(f"**{instance}**", f"**{instance} ({len(players)})**")
     lines = [heading]
     for label, category in (("Tanks", "Tank"), ("Healers", "Healer"), ("DPS", "DPS")):
