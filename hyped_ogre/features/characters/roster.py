@@ -1,6 +1,8 @@
 """Compact role-grouped roster embeds for main characters only."""
 
 import sqlite3
+import os
+from hyped_ogre.features import guild_sync
 
 import discord
 from cogs import raid_signup as raid
@@ -64,6 +66,7 @@ def rows(path):
                 credits[row[0]] = row[1]
     catalog = items.cached_catalog(path)
     gear = {r["character_id"]: r for r in equipment.latest_profiles(path)}
+    synced = guild_sync.latest_levels_by_name() if os.getenv("HYPED_SYNC_ENABLED") == "true" else {}
     for character in characters:
         character["attendance"] = (f"{100 * credits.get(character['discord_id'], 0) / len(window):.0f}%"
                                    if window else "N/A")
@@ -74,6 +77,9 @@ def rows(path):
         character["level"] = (level if isinstance(level, int)
                               and not isinstance(level, bool)
                               and 1 <= level <= 60 else None)
+        captured = synced.get(guild_sync._canonical_name(character["name"])) if character["is_main"] else None
+        if captured:
+            character["level"] = captured["level"]
         character["professions"] = profession_text(parsed)
         average, known, equipped = equipment.average_item_level(parsed, catalog)
         character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
