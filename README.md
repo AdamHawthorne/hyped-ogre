@@ -13,6 +13,7 @@
 - **LFG/LFM:** dungeon and group-planning panels
 - **Streams:** Twitch registration and stream notifications
 - **Polls:** private `/poll create` setup, anonymous single/multiple-choice votes, optional live counts, deadlines, private results and deliberate publication. See the [poll guide](docs/polls.md).
+- **Guild companion:** private `/guild-rank-export`, reviewed game-rank plans, and optional signed level/bank intake. See [setup and testing](docs/guild-companion.md).
 - **Guild utilities:** Forever role panels, countdowns, suggestions, flameboard and Ogre messaging
 
 Feature behaviour is covered by regression tests in `tests/`.
@@ -59,6 +60,7 @@ The Fly.io application is `hyped-diceman` (configured in `fly.toml`). Its persis
 | Countdown data | `/data/countdown.db` |
 | Stream registrations | `/data/streams.db` |
 | Anonymous polls | `/data/polls.db` |
+| Guild levels and bank deduplication | `/data/guild_sync.db` |
 
 Never delete, overwrite, move, or reinitialise these live databases as part of a code refactor. Keep the Fly volume mounted at `/data`. Database migrations must be additive and tested before deployment.
 

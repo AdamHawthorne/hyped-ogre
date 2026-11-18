@@ -274,14 +274,21 @@ async def topgg_webhook(request):
 
     return web.Response(text="OK")
 
-async def start_webhook():
+WEBHOOK_RUNNER = None
 
+async def start_webhook():
+    global WEBHOOK_RUNNER
+    if WEBHOOK_RUNNER is not None:
+        return
     app = web.Application()
 
     async def remove_server_header(request, response):
         response.headers.pop("Server", None)
 
     app.on_response_prepare.append(remove_server_header)
+    if os.getenv("HYPED_SYNC_ENABLED") == "true":
+        from hyped_ogre.features.guild_sync import register_route
+        register_route(app, bot)
 
     app.router.add_post(
         "/topgg",
@@ -314,6 +321,7 @@ async def start_webhook():
     )
 
     await site.start()
+    WEBHOOK_RUNNER = runner
 
 def ensure_schema():
 
@@ -2154,7 +2162,7 @@ async def on_ready():
                 log_error(f"PUBLIC LEDGER REFRESH FAILED: {exc!r}")
         asyncio.create_task(public_ledger_job())
 
-    if os.getenv("ENABLE_WEBHOOK") == "true":
+    if os.getenv("ENABLE_WEBHOOK") == "true" or os.getenv("HYPED_SYNC_ENABLED") == "true":
         await start_webhook()
 
     log_event(
@@ -3486,6 +3494,7 @@ async def load_hyped_extensions():
     await bot.load_extension("hyped_ogre.features.classrooms.extension")
     await bot.load_extension("hyped_ogre.features.raids.notifications")
     await bot.load_extension("hyped_ogre.features.characters.hub")
+    await bot.load_extension("hyped_ogre.features.guild_rank_sync")
     await bot.load_extension("hyped_ogre.features.polls.extension")
 
 bot.setup_hook = load_hyped_extensions
