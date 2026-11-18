@@ -63,20 +63,22 @@ def instance_summaries(body, event):
     """Four G/H rows for the raid's active teams, irrespective of Show."""
     names = " ".join(str(event.get(key) or "").casefold()
                      for key in ("instance_1", "instance_2", "instance_3"))
-    # At most three raid instances can be selected. Only Barrows has two
-    # separate teams, so at most four buff-coverage rows are needed.
+    # Keep the existing four dashboard positions stable for earlier raids:
+    # Barrows diamond groups, Hyjal, Ony. At most three instances can be
+    # chosen; when UBRS is selected at least one old slot is free.
     output = [
         ("Barrows 🔸", _selected(body, 12, "🔸")) if "barrows" in names else None,
         ("Barrows 🔹", _selected(body, 12, "🔹")) if "barrows" in names else None,
         ("Hyjal", _selected(body, 11, "Yes")) if "hyjal" in names else None,
-        ("UBRS", _selected(body, 20, "Yes"))
-        if "ubrs" in names or "upper blackrock spire" in names else None,
         ("Ony", _selected(body, 13, "Yes")) if "ony" in names else None,
     ]
-    active = [entry for entry in output if entry is not None][:4]
+    if "ubrs" in names or "upper blackrock spire" in names:
+        available = next((i for i, entry in enumerate(output) if entry is None), None)
+        if available is not None:
+            output[available] = ("UBRS", _selected(body, 20, "Yes"))
     return [
         (f"{name} ({len(missing_entries(assigned))})",
          missing_coverage(assigned)) if entry else ("", "")
-        for entry in active + [None] * (4 - len(active))
+        for entry in output
         for name, assigned in ([entry] if entry else [("", [])])
     ]
