@@ -26,7 +26,7 @@ SPEC_COVERAGE = (
 def _selected(body, flag, expected):
     selected = []
     for row in body:
-        if len(row) < 14 or row[8] != "Signed" or row[9] != "Selected":
+        if len(row) <= max(flag, 9) or row[8] != "Signed" or row[9] != "Selected":
             continue
         if row[flag] != expected:
             continue
