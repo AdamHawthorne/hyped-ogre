@@ -29,6 +29,7 @@ from cogs.roll_coins import (
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.roll_gamble import gamble_once, GambleError
 from hyped_ogre.features.rolls.scoring import reconcile_scores
+from hyped_ogre.features.rolls.crown import eligible_lucky_gamer
 from cogs.ogre_voice import pick as ogre_say
 from hyped_ogre.features.startup_greeting import StartupGreeting
 from cogs.emojis import markup as guild_emoji, roll_dice_markup, roll_dice_emoji
@@ -1091,17 +1092,9 @@ async def sync_high_roller_role():
     today = datetime.now(TZ).date().isoformat()
 
     with db() as con:
-        champion = con.execute(
-            """
-            SELECT user_id, value
-            FROM rolls
-            WHERE actor_type IN ('user', 'gamble')
-              AND rolled_at >= ? AND rolled_at < ?
-            ORDER BY value DESC, rolled_at ASC, rowid ASC
-            LIMIT 1
-            """,
-            (start, end)
-        ).fetchone()
+        # Ogre competes for the coin and the daily high, but cannot hold
+        # the member-only Lucky Gamer role. An Ogre win leaves no holder.
+        champion = eligible_lucky_gamer(con, start, end)
 
         state = con.execute(
             """
@@ -1113,8 +1106,14 @@ async def sync_high_roller_role():
         ).fetchone()
 
     if champion is None:
+        # Ogre won (or nobody rolled). Revoke a previous member's role
+        # even when crown_state was missing after a reconnect.
+        stale_holders = {member.id for member in role.members}
         if state is not None:
-            await remove_crown_from_user(guild, role, state["user_id"])
+            stale_holders.add(state["user_id"])
+        for member_id in stale_holders:
+            await remove_crown_from_user(guild, role, member_id)
+        if state is not None:
             with db() as con:
                 con.execute(
                     "DELETE FROM crown_state WHERE guild_id = ?",
