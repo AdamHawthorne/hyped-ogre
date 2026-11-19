@@ -82,9 +82,13 @@ def rows(path):
         character["level_source"] = "Blizzard" if valid_live else None
 
         armory_ilvl = live.get("ilvl")
-        character["ilvl"] = (str(armory_ilvl)
-                             if type(armory_ilvl) is int and 1 <= armory_ilvl <= 250
-                             else "N/A")
+        if type(armory_ilvl) in (int, float) and 1 <= armory_ilvl <= 250:
+            character["ilvl"] = (
+                str(int(armory_ilvl)) if float(armory_ilvl).is_integer()
+                else f"{armory_ilvl:.1f}"
+            )
+        else:
+            character["ilvl"] = "N/A"
         character["ilvl_source"] = "Blizzard" if character["ilvl"] != "N/A" else None
         character["professions"] = profession_text(live)
         character["professions_source"] = (

@@ -217,6 +217,9 @@ class CharacterHub(commands.Cog):
                 channel_id INTEGER NOT NULL, position INTEGER NOT NULL,
                 message_id INTEGER NOT NULL, PRIMARY KEY(channel_id,position)
             )""")
+            con.execute("""CREATE TABLE IF NOT EXISTS character_v2_intros (
+                channel_id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL
+            )""")
         for channel_id, message_id in await asyncio.to_thread(self.v2_panels):
             self.bot.add_view(
                 CharacterBoardV2(self, channel_id), message_id=message_id
@@ -283,6 +286,41 @@ class CharacterHub(commands.Cog):
             with raid.database(raid.RAID_DB) as con:
                 con.execute("DELETE FROM character_panel_parts WHERE channel_id=? AND position=?",
                             (channel.id, position))
+
+    async def ensure_v2_intro(self, channel):
+        """As for raid sign-ups, a role ping is a separate plain-text message.
+
+        Components V2 cannot carry ordinary message content. Send at most
+        one notification for this private pilot board, not on refreshes.
+        """
+        with raid.database(raid.RAID_DB) as con:
+            exists = con.execute(
+                "SELECT message_id FROM character_v2_intros WHERE channel_id=?",
+                (channel.id,),
+            ).fetchone()
+        if exists:
+            return
+        role = next(
+            (role for role in channel.guild.roles
+             if role.name.casefold() == "forever"), None
+        )
+        permissions = channel.permissions_for(channel.guild.me)
+        can_ping = bool(role and (
+            role.mentionable or permissions.mention_everyone
+        ))
+        mention = role.mention if role else "@Forever"
+        sent = await channel.send(
+            content=f"{mention} Ogre got roster here, manage it yerself!",
+            allowed_mentions=discord.AllowedMentions(
+                everyone=False, users=False, roles=[role] if can_ping else [],
+            ),
+        )
+        with raid.database(raid.RAID_DB) as con:
+            con.execute(
+                "INSERT INTO character_v2_intros(channel_id,message_id) "
+                "VALUES(?,?) ON CONFLICT(channel_id) DO NOTHING",
+                (channel.id, sent.id),
+            )
 
     async def refresh_v2(self, channel_id, message_id):
         """Refresh only the private V2 anchor and its owned overflow messages."""
@@ -403,6 +441,12 @@ class CharacterHub(commands.Cog):
             )
             return
         await interaction.response.defer(ephemeral=True)
+        # A manual refresh also attempts a bounded live Armory update.
+        # The normal 10-minute background worker handles future changes.
+        try:
+            await armory.refresh(raid.RAID_DB, limit=12)
+        except (ValueError, sqlite3.Error):
+            LOG.warning("Manual Armory refresh unavailable; cached data retained.")
         async with self.lock:
             saved = next(
                 (item for item in await asyncio.to_thread(self.v2_panels)
@@ -414,6 +458,7 @@ class CharacterHub(commands.Cog):
                 except discord.NotFound:
                     saved = None
             if not saved:
+                await self.ensure_v2_intro(interaction.channel)
                 grouped = v2_groups(await asyncio.to_thread(rows, raid.RAID_DB))
                 verified = await self.member_labels(interaction.guild, grouped)
                 pages = v2_chunks(grouped, interaction.guild, verified)
@@ -432,11 +477,76 @@ class CharacterHub(commands.Cog):
                         (GUILD_ID, interaction.channel_id, message.id),
                     )
                 await self.refresh_v2(interaction.channel_id, message.id)
+            else:
+                await self.ensure_v2_intro(interaction.channel)
+        try:
+            status = armory.coverage(raid.RAID_DB)
+            detail = (
+                f"Blizzard iLvl cached for {status['ilvls']}/"
+                f"{status['visible']} registered characters. "
+                + ("Armory credentials configured."
+                   if status['credentials'] else
+                   "Blizzard API credentials are not configured on Fly.io.")
+            )
+        except sqlite3.Error:
+            detail = "Armory cache status unavailable."
         await interaction.followup.send(
-            "Private Characters V2 posted. Public roster unchanged. "
-            "Edits go to the existing shared character database.",
+            "Private Characters V2 updated; existing public roster unchanged. "
+            + detail,
             ephemeral=True,
         )
+
+    @app_commands.command(
+        name="armory-status",
+        description="Privately diagnose Forever Armory iLvl coverage and API configuration",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    @app_commands.default_permissions(manage_guild=True)
+    async def armory_status(self, interaction: discord.Interaction):
+        owner_id = int(os.getenv("OWNER_ID") or 0)
+        if not (
+            interaction.guild_id == GUILD_ID
+            and interaction.channel_id == raid.TEST_CHANNEL_ID
+            and (interaction.user.id == owner_id
+                 or interaction.user.id == getattr(interaction.guild, "owner_id", None))
+        ):
+            await interaction.response.send_message(
+                "Armory diagnostics are available only to the guild owner in Ogre's private channel.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            updated = await armory.refresh(raid.RAID_DB, limit=12)
+            status = await asyncio.to_thread(armory.coverage, raid.RAID_DB)
+        except (sqlite3.Error, ValueError) as exc:
+            LOG.warning("Armory diagnostic failed: %s", type(exc).__name__)
+            await interaction.followup.send(
+                "Armory check failed. Character records were not changed.",
+                ephemeral=True,
+            )
+            return
+        lines = [
+            "**Forever Armory (EU)**",
+            "Credentials: " + ("Configured" if status["credentials"] else "Missing"),
+            f"Visible roster: {status['visible']} characters",
+            f"Cached character levels: {status['levels']}",
+            f"Cached Blizzard iLvls: {status['ilvls']}",
+            f"Profiles checked this time: {updated}",
+        ]
+        if not status["credentials"]:
+            lines.append(
+                "To enable lookups, configure BLIZZARD_CLIENT_ID and "
+                "BLIZZARD_CLIENT_SECRET as Fly.io secrets."
+            )
+        elif not status["ilvls"]:
+            lines.append(
+                "No usable item levels cached. Check the app logs for "
+                "Forever API errors. Blizzard profiles require level 10+ "
+                "and usually update after logout."
+            )
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @app_commands.command(name="postcharacters", description="Post or refresh the shared character board in this channel")
     @app_commands.guilds(discord.Object(id=GUILD_ID))

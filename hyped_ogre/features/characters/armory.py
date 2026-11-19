@@ -107,9 +107,15 @@ def parse_character(payload, expected_name):
         return None
     race = payload.get("race") or {}
     guild = payload.get("guild") or {}
-    average = payload.get("average_item_level")
-    if type(average) is not int or not 1 <= average <= 250:
-        average = None
+    # Blizzard's character profile normally has average_item_level.
+    # Some clients expose only equipped_item_level, so accept either.
+    # Never mistake character level for equipment item level.
+    average = None
+    for field in ("equipped_item_level", "average_item_level"):
+        value = payload.get(field)
+        if type(value) in (int, float) and 1 <= value <= 250:
+            average = round(float(value), 1) if isinstance(value, float) else value
+            break
     return {
         "level": level, "ilvl": average, "profession_details": [],
         "race": str(race.get("name") or "")[:48] if isinstance(race, dict) else "",
@@ -147,6 +153,36 @@ def parse_professions(payload):
         if len(results) == 2:
             break
     return results
+
+
+def credentials_configured():
+    """Report configuration only; never log or reveal credential values."""
+    return bool(
+        os.getenv("BLIZZARD_CLIENT_ID", "").strip()
+        and os.getenv("BLIZZARD_CLIENT_SECRET", "").strip()
+    )
+
+
+def coverage(path):
+    """Validate cached iLvl against the current canonical visible character."""
+    initialise(path)
+    with closing(sqlite3.connect(path, timeout=20)) as con, con:
+        row = con.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN a.level BETWEEN 1 AND 60 "
+            "AND a.character_name = c.name THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN a.ilvl BETWEEN 1 AND 250 "
+            "AND a.character_name = c.name THEN 1 ELSE 0 END) "
+            "FROM characters c LEFT JOIN character_armory_cache a "
+            "ON a.character_id=c.character_id "
+            "WHERE c.roster_visible=1"
+        ).fetchone()
+    return {
+        "credentials": credentials_configured(),
+        "visible": int(row[0] or 0),
+        "levels": int(row[1] or 0),
+        "ilvls": int(row[2] or 0),
+    }
 
 
 def candidates(path, now=None, limit=MAX_REFRESH):
@@ -216,6 +252,7 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH):
     client_id = os.getenv("BLIZZARD_CLIENT_ID", "").strip()
     client_secret = os.getenv("BLIZZARD_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
+        LOGGER.info("Forever Armory sync unavailable: Blizzard credentials not configured.")
         return 0
     initialise(path)
     available = candidates(path, now=now, limit=limit)
