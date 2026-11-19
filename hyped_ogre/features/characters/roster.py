@@ -151,7 +151,7 @@ def display_ilvl(value):
 
 
 def v1_class_ilvl_sort_key(record):
-    """Group a role by class, then highest known average iLvl first.
+    """Pin Big Snore first; otherwise class then highest average iLvl.
 
     Missing or invalid iLvls appear below all known values within their
     own class. Ties sort by character name for a stable roster. Keep the
@@ -160,7 +160,11 @@ def v1_class_ilvl_sort_key(record):
     klass = str(record.get("class_name") or "").casefold()
     average = display_ilvl(record.get("ilvl"))
     ilvl = float(average) if average != "N/A" else -1.0
+    # Guild leader's character stays first within its role regardless
+    # of class or item level. Other characters retain class/iLvl sorting.
+    pin_big_snore = str(record.get("name") or "").strip().casefold() == "big snore"
     return (
+        0 if pin_big_snore else 1,
         klass, -ilvl, str(record.get("name") or "").casefold(),
         record["character_id"],
     )
