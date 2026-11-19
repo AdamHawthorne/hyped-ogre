@@ -109,18 +109,32 @@ class ClassroomsCog(commands.GroupCog, group_name="classrooms",
     async def destinations(self, guild):
         if guild.id != GUILD_ID:
             raise ClassroomError("This character register belongs to Hyped only.")
-        # REST snapshot avoids stale gateway overwrites after a previous edit and
-        # works without listing/chunking members or requiring a members intent.
-        channels = {channel.id: channel for channel in await guild.fetch_channels()}
-        category = channels.get(CATEGORY_ID)
+        # Only fetch audited classroom IDs. guild.fetch_channels() tries to
+        # decode *every* server channel and raises discord.InvalidData when
+        # Discord adds a channel type unknown to our installed discord.py.
+        # An unrelated channel must never block Hunter/classroom access.
+        # Direct REST lookups also give a fresh permission-overwrite snapshot.
+        try:
+            category = await guild.fetch_channel(CATEGORY_ID)
+        except discord.NotFound as exc:
+            raise ClassroomError(
+                "Cannot find the audited forever-classrooms category."
+            ) from exc
         if not isinstance(category, discord.CategoryChannel):
             raise ClassroomError("Cannot find the audited forever-classrooms category.")
         result = []
         for item in CHANNELS:
-            channel = channels.get(item.channel_id)
+            try:
+                channel = await guild.fetch_channel(item.channel_id)
+            except discord.NotFound as exc:
+                raise ClassroomError(
+                    f"Missing or moved classroom: #{item.key}. No sync performed."
+                ) from exc
             if (not isinstance(channel, discord.TextChannel)
                     or channel.category_id != CATEGORY_ID):
-                raise ClassroomError(f"Missing or moved classroom: #{item.key}. No sync performed.")
+                raise ClassroomError(
+                    f"Missing or moved classroom: #{item.key}. No sync performed."
+                )
             result.append(channel)
         return category, result
 
