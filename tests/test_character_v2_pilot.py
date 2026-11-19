@@ -87,13 +87,13 @@ class CharacterV2Tests(unittest.TestCase):
              "class_name": "Mage", "spec": "Arcane", "role": "DPS",
              "level": 30, "is_main": 1, "professions": "Min: 300 / BS: 300",
              "ilvl": "66.0"}
-            for i in range(1, 101)
+            for i in range(1, 501)
         ]
         grouped = v2.groups(records)
         self.assertEqual([role for role, _ in grouped], ["Ranged"])
         pages = v2.chunks(grouped)
         self.assertGreater(len(pages), 1)
-        for n in range(1, 101):
+        for n in range(1, 501):
             self.assertEqual(
                 sum(f"**Player {n}**" in block for page in pages for block in page),
                 1,
