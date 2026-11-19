@@ -247,6 +247,34 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
 
+    def test_big_snore_is_first_tank_regardless_of_class_or_ilvl(self):
+        druid = self.row(1, 'Tank', 'Druid', 'Feral')
+        druid.update(name='Druid High', ilvl='99', level=60)
+        warrior = self.row(2, 'Tank', 'Warrior', 'Protection')
+        warrior.update(name='Warrior High', ilvl='90', level=60)
+        snore = self.row(3, 'Tank', 'Warrior', 'Protection')
+        snore.update(name='Big Snore', ilvl='40', level=60)
+        paladin = self.row(4, 'Tank', 'Paladin', 'Protection')
+        paladin.update(name='Paladin Middle', ilvl='60', level=60)
+        # Sorting should not move Big Snore within its role even when
+        # his iLvl is lowest and another class sorts alphabetically first.
+        tanks = roster.render([druid, warrior, snore, paladin])[0].fields[:3]
+        lines = tanks[0].value.splitlines()
+        for index, name in enumerate(
+            ('Big Snore', 'Druid High', 'Paladin Middle', 'Warrior High')
+        ):
+            self.assertIn(f'[{name}](', lines[index])
+        self.assertEqual(
+            tanks[1].value.splitlines(),
+            ['60 (40)', '60 (99)', '60 (60)', '60 (90)'],
+        )
+        # The name match is case-insensitive, but only its Tank entry
+        # is pinned. Other classes still use their standard group sort.
+        snore['name'] = 'BIG SNORE'
+        self.assertIn('[BIG SNORE](', roster.render(
+            [druid, warrior, snore, paladin]
+        )[0].fields[0].value.splitlines()[0])
+
     def test_v1_groups_classes_then_sorts_descending_ilvl_with_unknowns_last(self):
         # Deliberately scramble level, attendance, class and item level.
         # Within Healers, the visible sequence must be Druid, Paladin,

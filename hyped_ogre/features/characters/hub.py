@@ -18,10 +18,9 @@ from . import armory
 from .v2 import CharacterBoardV2, groups as v2_groups, chunks as v2_chunks
 
 LOG = logging.getLogger(__name__)
-CHARACTERS_MESSAGE = "Add yer main to mighty Hyped roster!"
 ROSTER_ANNOUNCEMENT = (
     "Ogre wants yer main! Register it below to earn the **Rostered** "
-    "rank in-game and make raid sign-ups easier. Click **Add** to join!"
+    "rank in-game and make raid sign-ups easier."
 )
 
 
@@ -131,6 +130,7 @@ class CharacterHub(commands.Cog):
     def __init__(self, bot):
         self.bot, self.lock = bot, asyncio.Lock()
         self.armory_next_check = 0.0
+        self.announcement_cleanup_pending = True
         self.v2_member_lookup = {}
         self.v2_member_checked = {}
 
@@ -258,7 +258,7 @@ class CharacterHub(commands.Cog):
         embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
         # Refresh the anchor first. A missing anchor is handled by /postcharacters.
         await channel.get_partial_message(message_id).edit(
-            content=CHARACTERS_MESSAGE,
+            content=None,
             embed=embeds[0], view=HubView(self, channel_id),
             allowed_mentions=discord.AllowedMentions.none())
         await self.sync_parts(channel, embeds[1:])
@@ -389,8 +389,49 @@ class CharacterHub(commands.Cog):
                     (channel_id, index, part_id),
                 )
 
+    async def clean_existing_roster_announcements(self):
+        """Edit the existing tracked Forever announcement without pinging again.
+
+        Avoid reposting the role mention or changing any unrelated message.
+        This runs once after bot readiness; the current announcement ID is
+        already held in the shared character_panel_announcements table.
+        """
+        with raid.database(raid.RAID_DB) as con:
+            saved = con.execute(
+                "SELECT channel_id,message_id FROM character_panel_announcements"
+            ).fetchall()
+        completed = True
+        for channel_id, message_id in saved:
+            try:
+                channel = (self.bot.get_channel(channel_id)
+                           or await self.bot.fetch_channel(channel_id))
+                if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
+                    continue
+                current = await channel.fetch_message(message_id)
+                if "Click **Add** to join!" not in current.content:
+                    continue
+                revised = current.content.replace(" Click **Add** to join!", "")
+                await current.edit(
+                    content=revised,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except discord.NotFound:
+                # The old notice may have been manually removed; no repost.
+                continue
+            except (discord.Forbidden, discord.HTTPException, sqlite3.Error):
+                completed = False
+                LOG.warning(
+                    "Couldn't quietly edit existing roster announcement %s.",
+                    message_id,
+                )
+        return completed
+
     @tasks.loop(seconds=60)
     async def maintenance(self):
+        if self.announcement_cleanup_pending:
+            self.announcement_cleanup_pending = not (
+                await self.clean_existing_roster_announcements()
+            )
         if time.monotonic() >= self.armory_next_check:
             # An optional client-credentials lookup, never a requirement
             # for the board to function. The WSE cache remains the fallback.
@@ -652,7 +693,6 @@ class CharacterHub(commands.Cog):
                         ),
                     )
                 message = await channel.send(
-                    content=CHARACTERS_MESSAGE,
                     embed=embeds[0], view=HubView(self, channel.id),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
