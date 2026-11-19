@@ -13,49 +13,72 @@ from hyped_ogre.features.classrooms.config import GUILD_ID
 
 
 class CharacterV2Tests(unittest.TestCase):
-    def test_discord_grouping_keeps_mains_with_grey_alts(self):
+    def test_roles_match_raid_signup_and_alts_use_single_muted_line(self):
         records = [
             {"character_id": 5, "discord_id": 101, "name": "Snore Bis",
-             "class_name": "Warrior", "spec": "Fury",
-             "role": "DPS", "level": 39, "is_main": 0},
+             "class_name": "Warrior", "spec": "Fury", "role": "DPS",
+             "level": 39, "is_main": 0, "ilvl": "41.5", "professions": "Min: 65 / BS: 120"},
             {"character_id": 4, "discord_id": 101, "name": "Big Snore",
-             "class_name": "Warrior", "spec": "Protection",
-             "role": "Tank", "level": 60, "is_main": 1},
+             "class_name": "Warrior", "spec": "Protection", "role": "Tank",
+             "level": 60, "is_main": 1, "ilvl": "58", "professions": "N/A"},
             {"character_id": 6, "discord_id": 102, "name": "Other Gamer",
-             "class_name": "Priest", "spec": "Holy",
-             "role": "Healer", "level": 50, "is_main": 1},
+             "class_name": "Priest", "spec": "Holy", "role": "Healer",
+             "level": 50, "is_main": 1, "ilvl": "55", "professions": "Alch: 180"},
         ]
         grouped = v2.groups(records)
-        self.assertEqual([did for did, _ in grouped], [101, 102])
-        self.assertEqual([r["name"] for r in grouped[0][1]],
-                         ["Big Snore", "Snore Bis"])
-        first = v2.member_text(*grouped[0])
-        self.assertIn("<@101>", first)
-        self.assertIn("**Big Snore** · Lv 60", first)
-        self.assertIn("-# ", first)
-        self.assertIn("Snore Bis · Lv 39", first)
-        self.assertLess(first.index("Big Snore"), first.index("Snore Bis"))
-
-    def test_v2_is_persistent_and_bounded_like_lfg(self):
-        grouped = [
-            (i, [{"character_id": i, "discord_id": i, "name": f"Player {i}",
-                  "class_name": "Mage", "spec": "Arcane", "role": "DPS",
-                  "level": 30, "is_main": 1}])
-            for i in range(1, 31)
-        ]
+        self.assertEqual([role for role, _ in grouped],
+                         ["Tanks", "Healers", "Melee"])
+        self.assertEqual([r["name"] for r in grouped[0][1]], ["Big Snore"])
+        self.assertEqual([r["name"] for r in grouped[2][1]], ["Snore Bis"])
+        main = v2.character_line(records[1])
+        alt = v2.character_line(records[0])
+        self.assertIn("**Big Snore** / 60 / 58 / N/A", main)
+        self.assertIn("Discord ID 101 (unverified)", main)
+        self.assertIn("Alt:", alt)
+        self.assertIn("Snore Bis / 39 / 41.5 / Min: 65, BS: 120", alt)
+        self.assertTrue(alt.startswith("-# "))
+        self.assertEqual(alt.count("\\n"), 0)
         pages = v2.chunks(grouped)
-        self.assertEqual([len(p) for p in pages], [7, 7, 7, 7, 2])
-        self.assertEqual(sum(len(p) for p in pages), 30)
+        self.assertIn("Tanks (1)", pages[0][0])
+        self.assertIn("Healers (1)", pages[0][1])
+        self.assertIn("Melee (1)", pages[0][2])
+
+    def test_discord_username_is_explicit_link_when_known(self):
+        member = SimpleNamespace(display_name="Bread User", name="breaduser")
+        guild = SimpleNamespace(get_member=lambda uid: member if uid == 101 else None)
+        shown = v2.discord_name(guild, 101)
+        self.assertIn("Bread User", shown)
+        self.assertIn("https://discord.com/users/101", shown)
+        self.assertNotIn("<@101>", shown)
+        self.assertIn("unverified", v2.discord_name(guild, 999))
+
+    def test_v2_is_persistent_and_splits_long_roles_without_losing_rows(self):
+        records = [
+            {"character_id": i, "discord_id": i, "name": f"Player {i}",
+             "class_name": "Mage", "spec": "Arcane", "role": "DPS",
+             "level": 30, "is_main": 1, "professions": "Min: 300 / BS: 300",
+             "ilvl": "66.0"}
+            for i in range(1, 101)
+        ]
+        grouped = v2.groups(records)
+        self.assertEqual([role for role, _ in grouped], ["Ranged"])
+        pages = v2.chunks(grouped)
+        self.assertGreater(len(pages), 1)
+        for n in range(1, 101):
+            self.assertEqual(
+                sum(f"**Player {n}**" in block for page in pages for block in page),
+                1,
+            )
         bot = SimpleNamespace(get_cog=lambda _: None)
         cog = SimpleNamespace(bot=bot)
-        for i, group in enumerate(pages):
+        for i, page in enumerate(pages):
             view = v2.CharacterBoardV2(
-                cog, raid.TEST_CHANNEL_ID, grouped=group,
+                cog, raid.TEST_CHANNEL_ID, grouped=page,
                 continuation=i != 0,
             )
             self.assertTrue(view.is_persistent())
             self.assertLessEqual(view.total_children_count, 40)
-        self.assertEqual(len(v2.chunks([])), 1)
+        self.assertEqual(v2.chunks([]), [[]])
 
     def test_renaming_keeps_id_gear_and_attendance(self):
         with tempfile.TemporaryDirectory() as temp:
