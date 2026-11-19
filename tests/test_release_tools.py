@@ -179,22 +179,34 @@ class DataFixture(unittest.TestCase):
             self.assertIn(row["name"], content)
         self.assertNotIn("Page", content)
 
-    def test_character_board_uses_compact_mentions_for_twelve_melee(self):
+    def test_character_board_switches_all_roles_to_plain_names(self):
         base = hub.rows(self.path)[0]
+        # One dense melee group forces the entire board to use plain names.
         values = [
             dict(base, character_id=100 + i, discord_id=100000000000000000 + i,
                  name=f"Melee Character {i:02}", class_name="Warrior",
                  spec="Fury", role="DPS", is_main=1)
             for i in range(12)
         ]
+        values += [
+            dict(base, character_id=200, discord_id=100000000000000200,
+                 name="Big Snore", class_name="Warrior", spec="Protection",
+                 role="Tank", is_main=1),
+            dict(base, character_id=201, discord_id=100000000000000201,
+                 name="Healer Name", class_name="Priest", spec="Holy",
+                 role="Healer", is_main=1),
+        ]
         embeds = hub.render(values)
         self.assertEqual(len(embeds), 1)
-        melee = next(field for field in embeds[0].fields
-                     if field.name.startswith("Melee ("))
-        self.assertEqual(melee.value.count("<@"), 12)
-        self.assertIn("Melee Character 00 <@100000000000000000>", melee.value)
-        self.assertNotIn("https://discord.com/users/", melee.value)
-        self.assertLessEqual(len(melee.value), 1024)
+        content = str(embeds[0].to_dict())
+        self.assertIn("Melee Character 00", content)
+        self.assertIn("Big Snore", content)
+        self.assertIn("Healer Name", content)
+        self.assertNotIn("https://discord.com/users/", content)
+        self.assertNotIn("<@", content)
+        self.assertEqual(embeds[0].author.name, "Characters (14)")
+        for field in embeds[0].fields:
+            self.assertLessEqual(len(field.value), 1024)
 
     def test_character_board_falls_back_to_plain_names_before_field_limit(self):
         base = hub.rows(self.path)[0]
@@ -209,6 +221,7 @@ class DataFixture(unittest.TestCase):
         melee = next(field for field in embeds[0].fields
                      if field.name.startswith("Melee ("))
         self.assertNotIn("<@", melee.value)
+        self.assertNotIn("https://discord.com/users/", melee.value)
         self.assertNotIn("continued", str(embeds[0].to_dict()))
         for row in values:
             self.assertIn(row["name"], melee.value)
