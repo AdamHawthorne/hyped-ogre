@@ -1,10 +1,11 @@
-"""Private compact Components V2 roster, matching raid sign-up role sections.
+"""Private guild roster matching the compact RaidEventPanel V2 structure.
 
-Each roster-visible character occupies exactly one line. Mains are prominent,
-alts use Discord's muted typography, and pagination never drops a character.
-Edit controls and canonical character identity are shared with the existing
-raid, LFG and Google Sheets features.
+One V2 container with the guild thumbnail and role-grouped TextDisplays,
+followed by a row of interactive controls. A second message is created only
+if Discord's display limits make a single message impossible.
 """
+import re
+
 import discord
 
 from cogs.emojis import markup
@@ -13,14 +14,25 @@ from . import roster
 
 ACCENT = 0xA87535
 HEADER_IMAGE = roster.ROSTER_IMAGE
-ROLE_ORDER = ("Tanks", "Healers", "Melee", "Ranged")
-# Leave room for the V2 header/controls and Discord markdown overhead.
-PAGE_CHAR_LIMIT = 3500
-SECTION_CHAR_LIMIT = 2850
+ROLE_ORDER = ("Tanks", "Melee", "Ranged", "Healers")
+SECTION_CHAR_LIMIT = 3700
+PAGE_CHAR_LIMIT = 14500
+MAX_BLOCKS = 8
+
+SPEC_SHORT = {
+    "Protection": "Prot",
+    "Restoration": "Resto",
+    "Discipline": "Disc",
+    "Retribution": "Ret",
+    "Enhancement": "Enh",
+    "Elemental": "Ele",
+    "Beast Mastery": "BM",
+    "Marksmanship": "MM",
+}
 
 
 def groups(characters):
-    """Exactly the same four role categories as the raid sign-up feature."""
+    """Keep all registered mains and alts in the four raid-signup role groups."""
     by_role = {role: [] for role in ROLE_ORDER}
     for record in characters:
         role = signup_role_group(
@@ -29,8 +41,7 @@ def groups(characters):
         by_role[role].append(record)
     for role in ROLE_ORDER:
         by_role[role].sort(key=lambda row: (
-            not bool(row.get("is_main")),
-            roster.roster_sort_key(row),
+            not bool(row.get("is_main")), roster.roster_sort_key(row),
         ))
     return [(role, by_role[role]) for role in ROLE_ORDER if by_role[role]]
 
@@ -42,7 +53,7 @@ def safe(text):
 
 
 def discord_name(guild, user_id, verified=None):
-    # Caller may have checked the Discord API to resolve an uncached member.
+    """Retain accurate Discord identity for the existing leadership controls."""
     info = (verified or {}).get(user_id)
     if info and info[0] == "departed":
         return f"Discord ID {user_id} (left server)"
@@ -50,96 +61,119 @@ def discord_name(guild, user_id, verified=None):
         return f"[{safe(info[1])}](https://discord.com/users/{user_id})"
     member = guild.get_member(user_id) if guild else None
     if member:
-        display = safe(
+        name = safe(
             getattr(member, "display_name", "") or getattr(member, "name", "")
         )
-        # A profile link avoids Discord's non-pinging mention cache issue.
-        return f"[{display}](https://discord.com/users/{user_id})"
+        return f"[{name}](https://discord.com/users/{user_id})"
     return f"Discord ID {user_id} (unverified)"
 
 
+def profession_summary(value):
+    """Use short, clear profession labels, retaining reported skill values."""
+    if not isinstance(value, str) or not value or value == "N/A":
+        return "Profs: N/A"
+    names = {
+        "Min": "Mining", "Herb": "Herbalism", "Eng": "Engineering",
+        "Ench": "Enchanting", "Alch": "Alchemy", "BS": "BS",
+        "LW": "Leatherworking", "Skin": "Skinning", "Tail": "Tailoring",
+        "JC": "Jewelcrafting", "Insc": "Inscription",
+    }
+    parts = []
+    for item in value.split(" / ")[:2]:
+        label, sep, level = item.partition(":")
+        label = names.get(label.strip(), label.strip())
+        if not label:
+            continue
+        skill = level.strip()
+        parts.append(f"{label}({skill})" if sep and skill.isdecimal()
+                     else label)
+    return " and ".join(parts) if parts else "Profs: N/A"
+
+
 def character_line(record, guild=None, verified=None):
-    """One plain line: class, name, level, iLvl, professions, alt and Discord."""
-    klass = record.get("class_name") or ""
-    class_icon = markup(klass) or ""
-    level = record.get("level")
-    level_label = str(level) if (
-        type(level) is int and 1 <= level <= 60
-    ) else "?"
-    ilvl = record.get("ilvl")
-    ilvl_label = str(ilvl) if ilvl not in (None, "", "N/A") else "?"
-    professions = (record.get("professions") or "N/A").replace(" / ", ", ")
+    """Screenshot layout: icon, name, iLvl/spec/class, crafts, attendance."""
+    klass = str(record.get("class_name") or "Unknown")
+    spec = str(record.get("spec") or "")
+    display_spec = SPEC_SHORT.get(spec, spec)
     name = safe(record.get("name"))
+    icon = markup(klass) or ""
+    ilvl = record.get("ilvl")
+    level_text = str(ilvl) if ilvl not in (None, "", "N/A") else "N/A"
+    attendance = record.get("attendance") or "N/A"
+    craft = profession_summary(record.get("professions"))
     is_main = bool(record.get("is_main"))
     label = f"**{name}**" if is_main else name
-    lead = class_icon if is_main else f"Alt: {class_icon}"
-    user_id = int(record["discord_id"])
-    line = (
-        f"{lead} {label} / {level_label} / {safe(ilvl_label)} / "
-        f"{professions} - {discord_name(guild, user_id, verified)}"
-    ).strip()
-    # Only alt rows are muted: one line per entry, no player cards/columns.
-    return line if is_main else "-# " + line
+    tag = "" if is_main else "Alt: "
+    spec_class = " ".join(p for p in (display_spec, klass) if p)
+    line = (f"{tag}{icon} {label} - iLvl {safe(level_text)} "
+            f"{safe(spec_class)} - {craft} - Attendance: {safe(attendance)}")
+    # Historical departures are an ownership check, not a signal to delete.
+    uid = int(record["discord_id"])
+    if (verified or {}).get(uid, ("", ""))[0] == "departed":
+        line += " (Discord departed)"
+    return "-# " + line
 
 
 def _role_blocks(role, members, guild, verified):
-    """Split oversized roles without truncating their individual character rows."""
-    base = f"**{role} ({len(members)})**"
-    heading = base
-    lines = []
-    size = len(heading)
-    for record in members:
-        line = character_line(record, guild, verified)
-        # Each entry is bounded by the character registration's length,
-        # profession labels and Discord's maximum username length.
-        if lines and size + len(line) + 1 > SECTION_CHAR_LIMIT:
-            yield heading + "\n" + "\n".join(lines)
-            heading = base + " · continued"
-            lines = []
-            size = len(heading)
-        lines.append(line)
-        size += len(line) + 1
-    if lines:
-        yield heading + "\n" + "\n".join(lines)
+    """Exactly the raid sign-up's small muted heading and character lines."""
+    heading = f"-# **{role} ({len(members)})**"
+    current = heading
+    for member in members:
+        line = character_line(member, guild, verified)
+        if len(current) + len(line) + 1 > SECTION_CHAR_LIMIT and current != heading:
+            yield current
+            current = heading + " · continued"
+        current += "\n" + line
+    if current != heading:
+        yield current
 
 
 def chunks(grouped, guild=None, verified=None):
-    """Pack role blocks into bounded messages; never hide entries behind pages."""
+    """A single page for normal guild size; lossless overflow only when needed."""
     blocks = [
         block for role, members in grouped
         for block in _role_blocks(role, members, guild, verified)
     ]
     pages = [[]]
-    length = 0
+    total = 0
     for block in blocks:
-        if pages[-1] and length + len(block) + 2 > PAGE_CHAR_LIMIT:
+        if pages[-1] and (total + len(block) > PAGE_CHAR_LIMIT
+                          or len(pages[-1]) >= MAX_BLOCKS):
             pages.append([])
-            length = 0
+            total = 0
         pages[-1].append(block)
-        length += len(block) + 2
+        total += len(block)
     return pages
 
 
 class CharacterBoardV2(discord.ui.LayoutView):
-    """One compact role list per message, with persistent owner-checked controls."""
+    """One raid-style V2 container with logo, role lists and action buttons."""
 
     def __init__(self, cog, channel_id, guild=None, *, grouped=(),
                  continuation=False):
         super().__init__(timeout=None)
         self.cog, self.channel_id = cog, channel_id
+        elements = []
         if not continuation:
-            header = discord.ui.Section(
+            elements.append(discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## <Hyped> Characters\n"
-                    "-# Guild roster · Roles, mains and alts · "
-                    "Armory with newer WoWSims overrides"
+                    "-# Guild roster · Main characters and alts"
                 ),
                 accessory=discord.ui.Thumbnail(
-                    HEADER_IMAGE, description="Hyped roster",
+                    HEADER_IMAGE, description="Hyped guild logo",
                 ),
-            )
-            self.add_item(discord.ui.Container(header, accent_color=ACCENT))
-            actions = discord.ui.ActionRow()
+            ))
+        for text in grouped:
+            elements.append(discord.ui.TextDisplay(text))
+        if not grouped:
+            elements.append(discord.ui.TextDisplay(
+                "-# No characters registered." if not continuation
+                else "-# No further characters."
+            ))
+        self.add_item(discord.ui.Container(*elements, accent_color=ACCENT))
+        if not continuation:
+            controls = discord.ui.ActionRow()
             definitions = [
                 ("Add", discord.ButtonStyle.success,
                  "hyped_characters_v2_add", self.add_character),
@@ -157,15 +191,8 @@ class CharacterBoardV2(discord.ui.LayoutView):
                     label=label, style=style, custom_id=cid,
                 )
                 button.callback = callback
-                actions.add_item(button)
-            self.add_item(actions)
-        for content in grouped:
-            self.add_item(discord.ui.TextDisplay(content))
-        if not grouped:
-            self.add_item(discord.ui.TextDisplay(
-                "-# No registered characters." if not continuation
-                else "-# No further registrations."
-            ))
+                controls.add_item(button)
+            self.add_item(controls)
 
     async def interaction_check(self, interaction):
         from hyped_ogre.features.classrooms.config import GUILD_ID
