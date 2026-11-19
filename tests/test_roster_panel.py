@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 from cogs import raid_signup as raid, raid_schedule as schedule
-from hyped_ogre.features.characters import roster, availability, hub, absence_ui
+from hyped_ogre.features.characters import roster, availability, hub, absence_ui, board_overrides, board_admin
 from hyped_ogre.features.raids import notifications
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID
 
@@ -29,6 +29,61 @@ class RosterDataTests(unittest.TestCase):
     def events(self):
         with raid.database(self.path) as con:
             return availability.pending(con)
+
+    def test_board_display_name_changes_only_public_presentation(self):
+        with raid.database(self.path) as con:
+            self.assertEqual(board_overrides.rename(con, self.cid, "Snore Boss"),
+                             ("Snore", "Snore Boss"))
+        registered = raid.member_characters(42, self.path)[0]
+        self.assertEqual(registered[1], "Snore")
+        record = roster.rows(self.path)[0]
+        self.assertEqual(record["name"], "Snore")
+        self.assertEqual(record["board_name"], "Snore Boss")
+        self.assertIn("Snore Boss", str(roster.render([record])[0].to_dict()))
+
+        with raid.database(self.path) as con:
+            self.assertEqual(board_overrides.reset_name(con, self.cid), "Snore")
+        self.assertIn("Snore", str(roster.render(roster.rows(self.path))[0].to_dict()))
+        self.assertNotIn("Snore Boss", str(roster.render(roster.rows(self.path))[0].to_dict()))
+
+    def test_board_hide_preserves_registration_and_can_be_reversed(self):
+        with raid.database(self.path) as con:
+            self.assertEqual(board_overrides.set_hidden(con, self.cid, True), "Snore")
+            matches = board_overrides.choices(con, "Snore")
+            self.assertEqual(matches[0][0], self.cid)
+            self.assertEqual(matches[0][-1], 1)
+            self.assertEqual(len(board_overrides.changed(con)), 1)
+        self.assertEqual(raid.member_characters(42, self.path)[0][1], "Snore")
+        self.assertEqual(roster.render(roster.rows(self.path))[0].author.name, "Characters (0)")
+        with raid.database(self.path) as con:
+            self.assertEqual(board_overrides.set_hidden(con, self.cid, False), "Snore")
+            self.assertEqual(board_overrides.changed(con), [])
+        self.assertEqual(roster.render(roster.rows(self.path))[0].author.name, "Characters (1)")
+
+    def test_board_overrides_reject_nonmain_and_unregistered_characters(self):
+        with raid.database(self.path) as con:
+            with self.assertRaises(ValueError):
+                board_overrides.rename(con, 999999, "Other")
+            with self.assertRaises(ValueError):
+                board_overrides.set_hidden(con, 999999, True)
+            con.execute("UPDATE characters SET is_main=0 WHERE character_id=?", (self.cid,))
+            with self.assertRaises(ValueError):
+                board_overrides.rename(con, self.cid, "Other")
+            with self.assertRaises(ValueError):
+                board_overrides.set_hidden(con, self.cid, True)
+
+    def test_roster_admin_permissions_stay_leadership_only(self):
+        from hyped_ogre.features.classrooms.config import LEADERSHIP_ROLE_ID
+        guild = SimpleNamespace(owner_id=998)
+        guest = SimpleNamespace(guild_id=GUILD_ID, guild=guild,
+                                user=SimpleNamespace(id=76, roles=[]))
+        leader = SimpleNamespace(guild_id=GUILD_ID, guild=guild,
+                                 user=SimpleNamespace(id=77, roles=[
+                                     SimpleNamespace(id=LEADERSHIP_ROLE_ID)]))
+        self.assertFalse(board_admin.allowed(guest))
+        self.assertTrue(board_admin.allowed(leader))
+        self.assertFalse(board_admin.allowed(SimpleNamespace(
+            guild_id=999, guild=guild, user=leader.user)))
 
     def test_percent_uses_last_four_completed_raids_and_account_not_character(self):
         raid.save_character(42, 'Alt', 'Mage', 'Frost', 'DPS', self.path)
