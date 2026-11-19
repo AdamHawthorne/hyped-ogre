@@ -317,11 +317,12 @@ class CharacterV2Tests(unittest.TestCase):
         self.assertEqual(
             armory.parse_character(profile, "Big Snore")["ilvl"], 65)
         profile["average_item_level"] = 58
-        self.assertEqual(
-            armory.parse_character(profile, "Big Snore")["ilvl"], 65)
-        profile["equipped_item_level"] = None
+        # V1 requests average rather than equipped iLvl.
         self.assertEqual(
             armory.parse_character(profile, "Big Snore")["ilvl"], 58)
+        profile["average_item_level"] = None
+        self.assertEqual(
+            armory.parse_character(profile, "Big Snore")["ilvl"], 65)
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "raid.db")
             raid.create_schema(path)
