@@ -160,9 +160,9 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Level', 'Professions'])
+            self.assertEqual([f.name for f in fields[1:]], ['iLvl', 'Professions'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
-            self.assertTrue(all(v == 'N/A' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == '67.5' for v in fields[1].value.splitlines()))
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
@@ -170,11 +170,11 @@ class LayoutTests(unittest.TestCase):
         players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 11)]
         for row in players:
             row['professions'] = 'Min: 65 / BS: 120'
-            row['level'] = 20
+            row['ilvl'] = '54.5'
         fields = roster.render(players)[0].fields
-        self.assertEqual([f.name for f in fields[:3]], ['Tanks (10)', 'Level', 'Professions'])
+        self.assertEqual([f.name for f in fields[:3]], ['Tanks (10)', 'iLvl', 'Professions'])
         self.assertEqual(len(fields[0].value.splitlines()), 10)
-        self.assertEqual(fields[1].value.splitlines(), ['20'] * 10)
+        self.assertEqual(fields[1].value.splitlines(), ['54.5'] * 10)
         self.assertEqual(fields[2].value.splitlines(), ['Min: 65 / BS: 120'] * 10)
         self.assertTrue(all(len(field.value) <= 1024 for field in fields))
 
@@ -187,7 +187,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('title', embed.to_dict())
         self.assertEqual(len(embed.fields) % 3, 0)
         self.assertEqual([f.name for f in embed.fields[:3]],
-                         ['Tanks (0)', 'Level', 'Professions'])
+                         ['Tanks (0)', 'iLvl', 'Professions'])
         self.assertLessEqual(len(embed), 6000)
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
@@ -237,20 +237,21 @@ class LayoutTests(unittest.TestCase):
         character_lines = embed.fields[0].value.splitlines()
         for index, name in enumerate(ordered):
             self.assertIn(name + ' /', character_lines[index])
-        self.assertEqual(embed.fields[1].value.splitlines(),
-                         ['60', '60', '60', '60', '60', '39', '39', 'N/A', 'N/A'])
+        self.assertEqual(embed.fields[1].value.splitlines(), ['67.5'] * 9)
         self.assertEqual(embed.fields[2].value.splitlines(), ['N/A'] * 9)
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
-    def test_level_uses_validated_saved_profile_value_or_na(self):
+    def test_average_ilvl_uses_validated_saved_profile_value_or_na(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, 'N/A')
-        main['level'] = 43
+        self.assertEqual(fields[1].value, '67.5')
+        main['ilvl'] = '43'
         self.assertEqual(roster.render([main])[0].fields[1].value, '43')
-        for invalid in (999, None, True, 0, -1):
-            main['level'] = invalid
+        main['ilvl'] = 55.37
+        self.assertEqual(roster.render([main])[0].fields[1].value, '55.4')
+        for invalid in (999, None, True, 0, -1, '', 'N/A', 'nan', 'infinity'):
+            main['ilvl'] = invalid
             self.assertEqual(roster.render([main])[0].fields[1].value, 'N/A')
 
     def test_thirty_distinct_guild_players_fit_one_embed(self):
@@ -269,7 +270,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embed.fields), 12)
         for index in range(0, len(embed.fields), 3):
             fields = embed.fields[index:index+3]
-            self.assertEqual([f.name for f in fields[1:]], ['Level', 'Professions'])
+            self.assertEqual([f.name for f in fields[1:]], ['iLvl', 'Professions'])
             self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
         content = str(embed.to_dict())
         for player in players:

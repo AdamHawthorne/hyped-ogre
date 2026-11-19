@@ -166,7 +166,7 @@ class DataFixture(unittest.TestCase):
         embed = hub.render(values)[0]
         self.assertNotIn("Warcraft Logs", str(embed.to_dict()))
         self.assertNotIn("100%", str(embed.to_dict()))
-        self.assertEqual([field.name for field in embed.fields[1:3]], ["Level", "Professions"])
+        self.assertEqual([field.name for field in embed.fields[1:3]], ["iLvl", "Professions"])
         self.assertIn("N/A", embed.fields[2].value)
 
     def test_hub_shows_all_registered_characters_without_pagination(self):
@@ -414,8 +414,10 @@ class HubCommandTests(unittest.IsolatedAsyncioTestCase):
                         cog=hub.CharacterHub(bot)
                         await cog.cog_load()
                         try:
-                            await cog.post_characters.callback(cog,interaction)
-                            await cog.post_characters.callback(cog,interaction)
+                            # Explicitly suppress the optional first-post ping:
+                            # existing tests cover the persistent/no-repost path.
+                            await cog.post_characters.callback(cog,interaction,ping_forever=False)
+                            await cog.post_characters.callback(cog,interaction,ping_forever=False)
                             channel.send.assert_awaited_once()
                             message.edit.assert_awaited_once()
                             self.assertFalse(channel.send.call_args.kwargs["allowed_mentions"].users)
