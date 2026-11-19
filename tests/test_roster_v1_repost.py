@@ -52,7 +52,7 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
             name="Forever", mention="<@&777>", mentionable=True
         )
         self.guild = SimpleNamespace(
-            owner_id=42, roles=[role], me=SimpleNamespace()
+            id=GUILD_ID, owner_id=42, roles=[role], me=SimpleNamespace()
         )
         self.channel = FakeChannel(self.guild)
         self.interaction = SimpleNamespace(
