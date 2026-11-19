@@ -19,8 +19,14 @@ from .v2 import CharacterBoardV2, groups as v2_groups, chunks as v2_chunks
 
 LOG = logging.getLogger(__name__)
 ROSTER_ANNOUNCEMENT = (
+    "Ogre wants yer characters! Register your main and any active alts "
+    "below to earn the **Rostered** rank in-game and help us stay organised."
+)
+LEGACY_ROSTER_ANNOUNCEMENTS = (
     "Ogre wants yer main! Register it below to earn the **Rostered** "
-    "rank in-game and make raid sign-ups easier."
+    "rank in-game and make raid sign-ups easier.",
+    "Ogre wants yer main! Register it below to earn the **Rostered** "
+    "rank in-game and make raid sign-ups easier. Click **Add** to join!",
 )
 
 
@@ -408,11 +414,16 @@ class CharacterHub(commands.Cog):
                 if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
                     continue
                 current = await channel.fetch_message(message_id)
-                if "Click **Add** to join!" not in current.content:
+                # Only touch Ogre's tracked historical copy. Keep the
+                # original role mention and don't modify member-authored text.
+                role_mention, sep, copy = current.content.partition(" ")
+                if (not sep or not role_mention.startswith("<@&")
+                        or not role_mention.endswith(">")
+                        or not role_mention[3:-1].isdigit()
+                        or copy not in LEGACY_ROSTER_ANNOUNCEMENTS):
                     continue
-                revised = current.content.replace(" Click **Add** to join!", "")
                 await current.edit(
-                    content=revised,
+                    content=f"{role_mention} {ROSTER_ANNOUNCEMENT}",
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
             except discord.NotFound:
