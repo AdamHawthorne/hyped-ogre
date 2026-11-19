@@ -71,9 +71,11 @@ def rows(path):
                                    if window else "N/A")
         export = gear.get(character["character_id"])
         parsed = equipment.parse_export(export["raw_text"]) if export else None
-        # Armory is the read-only default. An explicitly submitted WoWSims
-        # snapshot overrides fields it actually supplies, without replacing
-        # registered names, roles or ownership in the source-of-truth DB.
+        # Blizzard Armory takes precedence for level and average item level.
+        # Old WoWSims exports must not mask valid Blizzard stats. WoWSims
+        # still supplies immediate fallback values when an Armory field is
+        # unavailable, plus the latest submitted professions. Neither
+        # source changes canonical registration or Discord ownership.
         live = armory_levels.get(character["character_id"], {})
         if live.get("name") != character["name"]:
             live = {}
@@ -98,7 +100,7 @@ def rows(path):
 
         if parsed:
             wse_level = parsed.get("level")
-            if type(wse_level) is int and 1 <= wse_level <= 60:
+            if not valid_live and type(wse_level) is int and 1 <= wse_level <= 60:
                 character["level"] = wse_level
                 character["level_source"] = "WoWSims"
             wse_profs = profession_text(parsed)
@@ -106,7 +108,8 @@ def rows(path):
                 character["professions"] = wse_profs
                 character["professions_source"] = "WoWSims"
             average, known, equipped = equipment.average_item_level(parsed, catalog)
-            if average is not None and equipped > 0 and known == equipped:
+            if (character["ilvl_source"] is None
+                    and average is not None and equipped > 0 and known == equipped):
                 character["ilvl"] = f"{average:.1f}"
                 character["ilvl_source"] = "WoWSims"
     return characters
