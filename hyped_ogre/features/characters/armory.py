@@ -7,6 +7,7 @@ must never edit registrations or stop the character board.
 """
 import asyncio
 from contextlib import closing
+import json
 import logging
 import os
 import re
@@ -50,8 +51,20 @@ def initialise(path):
             level INTEGER,
             race TEXT NOT NULL DEFAULT '',
             guild TEXT NOT NULL DEFAULT '',
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            ilvl INTEGER,
+            professions TEXT NOT NULL DEFAULT '[]'
         )""")
+        columns = {
+            row[1] for row in con.execute("PRAGMA table_info(character_armory_cache)")
+        }
+        if "ilvl" not in columns:
+            con.execute("ALTER TABLE character_armory_cache ADD COLUMN ilvl INTEGER")
+        if "professions" not in columns:
+            con.execute(
+                "ALTER TABLE character_armory_cache "
+                "ADD COLUMN professions TEXT NOT NULL DEFAULT '[]'"
+            )
 
 
 def cached(path):
@@ -59,10 +72,14 @@ def cached(path):
     try:
         with closing(sqlite3.connect(path, timeout=20)) as con, con:
             return {
-                int(cid): {"name": name, "level": level, "updated_at": updated}
-                for cid, name, level, updated in con.execute(
-                    "SELECT character_id,character_name,level,updated_at "
-                    "FROM character_armory_cache")
+                int(cid): {
+                    "name": name, "level": level, "updated_at": updated,
+                    "ilvl": ilvl,
+                    "profession_details": json.loads(professions or "[]"),
+                }
+                for cid, name, level, updated, ilvl, professions in con.execute(
+                    "SELECT character_id,character_name,level,updated_at,"
+                    "ilvl,professions FROM character_armory_cache")
             }
     except sqlite3.OperationalError:
         return {}
@@ -85,11 +102,46 @@ def parse_character(payload, expected_name):
         return None
     race = payload.get("race") or {}
     guild = payload.get("guild") or {}
+    average = payload.get("average_item_level")
+    if type(average) is not int or not 1 <= average <= 250:
+        average = None
     return {
-        "level": level,
+        "level": level, "ilvl": average, "profession_details": [],
         "race": str(race.get("name") or "")[:48] if isinstance(race, dict) else "",
         "guild": str(guild.get("name") or "")[:100] if isinstance(guild, dict) else "",
     }
+
+
+def parse_professions(payload):
+    """Normalise Blizzard profile profession tiers to the same WoWSims shape."""
+    if not isinstance(payload, dict):
+        return []
+    entries = payload.get("primaries", payload.get("primary_professions", []))
+    if not isinstance(entries, list):
+        return []
+    results = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        profession = item.get("profession")
+        if not isinstance(profession, dict):
+            continue
+        name = profession.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        tiers = item.get("tiers", [])
+        skill = item.get("skill_points")
+        if isinstance(tiers, list) and tiers:
+            valid = [t.get("skill_points") for t in tiers
+                     if isinstance(t, dict) and type(t.get("skill_points")) is int]
+            if valid:
+                skill = max(valid)
+        if type(skill) is not int or not 1 <= skill <= 999:
+            skill = None
+        results.append({"name": name.strip()[:48], "level": skill})
+        if len(results) == 2:
+            break
+    return results
 
 
 def candidates(path, now=None, limit=MAX_REFRESH):
@@ -133,7 +185,25 @@ async def fetch_profile(session, token, name):
         if response.status == 404:
             return None
         response.raise_for_status()
-        return parse_character(await response.json(), name)
+        profile = parse_character(await response.json(), name)
+    if profile is None:
+        return None
+    # Professions are a separate endpoint. A 404 or temporary failure
+    # does not invalidate the character's level or equipped item level.
+    try:
+        async with session.get(
+            f"{HOST}/profile/wow/character/{path}/professions",
+            params={"namespace": NAMESPACE, "locale": "en_GB"},
+            headers={"Authorization": "Bearer " + token},
+            allow_redirects=False,
+        ) as response:
+            if response.status == 200:
+                profile["profession_details"] = parse_professions(
+                    await response.json()
+                )
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        LOGGER.debug("Optional Blizzard professions unavailable: %s", name)
+    return profile
 
 
 async def refresh(path, *, now=None, limit=MAX_REFRESH):
@@ -178,14 +248,18 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH):
                         continue
                     con.execute(
                         "INSERT INTO character_armory_cache "
-                        "(character_id,character_name,level,race,guild,updated_at) "
-                        "VALUES (?,?,?,?,?,?) ON CONFLICT(character_id) "
+                        "(character_id,character_name,level,race,guild,updated_at,"
+                        "ilvl,professions) VALUES (?,?,?,?,?,?,?,?) "
+                        "ON CONFLICT(character_id) "
                         "DO UPDATE SET character_name=excluded.character_name,"
                         "level=excluded.level,race=excluded.race,"
-                        "guild=excluded.guild,updated_at=excluded.updated_at",
+                        "guild=excluded.guild,updated_at=excluded.updated_at,"
+                        "ilvl=excluded.ilvl,professions=excluded.professions",
                         (char_id, name, profile["level"] if profile else None,
                          profile["race"] if profile else "",
-                         profile["guild"] if profile else "", now),
+                         profile["guild"] if profile else "", now,
+                         profile["ilvl"] if profile else None,
+                         json.dumps(profile["profession_details"] if profile else [])),
                     )
                 updated += 1
             return updated
