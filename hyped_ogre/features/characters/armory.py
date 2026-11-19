@@ -21,7 +21,9 @@ LOGGER = logging.getLogger(__name__)
 HOST = "https://eu.api.blizzard.com"
 TOKEN_URL = "https://oauth.battle.net/token"
 NAMESPACE = "profile-forever-eu"
-CHECK_INTERVAL = 4 * 60 * 60
+# Refresh a character roughly hourly, with batches capped to avoid bursts.
+# The character board itself still redraws from saved data every minute.
+CHECK_INTERVAL = 60 * 60
 MAX_REFRESH = 12
 MAX_LEVEL = 60
 
@@ -107,11 +109,11 @@ def parse_character(payload, expected_name):
         return None
     race = payload.get("race") or {}
     guild = payload.get("guild") or {}
-    # Blizzard's character profile normally has average_item_level.
-    # Some clients expose only equipped_item_level, so accept either.
+    # Prefer Blizzard's average_item_level for the guild roster.
+    # Equipped iLvl is only a fallback when the average is not available.
     # Never mistake character level for equipment item level.
     average = None
-    for field in ("equipped_item_level", "average_item_level"):
+    for field in ("average_item_level", "equipped_item_level"):
         value = payload.get(field)
         if type(value) in (int, float) and 1 <= value <= 250:
             average = round(float(value), 1) if isinstance(value, float) else value
