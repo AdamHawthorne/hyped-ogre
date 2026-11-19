@@ -27,23 +27,42 @@ class CharacterV2Tests(unittest.TestCase):
         ]
         grouped = v2.groups(records)
         self.assertEqual([role for role, _ in grouped],
-                         ["Tanks", "Melee", "Healers"])
+                         ["Tanks", "Healers", "Melee"])
         self.assertEqual([r["name"] for r in grouped[0][1]], ["Big Snore"])
-        self.assertEqual([r["name"] for r in grouped[1][1]], ["Snore Bis"])
+        self.assertEqual([r["name"] for r in grouped[1][1]], ["Other Gamer"])
+        self.assertEqual([r["name"] for r in grouped[2][1]], ["Snore Bis"])
         main = v2.character_line(records[1])
         alt = v2.character_line(records[0])
-        self.assertIn("**Big Snore** - iLvl 58 Prot Warrior", main)
-        self.assertIn("Profs: N/A - Attendance: N/A", main)
+        self.assertIn("**Big Snore** · Prot Warrior · iLvl 58 · Att N/A", main)
+        self.assertNotIn("Profs: N/A", main)
         self.assertIn("Alt:", alt)
-        self.assertIn("Snore Bis - iLvl 41.5 Fury Warrior", alt)
-        self.assertIn("Mining(65) and BS(120)", alt)
+        self.assertIn("Snore Bis · Fury Warrior · iLvl 41.5", alt)
+        self.assertIn("Min(65) / BS(120)", alt)
         self.assertTrue(alt.startswith("-# "))
         self.assertEqual(alt.count("\\n"), 0)
         pages = v2.chunks(grouped)
         self.assertEqual(len(pages), 1)
         self.assertIn("Tanks (1)", pages[0][0])
-        self.assertIn("Melee (1)", pages[0][1])
-        self.assertIn("Healers (1)", pages[0][2])
+        self.assertIn("Healers (1)", pages[0][1])
+        self.assertIn("Melee (1)", pages[0][2])
+
+    def test_compact_row_hides_missing_stats_without_losing_attendance(self):
+        row = {"character_id": 77, "discord_id": 101,
+               "name": "Orange Mangood", "class_name": "Druid",
+               "spec": "Feral", "role": "DPS", "is_main": True,
+               "ilvl": "N/A", "professions": "N/A", "attendance": "N/A"}
+        rendered = v2.character_line(row)
+        self.assertIn("**Orange Mangood** · Feral Druid · Att N/A", rendered)
+        self.assertNotIn("iLvl N/A", rendered)
+        self.assertNotIn("Profs: N/A", rendered)
+        row["ilvl"] = "38.5"
+        row["professions"] = "Leatherworking: 120 / Skinning: 250"
+        row["attendance"] = "75%"
+        rendered = v2.character_line(row)
+        self.assertIn("iLvl 38.5", rendered)
+        self.assertIn("LW(120) / Skin(250)", rendered)
+        self.assertIn("Att 75%", rendered)
+        self.assertEqual(len(rendered.splitlines()), 1)
 
     def test_raid_style_v2_is_one_container_for_normal_roster(self):
         import discord
@@ -70,7 +89,7 @@ class CharacterV2Tests(unittest.TestCase):
                       view.children[0].children[0].children[0].content)
         self.assertEqual(len(view.children[1].children), 5)
         self.assertTrue(view.is_persistent())
-        self.assertTrue(any("Attendance: N/A" in block for block in pages[0]))
+        self.assertTrue(any("Att N/A" in block for block in pages[0]))
 
     def test_discord_username_is_explicit_link_when_known(self):
         member = SimpleNamespace(display_name="Bread User", name="breaduser")
