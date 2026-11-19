@@ -13,49 +13,72 @@ from hyped_ogre.features.classrooms.config import GUILD_ID
 
 
 class CharacterV2Tests(unittest.TestCase):
-    def test_discord_grouping_keeps_mains_with_grey_alts(self):
+    def test_roles_match_raid_signup_and_alts_use_single_muted_line(self):
         records = [
             {"character_id": 5, "discord_id": 101, "name": "Snore Bis",
-             "class_name": "Warrior", "spec": "Fury",
-             "role": "DPS", "level": 39, "is_main": 0},
+             "class_name": "Warrior", "spec": "Fury", "role": "DPS",
+             "level": 39, "is_main": 0, "ilvl": "41.5", "professions": "Min: 65 / BS: 120"},
             {"character_id": 4, "discord_id": 101, "name": "Big Snore",
-             "class_name": "Warrior", "spec": "Protection",
-             "role": "Tank", "level": 60, "is_main": 1},
+             "class_name": "Warrior", "spec": "Protection", "role": "Tank",
+             "level": 60, "is_main": 1, "ilvl": "58", "professions": "N/A"},
             {"character_id": 6, "discord_id": 102, "name": "Other Gamer",
-             "class_name": "Priest", "spec": "Holy",
-             "role": "Healer", "level": 50, "is_main": 1},
+             "class_name": "Priest", "spec": "Holy", "role": "Healer",
+             "level": 50, "is_main": 1, "ilvl": "55", "professions": "Alch: 180"},
         ]
         grouped = v2.groups(records)
-        self.assertEqual([did for did, _ in grouped], [101, 102])
-        self.assertEqual([r["name"] for r in grouped[0][1]],
-                         ["Big Snore", "Snore Bis"])
-        first = v2.member_text(*grouped[0])
-        self.assertIn("<@101>", first)
-        self.assertIn("**Big Snore** · Lv 60", first)
-        self.assertIn("-# ", first)
-        self.assertIn("Snore Bis · Lv 39", first)
-        self.assertLess(first.index("Big Snore"), first.index("Snore Bis"))
-
-    def test_v2_is_persistent_and_bounded_like_lfg(self):
-        grouped = [
-            (i, [{"character_id": i, "discord_id": i, "name": f"Player {i}",
-                  "class_name": "Mage", "spec": "Arcane", "role": "DPS",
-                  "level": 30, "is_main": 1}])
-            for i in range(1, 31)
-        ]
+        self.assertEqual([role for role, _ in grouped],
+                         ["Tanks", "Healers", "Melee"])
+        self.assertEqual([r["name"] for r in grouped[0][1]], ["Big Snore"])
+        self.assertEqual([r["name"] for r in grouped[2][1]], ["Snore Bis"])
+        main = v2.character_line(records[1])
+        alt = v2.character_line(records[0])
+        self.assertIn("**Big Snore** / 60 / 58 / N/A", main)
+        self.assertIn("Discord ID 101 (unverified)", main)
+        self.assertIn("Alt:", alt)
+        self.assertIn("Snore Bis / 39 / 41.5 / Min: 65, BS: 120", alt)
+        self.assertTrue(alt.startswith("-# "))
+        self.assertEqual(alt.count("\\n"), 0)
         pages = v2.chunks(grouped)
-        self.assertEqual([len(p) for p in pages], [7, 7, 7, 7, 2])
-        self.assertEqual(sum(len(p) for p in pages), 30)
+        self.assertIn("Tanks (1)", pages[0][0])
+        self.assertIn("Healers (1)", pages[0][1])
+        self.assertIn("Melee (1)", pages[0][2])
+
+    def test_discord_username_is_explicit_link_when_known(self):
+        member = SimpleNamespace(display_name="Bread User", name="breaduser")
+        guild = SimpleNamespace(get_member=lambda uid: member if uid == 101 else None)
+        shown = v2.discord_name(guild, 101)
+        self.assertIn("Bread User", shown)
+        self.assertIn("https://discord.com/users/101", shown)
+        self.assertNotIn("<@101>", shown)
+        self.assertIn("unverified", v2.discord_name(guild, 999))
+
+    def test_v2_is_persistent_and_splits_long_roles_without_losing_rows(self):
+        records = [
+            {"character_id": i, "discord_id": i, "name": f"Player {i}",
+             "class_name": "Mage", "spec": "Arcane", "role": "DPS",
+             "level": 30, "is_main": 1, "professions": "Min: 300 / BS: 300",
+             "ilvl": "66.0"}
+            for i in range(1, 101)
+        ]
+        grouped = v2.groups(records)
+        self.assertEqual([role for role, _ in grouped], ["Ranged"])
+        pages = v2.chunks(grouped)
+        self.assertGreater(len(pages), 1)
+        for n in range(1, 101):
+            self.assertEqual(
+                sum(f"**Player {n}**" in block for page in pages for block in page),
+                1,
+            )
         bot = SimpleNamespace(get_cog=lambda _: None)
         cog = SimpleNamespace(bot=bot)
-        for i, group in enumerate(pages):
+        for i, page in enumerate(pages):
             view = v2.CharacterBoardV2(
-                cog, raid.TEST_CHANNEL_ID, grouped=group,
+                cog, raid.TEST_CHANNEL_ID, grouped=page,
                 continuation=i != 0,
             )
             self.assertTrue(view.is_persistent())
             self.assertLessEqual(view.total_children_count, 40)
-        self.assertEqual(len(v2.chunks([])), 1)
+        self.assertEqual(v2.chunks([]), [[]])
 
     def test_renaming_keeps_id_gear_and_attendance(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -157,6 +180,89 @@ class CharacterV2Tests(unittest.TestCase):
                     "WHERE character_id=?", (main_id,)
                 ).fetchone()[0], 1)
 
+    def test_armory_level_ilvl_and_profs_then_wowsims_overrides_each_field(self):
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            path = str(Path(temp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid.save_character(101, "Big Snore", "Warrior", "Protection",
+                                "Tank", path)
+            cid = raid.member_characters(101, path)[0][0]
+            armory_data = {cid: {
+                "name": "Big Snore", "level": 58, "ilvl": 47,
+                "profession_details": [
+                    {"name": "Mining", "level": 190},
+                    {"name": "Blacksmithing", "level": 180},
+                ],
+            }}
+            with patch.object(armory, "cached", return_value=armory_data):
+                initial = roster.rows(path)[0]
+                self.assertEqual(initial["level"], 58)
+                self.assertEqual(initial["ilvl"], "47")
+                self.assertEqual(initial["professions"], "Min: 190 / BS: 180")
+                self.assertEqual(initial["level_source"], "Blizzard")
+                self.assertEqual(initial["ilvl_source"], "Blizzard")
+                self.assertEqual(initial["professions_source"], "Blizzard")
+                data = {
+                    "name": "Big", "class": "warrior", "spec": "protection",
+                    "version": "v3.2.6", "level": 60,
+                    "gear": {"items": [{"id": 5}, {"id": 6}]},
+                    "professions": [
+                        {"name": "Mining", "level": 250},
+                        {"name": "Blacksmithing", "level": 245},
+                    ],
+                }
+                raid.save_wowsims_export(101, cid, json.dumps(data), path)
+                with patch.object(roster.items, "cached_catalog",
+                                  return_value={"5": {"level": 55},
+                                                "6": {"level": 57}}):
+                    after = roster.rows(path)[0]
+                self.assertEqual(after["level"], 60)
+                self.assertEqual(after["ilvl"], "56.0")
+                self.assertEqual(after["professions"], "Min: 250 / BS: 245")
+                self.assertEqual(after["level_source"], "WoWSims")
+                self.assertEqual(after["ilvl_source"], "WoWSims")
+                self.assertEqual(after["professions_source"], "WoWSims")
+                # Incomplete item catalogue must not invent a WoWSims average.
+                with patch.object(roster.items, "cached_catalog", return_value={}):
+                    fallback = roster.rows(path)[0]
+                self.assertEqual(fallback["ilvl"], "47")
+                self.assertEqual(fallback["ilvl_source"], "Blizzard")
+
+    def test_armory_additive_migration_and_profession_parser(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = str(Path(temp) / "cache.db")
+            with raid.database(path) as con:
+                con.execute(
+                    "CREATE TABLE character_armory_cache "
+                    "(character_id INTEGER PRIMARY KEY,character_name TEXT,"
+                    "level INTEGER,race TEXT,guild TEXT,updated_at INTEGER)"
+                )
+            armory.initialise(path)
+            with raid.database(path) as con:
+                names = [row[1] for row in con.execute(
+                    "PRAGMA table_info(character_armory_cache)"
+                )]
+            self.assertIn("ilvl", names)
+            self.assertIn("professions", names)
+        profile = armory.parse_character({
+            "name": "Big", "surname": "Snore", "level": 60,
+            "average_item_level": 72,
+        }, "Big Snore")
+        self.assertEqual(profile["ilvl"], 72)
+        self.assertEqual(armory.parse_professions({
+            "primaries": [
+                {"profession": {"name": "Mining"},
+                 "tiers": [{"skill_points": 155}]},
+                {"profession": {"name": "Blacksmithing"},
+                 "tiers": [{"skill_points": 184}]},
+            ],
+        }), [
+            {"name": "Mining", "level": 155},
+            {"name": "Blacksmithing", "level": 184},
+        ])
+
     def test_armory_identity_is_verified_before_using_level(self):
         self.assertEqual(armory.slug("Fu Ming"), "fu-ming")
         self.assertIn("fu-ming", armory.public_url("Fu Ming"))
@@ -189,6 +295,68 @@ class V2LeadershipGuardTests(unittest.TestCase):
             fake(555, raid.TEST_CHANNEL_ID, 42)))
         self.assertFalse(admin_ui.authorised(
             fake(GUILD_ID, raid.TEST_CHANNEL_ID, 42), actor_id=98))
+
+
+class V2MembershipAuditTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_cache_does_not_mean_departed(self):
+        from discord import NotFound, Forbidden
+
+        def fetch(uid):
+            if uid == 10:
+                return SimpleNamespace(id=10)
+            exc_response = SimpleNamespace(
+                status=404 if uid == 11 else 403,
+                reason="Not Found" if uid == 11 else "Forbidden",
+            )
+            if uid == 11:
+                raise NotFound(exc_response, {"message": "Unknown Member"})
+            raise Forbidden(exc_response, {"message": "Missing Access"})
+
+        async def async_fetch(uid):
+            return fetch(uid)
+
+        guild = SimpleNamespace(
+            get_member=lambda uid: SimpleNamespace(id=uid) if uid == 9 else None,
+            fetch_member=async_fetch,
+        )
+        statuses = await admin_ui.audit_members(guild, [9, 10, 11, 12])
+        self.assertEqual(statuses, {
+            9: "member", 10: "member",
+            11: "departed", 12: "unknown",
+        })
+
+
+class V2ResolvedMemberLabelsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_on_demand_lookups_distinguish_left_from_uncached_member(self):
+        import discord
+
+        member = SimpleNamespace(display_name="Bread Fan")
+        response = SimpleNamespace(status=404, reason="Not Found")
+        calls = []
+
+        async def fetch(user_id):
+            calls.append(user_id)
+            if user_id == 101:
+                return member
+            raise discord.NotFound(response, {"message": "Unknown Member"})
+
+        guild = SimpleNamespace(
+            get_member=lambda _: None, fetch_member=fetch
+        )
+        cog = CharacterHub(SimpleNamespace())
+        grouped = [("Tanks", [
+            {"discord_id": 101}, {"discord_id": 102},
+        ])]
+        first = await cog.member_labels(guild, grouped)
+        self.assertEqual(first[101], ("member", "Bread Fan"))
+        self.assertEqual(first[102], ("departed", ""))
+        second = await cog.member_labels(guild, grouped)
+        self.assertEqual(second, first)
+        self.assertEqual(sorted(calls), [101, 102])
+        self.assertIn("Bread Fan",
+                      v2.discord_name(guild, 101, first))
+        self.assertIn("left server",
+                      v2.discord_name(guild, 102, first))
 
 
 class V2PrivateGuardTests(unittest.IsolatedAsyncioTestCase):

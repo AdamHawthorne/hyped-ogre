@@ -127,6 +127,8 @@ class CharacterHub(commands.Cog):
     def __init__(self, bot):
         self.bot, self.lock = bot, asyncio.Lock()
         self.armory_next_check = 0.0
+        self.v2_member_lookup = {}
+        self.v2_member_checked = {}
 
     async def cog_app_command_error(self, interaction, error):
         LOG.warning("Character hub command delayed: %s", type(getattr(error, "original", error)).__name__)
@@ -149,6 +151,49 @@ class CharacterHub(commands.Cog):
                 "SELECT channel_id,message_id FROM character_v2_panels "
                 "WHERE guild_id=?", (GUILD_ID,)
             ).fetchall()
+
+    async def member_labels(self, guild, grouped):
+        """Resolve missing Discord users once, then cache status for 30 minutes.
+
+        A cache miss is never evidence a member left; only fetch_member()
+        NotFound is definitive. Fetches are bounded to avoid Discord bursts.
+        """
+        users = {
+            int(character["discord_id"])
+            for _, members in grouped for character in members
+        }
+        now = time.monotonic()
+        missing = []
+        for user_id in users:
+            cached_member = guild.get_member(user_id)
+            if cached_member is not None:
+                self.v2_member_lookup[user_id] = (
+                    "member", str(cached_member.display_name)
+                )
+                self.v2_member_checked[user_id] = now
+            elif now - self.v2_member_checked.get(user_id, -1000000) >= 1800:
+                missing.append(user_id)
+
+        semaphore = asyncio.Semaphore(4)
+
+        async def check(user_id):
+            async with semaphore:
+                try:
+                    member = await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    result = ("departed", "")
+                except (discord.Forbidden, discord.HTTPException):
+                    result = ("unknown", "")
+                else:
+                    result = ("member", str(member.display_name))
+                self.v2_member_lookup[user_id] = result
+                self.v2_member_checked[user_id] = now
+
+        await asyncio.gather(*(check(user_id) for user_id in missing))
+        return {
+            user_id: self.v2_member_lookup.get(user_id, ("unknown", ""))
+            for user_id in users
+        }
 
     async def cog_load(self):
         if int(os.getenv("HYPED_GUILD_ID") or 0) != GUILD_ID:
@@ -247,8 +292,9 @@ class CharacterHub(commands.Cog):
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             raise ValueError("V2 character board channel is not in Hyped.")
         grouped = v2_groups(await asyncio.to_thread(rows, raid.RAID_DB))
-        pages = v2_chunks(grouped)
         guild = channel.guild
+        verified = await self.member_labels(guild, grouped)
+        pages = v2_chunks(grouped, guild, verified)
         await channel.get_partial_message(message_id).edit(
             content=None, embeds=[],
             view=CharacterBoardV2(self, channel_id, guild, grouped=pages[0]),
@@ -369,7 +415,8 @@ class CharacterHub(commands.Cog):
                     saved = None
             if not saved:
                 grouped = v2_groups(await asyncio.to_thread(rows, raid.RAID_DB))
-                pages = v2_chunks(grouped)
+                verified = await self.member_labels(interaction.guild, grouped)
+                pages = v2_chunks(grouped, interaction.guild, verified)
                 message = await interaction.channel.send(
                     view=CharacterBoardV2(
                         self, interaction.channel_id, interaction.guild,

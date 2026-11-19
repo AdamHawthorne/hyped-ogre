@@ -54,6 +54,33 @@ def safe(value):
     )
 
 
+async def audit_members(guild, user_ids):
+    """Verify uncached Discord IDs through the API, never assume they've left.
+
+    'departed' only means Discord returned a definitive NotFound response.
+    Forbidden/network errors remain unknown and are never auto-cleaned.
+    """
+    statuses = {}
+    semaphore = asyncio.Semaphore(4)
+
+    async def verify(user_id):
+        if guild.get_member(user_id) is not None:
+            statuses[user_id] = "member"
+            return
+        async with semaphore:
+            try:
+                await guild.fetch_member(user_id)
+            except discord.NotFound:
+                statuses[user_id] = "departed"
+            except (discord.Forbidden, discord.HTTPException):
+                statuses[user_id] = "unknown"
+            else:
+                statuses[user_id] = "member"
+
+    await asyncio.gather(*(verify(uid) for uid in set(user_ids)))
+    return statuses
+
+
 async def update_after_change(cog, interaction, target_id, result):
     """Acknowledge the write, then refresh all private views and class access."""
     raid.notify_classrooms(interaction, target_id)
@@ -76,10 +103,14 @@ async def update_after_change(cog, interaction, target_id, result):
 class LeaderCharacterPicker(discord.ui.View):
     """Paged selector, since a 25-option Discord menu would truncate alts."""
 
-    def __init__(self, cog, actor_id, page=0):
+    def __init__(self, cog, actor_id, page=0, *, member_ids=None):
         super().__init__(timeout=300)
         self.cog, self.actor_id = cog, actor_id
-        all_entries = entries()
+        self.member_ids = frozenset(member_ids) if member_ids is not None else None
+        all_entries = [
+            row for row in entries()
+            if self.member_ids is None or row[1] in self.member_ids
+        ]
         self.pages = max(1, (len(all_entries) + PAGE_SIZE - 1) // PAGE_SIZE)
         self.page = max(0, min(page, self.pages - 1))
         visible = all_entries[self.page * PAGE_SIZE:(self.page + 1) * PAGE_SIZE]
@@ -111,7 +142,8 @@ class LeaderCharacterPicker(discord.ui.View):
                         "That character is no longer on the roster.", ephemeral=True)
                     return
                 await interaction.response.edit_message(
-                    content=f"**{safe(selected[2])}** · Discord <@{selected[1]}>",
+                    content=(f"**{safe(selected[2])}** · "
+                             f"Discord ID {selected[1]}"),
                     view=LeaderCharacterActions(
                         self.cog, self.actor_id, selected[1], selected[0],
                     ),
@@ -134,11 +166,57 @@ class LeaderCharacterPicker(discord.ui.View):
                     content="Choose a character to edit or remove.",
                     view=LeaderCharacterPicker(
                         self.cog, self.actor_id, self.page + direction,
+                        member_ids=self.member_ids,
                     ),
                 )
 
             button.callback = turn
             self.add_item(button)
+
+        if self.member_ids is None:
+            audit = discord.ui.Button(
+                label="Audit missing members", style=discord.ButtonStyle.primary,
+            )
+
+            async def run_audit(interaction):
+                if not authorised(interaction, self.actor_id):
+                    await interaction.response.send_message(
+                        "Leadership-only private roster controls.", ephemeral=True)
+                    return
+                await interaction.response.defer(ephemeral=True)
+                saved = entries()
+                member_ids = {row[1] for row in saved}
+                result = await audit_members(interaction.guild, member_ids)
+                departed = {
+                    user_id for user_id, status in result.items()
+                    if status == "departed"
+                }
+                unresolved = sum(status == "unknown" for status in result.values())
+                still_here = sum(status == "member" for status in result.values())
+                if departed:
+                    await interaction.followup.send(
+                        f"**{len(departed)} confirmed departed Discord accounts** "
+                        f"with {sum(row[1] in departed for row in saved)} visible characters. "
+                        f"{still_here} accounts are still members; "
+                        f"{unresolved} could not be verified.\n"
+                        "Select each stale character to remove it safely, "
+                        "or delete it if it has no protected history. "
+                        "Nothing was automatically changed.",
+                        view=LeaderCharacterPicker(
+                            self.cog, self.actor_id, member_ids=departed,
+                        ),
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.followup.send(
+                        f"No confirmed departed accounts. "
+                        f"{still_here} verified members; {unresolved} uncertain. "
+                        "Unverified entries are not automatically removed.",
+                        ephemeral=True,
+                    )
+
+            audit.callback = run_audit
+            self.add_item(audit)
 
 
 class LeaderRename(discord.ui.Modal, title="Correct character name"):

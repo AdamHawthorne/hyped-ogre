@@ -1,41 +1,38 @@
-"""Private-pilot roster using the LFG board's Components V2 card style.
+"""Private compact Components V2 roster, matching raid sign-up role sections.
 
-One card per Discord account, with its main and alts displayed together.
-All mutations flow through existing shared character commands/database.
+Each roster-visible character occupies exactly one line. Mains are prominent,
+alts use Discord's muted typography, and pagination never drops a character.
+Edit controls and canonical character identity are shared with the existing
+raid, LFG and Google Sheets features.
 """
 import discord
 
 from cogs.emojis import markup
+from hyped_ogre.features.raids.schedule import signup_role_group
 from . import roster
 
 ACCENT = 0xA87535
-CARDS_PER_MESSAGE = 7  # LFG's conservative Components V2 capacity
 HEADER_IMAGE = roster.ROSTER_IMAGE
+ROLE_ORDER = ("Tanks", "Healers", "Melee", "Ranged")
+# Leave room for the V2 header/controls and Discord markdown overhead.
+PAGE_CHAR_LIMIT = 3500
+SECTION_CHAR_LIMIT = 2850
 
 
 def groups(characters):
-    """Group all roster-visible characters by immutable Discord ID."""
-    members = {}
+    """Exactly the same four role categories as the raid sign-up feature."""
+    by_role = {role: [] for role in ROLE_ORDER}
     for record in characters:
-        did = int(record["discord_id"])
-        members.setdefault(did, []).append(record)
-    result = []
-    for did, records in members.items():
-        ordered = sorted(
-            records,
-            key=lambda row: (not bool(row["is_main"]),
-                             roster.roster_sort_key(row)),
+        role = signup_role_group(
+            record.get("class_name"), record.get("spec"), record.get("role")
         )
-        result.append((did, ordered))
-    result.sort(key=lambda group: (
-        roster.roster_sort_key(group[1][0]), group[0],
-    ))
-    return result
-
-
-def chunks(grouped):
-    return [grouped[i:i + CARDS_PER_MESSAGE]
-            for i in range(0, len(grouped), CARDS_PER_MESSAGE)] or [[]]
+        by_role[role].append(record)
+    for role in ROLE_ORDER:
+        by_role[role].sort(key=lambda row: (
+            not bool(row.get("is_main")),
+            roster.roster_sort_key(row),
+        ))
+    return [(role, by_role[role]) for role in ROLE_ORDER if by_role[role]]
 
 
 def safe(text):
@@ -44,40 +41,87 @@ def safe(text):
     )
 
 
-def character_line(record, *, is_main):
-    klass = record.get("class_name") or "Unknown"
-    spec = record.get("spec") or ""
-    icon = markup(klass) or ""
-    level = record.get("level")
-    level_text = f"Lv {level}" if isinstance(level, int) and 1 <= level <= 60 else "Lv ?"
-    name = safe(record.get("name"))
-    details = f"{safe(spec)} {safe(klass)}".strip()
-    if is_main:
-        return f"{icon} **{name}** · {level_text} · {details}".strip()
-    # Discord's small muted text is the desired grey alt hierarchy.
-    return f"-# {icon} {name} · {level_text} · {details}".strip()
-
-
-def member_text(discord_id, records):
-    main = next((c for c in records if c["is_main"]), None)
-    lines = [f"**<@{discord_id}>**"]
-    if main is not None:
-        lines.append(character_line(main, is_main=True))
-    else:
-        lines.append("-# No main selected")
-    for record in records:
-        if record is not main:
-            lines.append(character_line(record, is_main=False))
-    return "\n".join(lines)
-
-
-def avatar(guild, user_id):
+def discord_name(guild, user_id, verified=None):
+    # Caller may have checked the Discord API to resolve an uncached member.
+    info = (verified or {}).get(user_id)
+    if info and info[0] == "departed":
+        return f"Discord ID {user_id} (left server)"
+    if info and info[0] == "member":
+        return f"[{safe(info[1])}](https://discord.com/users/{user_id})"
     member = guild.get_member(user_id) if guild else None
-    return str(member.display_avatar.url) if member else HEADER_IMAGE
+    if member:
+        display = safe(
+            getattr(member, "display_name", "") or getattr(member, "name", "")
+        )
+        # A profile link avoids Discord's non-pinging mention cache issue.
+        return f"[{display}](https://discord.com/users/{user_id})"
+    return f"Discord ID {user_id} (unverified)"
+
+
+def character_line(record, guild=None, verified=None):
+    """One plain line: class, name, level, iLvl, professions, alt and Discord."""
+    klass = record.get("class_name") or ""
+    class_icon = markup(klass) or ""
+    level = record.get("level")
+    level_label = str(level) if (
+        type(level) is int and 1 <= level <= 60
+    ) else "?"
+    ilvl = record.get("ilvl")
+    ilvl_label = str(ilvl) if ilvl not in (None, "", "N/A") else "?"
+    professions = (record.get("professions") or "N/A").replace(" / ", ", ")
+    name = safe(record.get("name"))
+    is_main = bool(record.get("is_main"))
+    label = f"**{name}**" if is_main else name
+    lead = class_icon if is_main else f"Alt: {class_icon}"
+    user_id = int(record["discord_id"])
+    line = (
+        f"{lead} {label} / {level_label} / {safe(ilvl_label)} / "
+        f"{professions} - {discord_name(guild, user_id, verified)}"
+    ).strip()
+    # Only alt rows are muted: one line per entry, no player cards/columns.
+    return line if is_main else "-# " + line
+
+
+def _role_blocks(role, members, guild, verified):
+    """Split oversized roles without truncating their individual character rows."""
+    base = f"**{role} ({len(members)})**"
+    heading = base
+    lines = []
+    size = len(heading)
+    for record in members:
+        line = character_line(record, guild, verified)
+        # Each entry is bounded by the character registration's length,
+        # profession labels and Discord's maximum username length.
+        if lines and size + len(line) + 1 > SECTION_CHAR_LIMIT:
+            yield heading + "\n" + "\n".join(lines)
+            heading = base + " · continued"
+            lines = []
+            size = len(heading)
+        lines.append(line)
+        size += len(line) + 1
+    if lines:
+        yield heading + "\n" + "\n".join(lines)
+
+
+def chunks(grouped, guild=None, verified=None):
+    """Pack role blocks into bounded messages; never hide entries behind pages."""
+    blocks = [
+        block for role, members in grouped
+        for block in _role_blocks(role, members, guild, verified)
+    ]
+    pages = [[]]
+    length = 0
+    for block in blocks:
+        if pages[-1] and length + len(block) + 2 > PAGE_CHAR_LIMIT:
+            pages.append([])
+            length = 0
+        pages[-1].append(block)
+        length += len(block) + 2
+    return pages
 
 
 class CharacterBoardV2(discord.ui.LayoutView):
-    """Same V2 Section + Thumbnail + Container presentation as the LFG board."""
+    """One compact role list per message, with persistent owner-checked controls."""
 
     def __init__(self, cog, channel_id, guild=None, *, grouped=(),
                  continuation=False):
@@ -87,8 +131,8 @@ class CharacterBoardV2(discord.ui.LayoutView):
             header = discord.ui.Section(
                 discord.ui.TextDisplay(
                     "## <Hyped> Characters\n"
-                    "**Guild roster · Main characters and alts**\n"
-                    "-# Private V2 pilot · levels: Blizzard when available, otherwise WoWSims"
+                    "-# Guild roster · Roles, mains and alts · "
+                    "Armory with newer WoWSims overrides"
                 ),
                 accessory=discord.ui.Thumbnail(
                     HEADER_IMAGE, description="Hyped roster",
@@ -115,19 +159,11 @@ class CharacterBoardV2(discord.ui.LayoutView):
                 button.callback = callback
                 actions.add_item(button)
             self.add_item(actions)
-        for discord_id, records in grouped:
-            container = discord.ui.Container(accent_color=ACCENT)
-            container.add_item(discord.ui.Section(
-                discord.ui.TextDisplay(member_text(discord_id, records)),
-                accessory=discord.ui.Thumbnail(
-                    avatar(guild, discord_id),
-                    description="Guild member Discord avatar",
-                ),
-            ))
-            self.add_item(container)
+        for content in grouped:
+            self.add_item(discord.ui.TextDisplay(content))
         if not grouped:
             self.add_item(discord.ui.TextDisplay(
-                "-# No characters registered yet." if not continuation
+                "-# No registered characters." if not continuation
                 else "-# No further registrations."
             ))
 

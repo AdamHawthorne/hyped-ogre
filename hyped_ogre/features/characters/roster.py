@@ -70,22 +70,40 @@ def rows(path):
                                    if window else "N/A")
         export = gear.get(character["character_id"])
         parsed = equipment.parse_export(export["raw_text"]) if export else None
-        # A saved WoWSims export contains a snapshot, not a live character level.
-        level = parsed.get("level") if parsed else None
-        character["level"] = (level if isinstance(level, int)
-                              and not isinstance(level, bool)
-                              and 1 <= level <= 60 else None)
-        character["level_source"] = "WoWSims" if character["level"] is not None else None
+        # Armory is the read-only default. An explicitly submitted WoWSims
+        # snapshot overrides fields it actually supplies, without replacing
+        # registered names, roles or ownership in the source-of-truth DB.
         live = armory_levels.get(character["character_id"], {})
+        if live.get("name") != character["name"]:
+            live = {}
         live_level = live.get("level")
-        if (live.get("name") == character["name"]
-                and isinstance(live_level, int) and not isinstance(live_level, bool)
-                and 1 <= live_level <= 60):
-            character["level"] = live_level
-            character["level_source"] = "Blizzard"
-        character["professions"] = profession_text(parsed)
-        average, known, equipped = equipment.average_item_level(parsed, catalog)
-        character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
+        valid_live = type(live_level) is int and 1 <= live_level <= 60
+        character["level"] = live_level if valid_live else None
+        character["level_source"] = "Blizzard" if valid_live else None
+
+        armory_ilvl = live.get("ilvl")
+        character["ilvl"] = (str(armory_ilvl)
+                             if type(armory_ilvl) is int and 1 <= armory_ilvl <= 250
+                             else "N/A")
+        character["ilvl_source"] = "Blizzard" if character["ilvl"] != "N/A" else None
+        character["professions"] = profession_text(live)
+        character["professions_source"] = (
+            "Blizzard" if character["professions"] != "N/A" else None
+        )
+
+        if parsed:
+            wse_level = parsed.get("level")
+            if type(wse_level) is int and 1 <= wse_level <= 60:
+                character["level"] = wse_level
+                character["level_source"] = "WoWSims"
+            wse_profs = profession_text(parsed)
+            if wse_profs != "N/A":
+                character["professions"] = wse_profs
+                character["professions_source"] = "WoWSims"
+            average, known, equipped = equipment.average_item_level(parsed, catalog)
+            if average is not None and equipped > 0 and known == equipped:
+                character["ilvl"] = f"{average:.1f}"
+                character["ilvl_source"] = "WoWSims"
     return characters
 
 
