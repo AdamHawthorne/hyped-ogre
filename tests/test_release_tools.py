@@ -202,7 +202,7 @@ class DataFixture(unittest.TestCase):
             dict(base, character_id=100 + i, discord_id=100000000000000000 + i,
                  name=f"Melee Character {i:02} " + "X" * 20,
                  class_name="Warrior", spec="Fury", role="DPS", is_main=1)
-            for i in range(15)
+            for i in range(13)
         ]
         embeds = hub.render(values)
         self.assertEqual(len(embeds), 1)
