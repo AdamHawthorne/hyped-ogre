@@ -268,7 +268,7 @@ class LayoutTests(unittest.TestCase):
         ]
         character_lines = embed.fields[0].value.splitlines()
         for index, name in enumerate(ordered):
-            self.assertIn(name + ' /', character_lines[index])
+            self.assertIn(f'[{name}](https://discord.com/users/', character_lines[index])
         self.assertEqual(embed.fields[1].value.splitlines(),
                          ['60 (67.5)'] * 5 + ['39 (67.5)'] * 2
                          + ['N/A (67.5)'] * 2)
