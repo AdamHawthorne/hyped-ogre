@@ -18,7 +18,6 @@ from . import armory
 from .v2 import CharacterBoardV2, groups as v2_groups, chunks as v2_chunks
 
 LOG = logging.getLogger(__name__)
-CHARACTERS_MESSAGE = "Add yer main to mighty Hyped roster!"
 ROSTER_ANNOUNCEMENT = (
     "Ogre wants yer main! Register it below to earn the **Rostered** "
     "rank in-game and make raid sign-ups easier. Click **Add** to join!"
@@ -258,7 +257,7 @@ class CharacterHub(commands.Cog):
         embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
         # Refresh the anchor first. A missing anchor is handled by /postcharacters.
         await channel.get_partial_message(message_id).edit(
-            content=CHARACTERS_MESSAGE,
+            content=None,
             embed=embeds[0], view=HubView(self, channel_id),
             allowed_mentions=discord.AllowedMentions.none())
         await self.sync_parts(channel, embeds[1:])
@@ -652,7 +651,6 @@ class CharacterHub(commands.Cog):
                         ),
                     )
                 message = await channel.send(
-                    content=CHARACTERS_MESSAGE,
                     embed=embeds[0], view=HubView(self, channel.id),
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
