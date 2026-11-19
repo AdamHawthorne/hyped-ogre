@@ -326,6 +326,39 @@ class V2MembershipAuditTests(unittest.IsolatedAsyncioTestCase):
         })
 
 
+class V2ResolvedMemberLabelsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_on_demand_lookups_distinguish_left_from_uncached_member(self):
+        import discord
+
+        member = SimpleNamespace(display_name="Bread Fan")
+        response = SimpleNamespace(status=404, reason="Not Found")
+        calls = []
+
+        async def fetch(user_id):
+            calls.append(user_id)
+            if user_id == 101:
+                return member
+            raise discord.NotFound(response, {"message": "Unknown Member"})
+
+        guild = SimpleNamespace(
+            get_member=lambda _: None, fetch_member=fetch
+        )
+        cog = CharacterHub(SimpleNamespace())
+        grouped = [("Tanks", [
+            {"discord_id": 101}, {"discord_id": 102},
+        ])]
+        first = await cog.member_labels(guild, grouped)
+        self.assertEqual(first[101], ("member", "Bread Fan"))
+        self.assertEqual(first[102], ("departed", ""))
+        second = await cog.member_labels(guild, grouped)
+        self.assertEqual(second, first)
+        self.assertEqual(sorted(calls), [101, 102])
+        self.assertIn("Bread Fan",
+                      v2.discord_name(guild, 101, first))
+        self.assertIn("left server",
+                      v2.discord_name(guild, 102, first))
+
+
 class V2PrivateGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_private_post_disallows_public_and_other_guilds(self):
         cog = CharacterHub(SimpleNamespace())
