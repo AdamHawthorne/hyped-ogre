@@ -153,6 +153,9 @@ def render(characters):
     Inline columns are client-controlled and may stack on mobile. Build each
     three-column block from exactly the same rows; never truncate a roster.
     """
+    # V1 shows mains only, so the heading must not count hidden alt entries.
+    total_mains = sum(1 for record in characters if record["is_main"])
+
     def new_embed(first):
         # A thumbnail reserves width beside the role fields on desktop.
         # The author icon keeps the guild mark beside the heading without
@@ -162,7 +165,7 @@ def render(characters):
             colour=0xB84A3A,
         )
         if first:
-            result.set_author(name="Characters", icon_url=ROSTER_IMAGE)
+            result.set_author(name=f"Characters ({total_mains})", icon_url=ROSTER_IMAGE)
         return result
 
     embeds = [new_embed(True)]
