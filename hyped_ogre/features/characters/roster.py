@@ -190,7 +190,7 @@ def render(characters):
             level_text = (str(level) if type(level) is int
                           and 1 <= level <= 60 else "N/A")
             ilvl_text = display_ilvl(row.get("ilvl"))
-            block.append((name, f"{level_text} / {ilvl_text}",
+            block.append((name, f"{level_text} ({ilvl_text})",
                           row.get("professions") or "N/A"))
             length += len(name) + 1
         if block:
@@ -200,7 +200,7 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "Level / Item Level", "Professions")
+            names = (heading, "Level (iLvl)", "Professions")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
             if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
