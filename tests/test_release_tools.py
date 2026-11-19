@@ -421,10 +421,8 @@ class HubCommandTests(unittest.IsolatedAsyncioTestCase):
                             channel.send.assert_awaited_once()
                             message.edit.assert_awaited_once()
                             self.assertFalse(channel.send.call_args.kwargs["allowed_mentions"].users)
-                            self.assertEqual(channel.send.call_args.kwargs["content"],
-                                             hub.CHARACTERS_MESSAGE)
-                            self.assertEqual(message.edit.call_args.kwargs["content"],
-                                             hub.CHARACTERS_MESSAGE)
+                            self.assertNotIn("content", channel.send.call_args.kwargs)
+                            self.assertIsNone(message.edit.call_args.kwargs["content"])
                             self.assertTrue(channel.send.call_args.kwargs["view"].is_persistent())
                         finally:
                             await cog.cog_unload()
