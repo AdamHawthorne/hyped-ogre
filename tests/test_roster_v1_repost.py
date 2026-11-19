@@ -115,6 +115,8 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("<@&777> Ogre wants yer main!", notice.kwargs["content"])
         self.assertIn("**Rostered**", notice.kwargs["content"])
         self.assertIn("raid sign-ups", notice.kwargs["content"])
+        self.assertNotIn("Click **Add** to join!", notice.kwargs["content"])
+        self.assertNotIn("content", self.channel.send.await_args_list[1].kwargs)
         self.assertEqual(
             notice.kwargs["allowed_mentions"].roles, [self.guild.roles[0]]
         )
@@ -125,6 +127,39 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
         refresh.assert_awaited_once()
         self.assertEqual(self.channel.send.await_count, 2)
         self.assertEqual(self.saved(), (1002, 1001))
+
+    async def test_existing_forever_announcement_is_edited_once_without_reping(self):
+        # Simulate the previously published bot message. Its existing role
+        # mention stays in place, but AllowedMentions.none() prevents a ping.
+        self.messages([1001, 1002])
+        await self.call()
+        existing = SimpleNamespace(
+            content=("<@&777> Ogre wants yer main! Register it below to earn "
+                     "the **Rostered** rank in-game and make raid sign-ups "
+                     "easier. Click **Add** to join!"),
+            edit=AsyncMock(),
+        )
+        self.channel.fetch_message = AsyncMock(return_value=existing)
+        self.cog.bot = SimpleNamespace(get_channel=lambda _: self.channel)
+        result = await self.cog.clean_existing_roster_announcements()
+        self.assertTrue(result)
+        self.channel.fetch_message.assert_awaited_once_with(1001)
+        existing.edit.assert_awaited_once()
+        args = existing.edit.await_args.kwargs
+        self.assertEqual(
+            args["content"],
+            "<@&777> Ogre wants yer main! Register it below to earn "
+            "the **Rostered** rank in-game and make raid sign-ups easier.",
+        )
+        self.assertFalse(args["allowed_mentions"].roles)
+        self.assertFalse(args["allowed_mentions"].users)
+        # The previously posted announcement ID is reused, not reposted.
+        self.assertEqual(self.channel.send.await_count, 2)
+        self.assertEqual(self.saved(), (1002, 1001))
+        existing.content = args["content"]
+        existing.edit.reset_mock()
+        await self.cog.clean_existing_roster_announcements()
+        existing.edit.assert_not_awaited()
 
     async def test_repost_replaces_old_board_and_announcement(self):
         self.messages([1001, 1002])
