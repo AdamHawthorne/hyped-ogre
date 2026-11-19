@@ -84,6 +84,35 @@ def register_character(con, discord_id, name, class_name, spec, role, *,
     )
     return "created"
 
+def rename_character(con, discord_id, character_id, new_name):
+    """Rename the same character ID without touching exports, LFG or raid history."""
+    name = " ".join(str(new_name or "").split())
+    parts = name.split()
+    if (len(name) > 40 or len(parts) != 2
+            or not all(part.replace("-", "").replace("'", "").isalpha()
+                       for part in parts)):
+        raise ValueError("Enter the full First Last character name (40 letters max).")
+    current = con.execute(
+        "SELECT name FROM characters WHERE discord_id=? AND character_id=?",
+        (discord_id, character_id),
+    ).fetchone()
+    if current is None:
+        raise ValueError("This character isn't registered to you.")
+    if con.execute(
+        "SELECT 1 FROM characters WHERE discord_id=? "
+        "AND name=? COLLATE NOCASE AND character_id<>?",
+        (discord_id, name, character_id),
+    ).fetchone():
+        raise ValueError("That character name is already registered on your account.")
+    if current[0] == name:
+        return False
+    con.execute(
+        "UPDATE characters SET name=? WHERE discord_id=? AND character_id=?",
+        (name, discord_id, character_id),
+    )
+    return True
+
+
 def set_character_race(con, discord_id, character_id, race, race_classes):
     """Validate ownership and classic class/race compatibility."""
     row = con.execute(
