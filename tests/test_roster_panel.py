@@ -157,7 +157,11 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('WCL', content)
         for row in data:
             self.assertEqual(content.count(row['name']), 1)
-            self.assertIn(f"<@{row['discord_id']}>", content)
+            self.assertIn(
+                f"[{row['name']}](https://discord.com/users/{row['discord_id']})",
+                content,
+            )
+            self.assertNotIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
             self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
@@ -165,6 +169,32 @@ class LayoutTests(unittest.TestCase):
             self.assertTrue(all(v == 'N/A (67.5)' for v in fields[1].value.splitlines()))
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
+
+    def test_long_discord_usernames_cannot_wrap_independent_roster_rows(self):
+        # Character name doubles as a clickable Discord profile link.
+        # No separate @username can wrap and push the next line down while
+        # the Level and Professions columns remain in place.
+        data = [
+            dict(self.row(1, 'Healer', 'Priest', 'Holy'),
+                 name='Doctor Suncles', level=60),
+            dict(self.row(2, 'Healer', 'Druid', 'Restoration'),
+                 name='Howaboutthat parkour', level=60),
+            dict(self.row(3, 'Healer', 'Priest', 'Holy'),
+                 name='Based Sigma', level=47),
+        ]
+        fields = roster.render(data)[0].fields[3:6]
+        self.assertEqual(fields[0].name, 'Healers (3)')
+        self.assertEqual([len(field.value.splitlines()) for field in fields],
+                         [3, 3, 3])
+        for index, record in enumerate(data):
+            line = fields[0].value.splitlines()[index]
+            self.assertIn(record['name'], line)
+            self.assertIn(
+                f"https://discord.com/users/{record['discord_id']}", line
+            )
+            self.assertNotIn(' / <@', line)
+        self.assertEqual(fields[1].value.splitlines(),
+                         ['60 (67.5)', '60 (67.5)', '47 (67.5)'])
 
     def test_professions_keep_one_line_per_character_and_fit_discord_fields(self):
         players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 11)]
@@ -238,7 +268,7 @@ class LayoutTests(unittest.TestCase):
         ]
         character_lines = embed.fields[0].value.splitlines()
         for index, name in enumerate(ordered):
-            self.assertIn(name + ' /', character_lines[index])
+            self.assertIn(f'[{name}](https://discord.com/users/', character_lines[index])
         self.assertEqual(embed.fields[1].value.splitlines(),
                          ['60 (67.5)'] * 5 + ['39 (67.5)'] * 2
                          + ['N/A (67.5)'] * 2)

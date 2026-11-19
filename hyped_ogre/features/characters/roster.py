@@ -181,7 +181,16 @@ def render(characters):
         )
         blocks, block, length = [], [], 0
         for row in members:
-            name = f"{markup(row['class_name'])} {safe_name(row['name'])} / <@{row['discord_id']}>"
+            # Discord renders the three inline fields independently. A full
+            # Discord username/mention often wraps onto a second line and
+            # misaligns the Level and Professions rows. Link the character
+            # name to the member's Discord profile instead, retaining a
+            # clickable owner without repeating a long display name.
+            linked_name = (
+                f"[{safe_name(row['name'])}]"
+                f"(https://discord.com/users/{int(row['discord_id'])})"
+            )
+            name = f"{markup(row['class_name'])} {linked_name}"
             # 1024 is the per-field value limit, including emoji and mention markup.
             if block and (length + len(name) + 1 > 1000 or len(block) >= 10):
                 blocks.append(block)
