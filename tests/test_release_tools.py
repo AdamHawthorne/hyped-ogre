@@ -179,6 +179,54 @@ class DataFixture(unittest.TestCase):
             self.assertIn(row["name"], content)
         self.assertNotIn("Page", content)
 
+    def test_character_board_switches_all_roles_to_plain_names(self):
+        base = hub.rows(self.path)[0]
+        # One dense melee group forces the entire board to use plain names.
+        values = [
+            dict(base, character_id=100 + i, discord_id=100000000000000000 + i,
+                 name=f"Melee Character {i:02}", class_name="Warrior",
+                 spec="Fury", role="DPS", is_main=1)
+            for i in range(12)
+        ]
+        values += [
+            dict(base, character_id=200, discord_id=100000000000000200,
+                 name="Big Snore", class_name="Warrior", spec="Protection",
+                 role="Tank", is_main=1),
+            dict(base, character_id=201, discord_id=100000000000000201,
+                 name="Healer Name", class_name="Priest", spec="Holy",
+                 role="Healer", is_main=1),
+        ]
+        embeds = hub.render(values)
+        self.assertEqual(len(embeds), 1)
+        content = str(embeds[0].to_dict())
+        self.assertIn("Melee Character 00", content)
+        self.assertIn("Big Snore", content)
+        self.assertIn("Healer Name", content)
+        self.assertNotIn("https://discord.com/users/", content)
+        self.assertNotIn("<@", content)
+        self.assertEqual(embeds[0].author.name, "Characters (14)")
+        for field in embeds[0].fields:
+            self.assertLessEqual(len(field.value), 1024)
+
+    def test_character_board_falls_back_to_plain_names_before_field_limit(self):
+        base = hub.rows(self.path)[0]
+        values = [
+            dict(base, character_id=100 + i, discord_id=100000000000000000 + i,
+                 name=f"Melee Character {i:02} " + "X" * 20,
+                 class_name="Warrior", spec="Fury", role="DPS", is_main=1)
+            for i in range(13)
+        ]
+        embeds = hub.render(values)
+        self.assertEqual(len(embeds), 1)
+        melee = next(field for field in embeds[0].fields
+                     if field.name.startswith("Melee ("))
+        self.assertNotIn("<@", melee.value)
+        self.assertNotIn("https://discord.com/users/", melee.value)
+        self.assertNotIn("continued", str(embeds[0].to_dict()))
+        for row in values:
+            self.assertIn(row["name"], melee.value)
+        self.assertLessEqual(len(melee.value), 1024)
+
     def test_archive_hides_only_completed_raid_tab_and_preserves_permanent_history(self):
         tabs = {"Raid #1 - Wed": {"sheetId": 1}, "Raid #2 - Sun": {"sheetId": 2},
                 "Forever Attendance": {"sheetId": 3}, "Forever Roster": {"sheetId": 4}}
@@ -386,13 +434,16 @@ class HubCommandTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict(os.environ, {"HYPED_GUILD_ID": str(GUILD_ID)}), patch.object(raid, "RAID_DB", path):
                 async with commands.Bot(command_prefix="test_", intents=discord.Intents.none()) as bot:
                     for _ in range(2):
-                        for module in ("hyped_ogre.features.characters.hub", "hyped_ogre.features.raids.notifications"):
+                        for module in ("hyped_ogre.features.characters.hub", "hyped_ogre.features.characters.board_admin", "hyped_ogre.features.raids.notifications"):
                             await bot.load_extension(module)
                         self.assertIsNotNone(bot.tree.get_command("characters", guild=discord.Object(id=GUILD_ID)))
                         self.assertIsNotNone(bot.tree.get_command("postcharacters", guild=discord.Object(id=GUILD_ID)))
+                        self.assertIsNotNone(bot.tree.get_command("roster", guild=discord.Object(id=GUILD_ID)))
+                        await bot.unload_extension("hyped_ogre.features.characters.board_admin")
                         await bot.unload_extension("hyped_ogre.features.characters.hub")
                         await bot.unload_extension("hyped_ogre.features.raids.notifications")
                         self.assertIsNone(bot.tree.get_command("characters", guild=discord.Object(id=GUILD_ID)))
+                        self.assertIsNone(bot.tree.get_command("roster", guild=discord.Object(id=GUILD_ID)))
 
     async def test_postcharacters_refreshes_one_persistent_board_without_pinging_members(self):
         with tempfile.TemporaryDirectory() as tmp:

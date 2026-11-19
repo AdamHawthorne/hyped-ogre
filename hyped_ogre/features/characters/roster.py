@@ -52,8 +52,13 @@ def rows(path):
     with raid.database(path) as con:
         con.row_factory = sqlite3.Row
         characters = [dict(row) for row in con.execute(
-            "SELECT character_id,discord_id,name,class_name,spec,role,is_main,off_spec,off_role "
-            "FROM characters WHERE roster_visible=1 ORDER BY is_main DESC,LOWER(name),character_id")]
+            "SELECT c.character_id,c.discord_id,c.name,c.class_name,c.spec,c.role,"
+            "c.is_main,c.off_spec,c.off_role,"
+            "COALESCE(b.display_name,'') AS board_name,"
+            "COALESCE(b.hidden,0) AS board_hidden "
+            "FROM characters c LEFT JOIN character_board_overrides b "
+            "ON b.character_id=c.character_id "
+            "WHERE c.roster_visible=1 ORDER BY c.is_main DESC,LOWER(c.name),c.character_id")]
         window = [r[0] for r in con.execute(
             "SELECT raid_id FROM raids WHERE archived_at IS NOT NULL ORDER BY raid_at DESC LIMIT 4")]
         credits = {}
@@ -171,18 +176,27 @@ def v1_class_ilvl_sort_key(record):
 
 
 def render(characters):
-    """One embed normally; additional visible messages only at Discord limits.
+    """Compact main-only V1 board with consistent links across every role.
 
-    Inline columns are client-controlled and may stack on mobile. Build each
-    three-column block from exactly the same rows; never truncate a roster.
+    A Discord embed field holds at most 1024 characters. When any role would
+    exceed that with profile links, drop *all* links so one column never looks
+    different from the others. Keep splitting only when the plain roster
+    itself exceeds Discord's field or embed limits.
     """
-    # V1 shows mains only, so the heading must not count hidden alt entries.
-    total_mains = sum(1 for record in characters if record["is_main"])
+    visible = [row for row in characters if row["is_main"] and not row.get("board_hidden")]
+    total_mains = len(visible)
+    roles = ("Tanks", "Healers", "Melee", "Ranged")
+    grouped = {
+        label: sorted(
+            (r for r in visible if signup_role_group(
+                r.get("class_name"), r.get("spec"), r.get("role")
+            ) == label),
+            key=v1_class_ilvl_sort_key,
+        )
+        for label in roles
+    }
 
     def new_embed(first):
-        # A thumbnail reserves width beside the role fields on desktop.
-        # The author icon keeps the guild mark beside the heading without
-        # narrowing the character / level / profession columns.
         result = discord.Embed(
             title=None if first else "Characters (continued)",
             colour=0xB84A3A,
@@ -191,53 +205,40 @@ def render(characters):
             result.set_author(name=f"Characters ({total_mains})", icon_url=ROSTER_IMAGE)
         return result
 
-    embeds = [new_embed(True)]
-    roles = ("Tanks", "Healers", "Melee", "Ranged")
-    for label in roles:
-        members = sorted(
-            (r for r in characters if r["is_main"] and
-             signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
-            key=v1_class_ilvl_sort_key,
-        )
-        # Discord permits at most 1024 characters per embed field. The
-        # former ten-row cutoff caused unnecessary "Ranged · continued"
-        # sections. Fit the whole role into one three-column block whenever
-        # possible, switching from linked to plain character names only if
-        # repeated profile URLs would consume the field limit.
-        def character_entry(row, *, linked):
-            name = safe_name(row["name"])
+    def lines_for_role(members, *, linked):
+        result = []
+        for row in members:
+            name = safe_name(row.get("board_name") or row["name"])
             if linked:
                 name = (
                     f"[{name}]"
                     f"(https://discord.com/users/{int(row['discord_id'])})"
                 )
-            return f"{markup(row['class_name'])} {name}"
+            level = row.get("level")
+            level_text = str(level) if type(level) is int and 1 <= level <= 60 else "N/A"
+            ilvl_text = display_ilvl(row.get("ilvl"))
+            result.append((
+                f"{markup(row['class_name'])} {name}",
+                f"{level_text} ({ilvl_text})",
+                row.get("professions") or "N/A",
+            ))
+        return result
 
-        def lines_for_role(*, linked):
-            result = []
-            for row in members:
-                level = row.get("level")
-                level_text = (
-                    str(level) if type(level) is int and 1 <= level <= 60
-                    else "N/A"
-                )
-                ilvl_text = display_ilvl(row.get("ilvl"))
-                result.append((
-                    character_entry(row, linked=linked),
-                    f"{level_text} ({ilvl_text})",
-                    row.get("professions") or "N/A",
-                ))
-            return result
-
-        entries = lines_for_role(linked=True)
+    # Preflight *every* role. One role exceeding the linked field limit
+    # switches the entire board, including Tanks and Healers, to plain names.
+    linked = True
+    for members in grouped.values():
+        entries = lines_for_role(members, linked=True)
         if any(
-            len("\n".join(entry[col] for entry in entries)) > 1024
-            for col in range(3)
+            len("\n".join(entry[column] for entry in entries)) > 1024
+            for column in range(3)
         ):
-            # Full Discord profile URLs count towards the 1024-character
-            # field limit even though they render as compact labels.
-            entries = lines_for_role(linked=False)
+            linked = False
+            break
 
+    embeds = [new_embed(True)]
+    for label, members in grouped.items():
+        entries = lines_for_role(members, linked=linked)
         blocks, block = [], []
         column_lengths = [0, 0, 0]
         for entry in entries:
