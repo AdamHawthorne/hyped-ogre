@@ -4,8 +4,6 @@ One V2 container with the guild thumbnail and role-grouped TextDisplays,
 followed by a row of interactive controls. A second message is created only
 if Discord's display limits make a single message impossible.
 """
-import re
-
 import discord
 
 from cogs.emojis import markup
@@ -14,7 +12,7 @@ from . import roster
 
 ACCENT = 0xA87535
 HEADER_IMAGE = roster.ROSTER_IMAGE
-ROLE_ORDER = ("Tanks", "Melee", "Ranged", "Healers")
+ROLE_ORDER = ("Tanks", "Healers", "Melee", "Ranged")
 SECTION_CHAR_LIMIT = 3700
 PAGE_CHAR_LIMIT = 14500
 MAX_BLOCKS = 8
@@ -69,49 +67,66 @@ def discord_name(guild, user_id, verified=None):
 
 
 def profession_summary(value):
-    """Use short, clear profession labels, retaining reported skill values."""
+    """Compact primary professions with validated, reported skill points.
+
+    Never display two full profession names or a repeated 'Profs: N/A'
+    on every character. Unknown professions are simply omitted.
+    """
     if not isinstance(value, str) or not value or value == "N/A":
-        return "Profs: N/A"
-    names = {
-        "Min": "Mining", "Herb": "Herbalism", "Eng": "Engineering",
-        "Ench": "Enchanting", "Alch": "Alchemy", "BS": "BS",
-        "LW": "Leatherworking", "Skin": "Skinning", "Tail": "Tailoring",
-        "JC": "Jewelcrafting", "Insc": "Inscription",
+        return ""
+    aliases = {
+        "Mining": "Min", "Min": "Min",
+        "Herbalism": "Herb", "Herb": "Herb",
+        "Engineering": "Eng", "Eng": "Eng",
+        "Enchanting": "Ench", "Ench": "Ench",
+        "Alchemy": "Alch", "Alch": "Alch",
+        "Blacksmithing": "BS", "BS": "BS",
+        "Leatherworking": "LW", "LW": "LW",
+        "Skinning": "Skin", "Skin": "Skin",
+        "Tailoring": "Tail", "Tail": "Tail",
+        "Jewelcrafting": "JC", "JC": "JC",
+        "Inscription": "Insc", "Insc": "Insc",
     }
     parts = []
     for item in value.split(" / ")[:2]:
         label, sep, level = item.partition(":")
-        label = names.get(label.strip(), label.strip())
-        if not label:
+        short = aliases.get(label.strip(), label.strip()[:8])
+        if not short:
             continue
         skill = level.strip()
-        parts.append(f"{label}({skill})" if sep and skill.isdecimal()
-                     else label)
-    return " and ".join(parts) if parts else "Profs: N/A"
+        # Keep the original profession abbreviations and skill values.
+        parts.append(f"{short}({skill})" if sep and skill.isdecimal()
+                     else short)
+    return " / ".join(parts)
 
 
 def character_line(record, guild=None, verified=None):
-    """Screenshot layout: icon, name, iLvl/spec/class, crafts, attendance."""
+    """One concise raid-style line; omit unknown statistics rather than clutter."""
     klass = str(record.get("class_name") or "Unknown")
     spec = str(record.get("spec") or "")
     display_spec = SPEC_SHORT.get(spec, spec)
     name = safe(record.get("name"))
     icon = markup(klass) or ""
     ilvl = record.get("ilvl")
-    level_text = str(ilvl) if ilvl not in (None, "", "N/A") else "N/A"
     attendance = record.get("attendance") or "N/A"
-    craft = profession_summary(record.get("professions"))
     is_main = bool(record.get("is_main"))
     label = f"**{name}**" if is_main else name
     tag = "" if is_main else "Alt: "
+    line_parts = [f"{tag}{icon} {label}".strip()]
     spec_class = " ".join(p for p in (display_spec, klass) if p)
-    line = (f"{tag}{icon} {label} - iLvl {safe(level_text)} "
-            f"{safe(spec_class)} - {craft} - Attendance: {safe(attendance)}")
+    if spec_class:
+        line_parts.append(safe(spec_class))
+    if ilvl not in (None, "", "N/A"):
+        line_parts.append(f"iLvl {safe(str(ilvl))}")
+    craft = profession_summary(record.get("professions"))
+    if craft:
+        line_parts.append(craft)
+    line_parts.append(f"Att {safe(attendance)}")
     # Historical departures are an ownership check, not a signal to delete.
     uid = int(record["discord_id"])
     if (verified or {}).get(uid, ("", ""))[0] == "departed":
-        line += " (Discord departed)"
-    return "-# " + line
+        line_parts.append("Left Discord")
+    return "-# " + " · ".join(line_parts)
 
 
 def _role_blocks(role, members, guild, verified):
