@@ -101,7 +101,7 @@ class CharacterV2Tests(unittest.TestCase):
             char_id = raid.member_characters(101, path)[0][0]
             armory.initialise(path)
             self.assertEqual(armory.candidates(path, now=100), [(char_id, "Big Snore")])
-            with sqlite3.connect(path) as con:
+            with raid.database(path) as con:
                 con.execute(
                     "INSERT INTO character_armory_cache "
                     "(character_id,character_name,level,updated_at) "
