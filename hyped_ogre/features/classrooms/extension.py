@@ -321,13 +321,96 @@ class ClassroomsCog(commands.GroupCog, group_name="classrooms",
         result = await self.sync_access(interaction.guild)
         await self.send(interaction, "Classrooms enabled. " + result.text())
 
-    @app_commands.command(name="sync", description="Refresh class access for every registered main and alt")
-    async def sync_classrooms(self, interaction: discord.Interaction):
+    @app_commands.command(name="sync", description="Refresh class access for a member or the whole guild")
+    @app_commands.describe(member="Optional member to resync; leave blank for everybody")
+    async def sync_classrooms(self, interaction: discord.Interaction,
+                              member: discord.Member | None = None):
         await interaction.response.defer(ephemeral=True)
         if not await self.run(self.store.enabled, GUILD_ID):
-            raise ClassroomError("Classrooms are paused or not set up. Ask Ogre's owner to run /classrooms setup.")
-        result = await self.sync_access(interaction.guild)
-        await self.send(interaction, result.text())
+            await self.send(
+                interaction,
+                "Classrooms are paused or haven't been set up. "
+                "Ogre's owner can run **/classrooms setup** to check channel "
+                "permissions and enable syncing. No permissions changed.",
+            )
+            return
+        result = await self.sync_access(
+            interaction.guild, member_id=member.id if member else None
+        )
+        prefix = (
+            f"Checked {discord.utils.escape_markdown(member.display_name)}. "
+            if member else ""
+        )
+        await self.send(interaction, prefix + result.text())
+
+    @app_commands.command(
+        name="check",
+        description="Privately diagnose a member's expected classroom channels",
+    )
+    @app_commands.describe(member="Member whose saved characters and channels to check")
+    async def check_classrooms(self, interaction: discord.Interaction,
+                               member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        enabled = await self.run(self.store.enabled, GUILD_ID)
+        records = await self.run(self.store.member_characters, member.id)
+        desired, journal = await self.run(self.store.snapshot, GUILD_ID)
+        _, channels = await self.destinations(interaction.guild)
+        lines = [
+            f"**Classroom check: {discord.utils.escape_markdown(member.display_name)}**",
+            f"Automatic sync: **{'enabled' if enabled else 'paused / not set up'}**.",
+        ]
+        if records:
+            lines.append("Saved characters (main and alts):")
+            for name, klass, spec, role, off_spec, off_role, visible in records[:20]:
+                roles = f"{spec} {klass} ({role})"
+                if off_spec and off_role:
+                    roles += f"; off-spec {off_spec} ({off_role})"
+                suffix = "" if visible else " [not on roster]"
+                safe = discord.utils.escape_markdown(
+                    discord.utils.escape_mentions(name)
+                )
+                lines.append(f"- {safe}: {roles}{suffix}")
+        else:
+            lines.append(
+                "No character registration for this Discord account. "
+                "Use the Characters board to add a main or alt."
+            )
+        expected = [channel for channel in channels if member.id in desired[channel.id]]
+        if not expected:
+            lines.append("Expected channels: none based on saved class/spec/role.")
+        for channel in expected:
+            effective = channel.permissions_for(member)
+            overwrite = channel.overwrites_for(member)
+            view_ok = effective.view_channel
+            send_ok = effective.send_messages
+            problem = self.channel_problem(channel, interaction.guild)
+            if problem:
+                detail = f"permission preflight failed: {problem}"
+            elif overwrite.view_channel is False:
+                detail = "explicit member View Channel deny (manual restriction)"
+            elif not view_ok:
+                detail = "no effective View Channel permission"
+            elif overwrite.send_messages is False:
+                detail = "explicit member Send Messages deny (manual restriction)"
+            elif not send_ok:
+                detail = "no effective Send Messages permission"
+            else:
+                detail = "access OK"
+            journal_state = "tracked" if (channel.id, member.id) in journal else "not tracked"
+            lines.append(f"<#{channel.id}>: **{detail}** ({journal_state})")
+        if not enabled:
+            lines.append(
+                "Owner action: run **/classrooms setup** after checking bot permissions."
+            )
+        elif any(
+            not channel.permissions_for(member).view_channel
+            for channel in expected
+        ):
+            lines.append(
+                "Try **/classrooms sync** with this member. "
+                "Ogre will preserve explicit manual denies."
+            )
+        await self.send(interaction, "\n".join(lines))
 
     @app_commands.command(name="status", description="Check classroom permissions and registered character totals")
     async def status(self, interaction: discord.Interaction):
