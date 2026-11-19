@@ -6,6 +6,7 @@ Forever API namespaces are still undocumented (November 2026); failures
 must never edit registrations or stop the character board.
 """
 import asyncio
+from contextlib import closing
 import logging
 import os
 import re
@@ -42,7 +43,7 @@ def public_url(name):
 
 def initialise(path):
     """Only additive, isolated cache storage. Never touch canonical characters."""
-    with sqlite3.connect(path, timeout=20) as con:
+    with closing(sqlite3.connect(path, timeout=20)) as con, con:
         con.execute("""CREATE TABLE IF NOT EXISTS character_armory_cache (
             character_id INTEGER PRIMARY KEY,
             character_name TEXT NOT NULL,
@@ -56,7 +57,7 @@ def initialise(path):
 def cached(path):
     """Return only levels of characters still matching their stored name."""
     try:
-        with sqlite3.connect(path, timeout=20) as con:
+        with closing(sqlite3.connect(path, timeout=20)) as con, con:
             return {
                 int(cid): {"name": name, "level": level, "updated_at": updated}
                 for cid, name, level, updated in con.execute(
@@ -95,7 +96,7 @@ def candidates(path, now=None, limit=MAX_REFRESH):
     """Only visible guild-roster registrations, never LFG-only characters."""
     now = int(now if now is not None else time.time())
     try:
-        with sqlite3.connect(path, timeout=20) as con:
+        with closing(sqlite3.connect(path, timeout=20)) as con, con:
             con.row_factory = sqlite3.Row
             records = con.execute(
                 "SELECT c.character_id,c.name,a.character_name,a.updated_at "
@@ -166,7 +167,7 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH):
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
                     LOGGER.warning("Forever Armory profile unavailable: %s", type(exc).__name__)
                     continue
-                with sqlite3.connect(path, timeout=20) as con:
+                with closing(sqlite3.connect(path, timeout=20)) as con, con:
                     # A character may have been renamed/deleted while this
                     # HTTPS request was in flight. Match both ID and name.
                     present = con.execute(
