@@ -418,6 +418,22 @@ def update_character_profile(discord_id, character_id, class_name, spec, role, p
             con, discord_id, character_id, class_name, spec, role, RACE_CLASSES
         )
 
+def rename_character(discord_id, character_id, name, path=RAID_DB):
+    """Rename the canonical registration without changing any related IDs."""
+    with database(path) as con:
+        return character_mutations.rename_character(
+            con, discord_id, character_id, name
+        )
+
+
+def remove_character_from_roster(discord_id, character_id, path=RAID_DB):
+    """Make an entry LFG-only while preserving canonical ID and raid history."""
+    with database(path) as con:
+        return character_mutations.remove_from_roster(
+            con, discord_id, character_id
+        )
+
+
 def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
     """Accept one signed-up character per member/night with optional note."""
     if note is not None:
@@ -1000,8 +1016,59 @@ class CharacterManageView(discord.ui.LayoutView):
                 view=CharacterActionView(self.owner_id, purpose="update")
             )
 
+        rename = discord.ui.Button(label="Rename character",
+                                   style=discord.ButtonStyle.secondary)
+
+        async def rename_callback(interaction):
+            if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+                await interaction.response.send_message(
+                    "That character isn't yours.", ephemeral=True)
+                return
+            await interaction.response.send_modal(
+                CharacterRenameModal(self.owner_id, self.character_id, name)
+            )
+
+        rename.callback = rename_callback
         back.callback = back_callback
-        self.add_item(discord.ui.ActionRow(back))
+        self.add_item(discord.ui.ActionRow(rename, back))
+
+
+class CharacterRenameModal(discord.ui.Modal, title="Rename character"):
+    """Ownership-checked in-place rename, never delete/reinsert the player."""
+
+    def __init__(self, owner_id, character_id, old_name):
+        super().__init__(timeout=600)
+        self.owner_id, self.character_id = owner_id, character_id
+        self.name = discord.ui.TextInput(
+            label="Full character name", default=old_name,
+            placeholder="First Last", max_length=40
+        )
+        self.add_item(self.name)
+
+    async def on_submit(self, interaction):
+        if not is_test_member(interaction) or interaction.user.id != self.owner_id:
+            await interaction.response.send_message(
+                "That character isn't yours.", ephemeral=True)
+            return
+        try:
+            changed = rename_character(
+                self.owner_id, self.character_id, self.name.value
+            )
+        except (ValueError, sqlite3.Error) as exc:
+            await interaction.response.send_message(
+                f"Ogre couldn't rename: {exc}", ephemeral=True)
+            return
+        if changed:
+            notify_classrooms(interaction, self.owner_id)
+            await refresh_lfg_for_member(interaction, self.owner_id)
+        await interaction.response.send_message(
+            f"**{discord.utils.escape_markdown(self.name.value.strip())}** "
+            + ("renamed in the shared database. Existing raids, gear and LFG "
+               "references remain linked to the same character."
+               if changed else "already has that name."),
+            ephemeral=True,
+        )
+
 
 class ConfirmCharacterDeleteView(discord.ui.LayoutView):
     """Require an explicit second click before permanently removing a character."""

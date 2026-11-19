@@ -84,6 +84,71 @@ def register_character(con, discord_id, name, class_name, spec, role, *,
     )
     return "created"
 
+def rename_character(con, discord_id, character_id, new_name):
+    """Rename the same character ID without touching exports, LFG or raid history."""
+    name = " ".join(str(new_name or "").split())
+    parts = name.split()
+    if (len(name) > 40 or len(parts) != 2
+            or not all(part.replace("-", "").replace("'", "").isalpha()
+                       for part in parts)):
+        raise ValueError("Enter the full First Last character name (40 letters max).")
+    current = con.execute(
+        "SELECT name FROM characters WHERE discord_id=? AND character_id=?",
+        (discord_id, character_id),
+    ).fetchone()
+    if current is None:
+        raise ValueError("This character isn't registered to you.")
+    if con.execute(
+        "SELECT 1 FROM characters WHERE discord_id=? "
+        "AND name=? COLLATE NOCASE AND character_id<>?",
+        (discord_id, name, character_id),
+    ).fetchone():
+        raise ValueError("That character name is already registered on your account.")
+    if current[0] == name:
+        return False
+    con.execute(
+        "UPDATE characters SET name=? WHERE discord_id=? AND character_id=?",
+        (name, discord_id, character_id),
+    )
+    return True
+
+
+def remove_from_roster(con, discord_id, character_id):
+    """Unlist a character without erasing raid attendance, gear or LFG links.
+
+    Keep the original canonical ID. If the current main is unlisted, elect
+    the oldest remaining visible character as main; never promote LFG-only
+    characters behind the user's back.
+    """
+    row = con.execute(
+        "SELECT roster_visible,is_main FROM characters "
+        "WHERE discord_id=? AND character_id=?",
+        (discord_id, character_id),
+    ).fetchone()
+    if row is None:
+        raise ValueError("This character isn't registered to that member.")
+    if not row[0]:
+        return False
+    con.execute(
+        "UPDATE characters SET roster_visible=0,is_main=0 "
+        "WHERE discord_id=? AND character_id=?",
+        (discord_id, character_id),
+    )
+    if row[1]:
+        next_id = con.execute(
+            "SELECT character_id FROM characters "
+            "WHERE discord_id=? AND roster_visible=1 "
+            "ORDER BY character_id LIMIT 1", (discord_id,),
+        ).fetchone()
+        if next_id:
+            con.execute(
+                "UPDATE characters SET is_main=1 "
+                "WHERE discord_id=? AND character_id=?",
+                (discord_id, next_id[0]),
+            )
+    return True
+
+
 def set_character_race(con, discord_id, character_id, race, race_classes):
     """Validate ownership and classic class/race compatibility."""
     row = con.execute(
