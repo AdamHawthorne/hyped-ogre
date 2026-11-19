@@ -45,6 +45,36 @@ has raid history or a public LFG plan. Successful absence/return/removal
 changes queue a durable private Leadership alert; repeat forms do not duplicate
 alerts.
 
+## Leadership display controls on the public Characters board
+
+The public V1 board keeps its four role sections and three columns. Member
+profile links are shown only if **every** role's linked rows fit Discord's
+1,024-character field limit. If any role exceeds that limit, all roles switch
+to plain character names, with no @Discord mentions, preserving alignment.
+Only exceptionally long plain-name groups require visible continuations.
+
+Leadership can use the private slash command group `/roster`:
+
+- `/roster name character:<select> display_name:<text>`: change the name
+  **on the public Characters board only**, up to 40 characters.
+- `/roster reset-name character:<select>`: restore the registered name.
+- `/roster hide character:<select>`: omit a main from the public board.
+- `/roster show character:<select>`: restore a hidden main.
+- `/roster overrides`: privately list every renamed/hidden main and its ID.
+
+Autocomplete includes hidden mains so they can be restored. These commands
+require guild ownership or the existing Leadership role (Discord's initial
+slash command permission defaults to Manage Server; permit Leadership under
+Integrations if necessary). All acknowledgements are ephemeral and edits
+refresh tracked public boards without role pings. In case of Discord failure,
+the saved override retries on the usual one-minute board refresh.
+
+The overrides live in the additive `character_board_overrides` table in
+`raid_signup.db`. They **never** rename or remove canonical characters,
+alter sign-ups, change Sheets, update attendance, modify LFG visibility,
+or affect class/off-spec classroom access. The private V2 pilot uses
+canonical data and is not filtered by V1 board hiding.
+
 ## Off-spec and classroom access
 
 Characters > select character > **Off-spec** stores a secondary spec and role
