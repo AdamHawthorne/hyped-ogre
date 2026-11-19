@@ -434,13 +434,16 @@ class HubCommandTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict(os.environ, {"HYPED_GUILD_ID": str(GUILD_ID)}), patch.object(raid, "RAID_DB", path):
                 async with commands.Bot(command_prefix="test_", intents=discord.Intents.none()) as bot:
                     for _ in range(2):
-                        for module in ("hyped_ogre.features.characters.hub", "hyped_ogre.features.raids.notifications"):
+                        for module in ("hyped_ogre.features.characters.hub", "hyped_ogre.features.characters.board_admin", "hyped_ogre.features.raids.notifications"):
                             await bot.load_extension(module)
                         self.assertIsNotNone(bot.tree.get_command("characters", guild=discord.Object(id=GUILD_ID)))
                         self.assertIsNotNone(bot.tree.get_command("postcharacters", guild=discord.Object(id=GUILD_ID)))
+                        self.assertIsNotNone(bot.tree.get_command("roster", guild=discord.Object(id=GUILD_ID)))
+                        await bot.unload_extension("hyped_ogre.features.characters.board_admin")
                         await bot.unload_extension("hyped_ogre.features.characters.hub")
                         await bot.unload_extension("hyped_ogre.features.raids.notifications")
                         self.assertIsNone(bot.tree.get_command("characters", guild=discord.Object(id=GUILD_ID)))
+                        self.assertIsNone(bot.tree.get_command("roster", guild=discord.Object(id=GUILD_ID)))
 
     async def test_postcharacters_refreshes_one_persistent_board_without_pinging_members(self):
         with tempfile.TemporaryDirectory() as tmp:
