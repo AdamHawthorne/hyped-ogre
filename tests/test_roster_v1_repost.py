@@ -112,9 +112,10 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.saved(), (1002, 1001))
         self.assertEqual(self.channel.send.await_count, 2)
         notice = self.channel.send.await_args_list[0]
-        self.assertIn("<@&777> Ogre wants yer main!", notice.kwargs["content"])
+        self.assertIn("<@&777> Ogre wants yer characters!", notice.kwargs["content"])
+        self.assertIn("your main and any active alts", notice.kwargs["content"])
         self.assertIn("**Rostered**", notice.kwargs["content"])
-        self.assertIn("raid sign-ups", notice.kwargs["content"])
+        self.assertIn("help us stay organised", notice.kwargs["content"])
         self.assertNotIn("Click **Add** to join!", notice.kwargs["content"])
         self.assertNotIn("content", self.channel.send.await_args_list[1].kwargs)
         self.assertEqual(
@@ -148,8 +149,9 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
         args = existing.edit.await_args.kwargs
         self.assertEqual(
             args["content"],
-            "<@&777> Ogre wants yer main! Register it below to earn "
-            "the **Rostered** rank in-game and make raid sign-ups easier.",
+            "<@&777> Ogre wants yer characters! Register your main and any "
+            "active alts below to earn the **Rostered** rank in-game "
+            "and help us stay organised.",
         )
         self.assertFalse(args["allowed_mentions"].roles)
         self.assertFalse(args["allowed_mentions"].users)
@@ -160,6 +162,27 @@ class PostV1Tests(unittest.IsolatedAsyncioTestCase):
         existing.edit.reset_mock()
         await self.cog.clean_existing_roster_announcements()
         existing.edit.assert_not_awaited()
+
+    async def test_previous_short_announcement_is_upgraded_in_place(self):
+        self.messages([1001, 1002])
+        await self.call()
+        existing = SimpleNamespace(
+            content=("<@&777> Ogre wants yer main! Register it below to earn "
+                     "the **Rostered** rank in-game and make raid sign-ups easier."),
+            edit=AsyncMock(),
+        )
+        self.channel.fetch_message = AsyncMock(return_value=existing)
+        self.cog.bot = SimpleNamespace(get_channel=lambda _: self.channel)
+        result = await self.cog.clean_existing_roster_announcements()
+        self.assertTrue(result)
+        self.assertEqual(
+            existing.edit.await_args.kwargs["content"],
+            "<@&777> Ogre wants yer characters! Register your main and any "
+            "active alts below to earn the **Rostered** rank in-game "
+            "and help us stay organised.",
+        )
+        self.assertFalse(existing.edit.await_args.kwargs["allowed_mentions"].roles)
+        self.assertEqual(self.channel.send.await_count, 2)
 
     async def test_repost_replaces_old_board_and_announcement(self):
         self.messages([1001, 1002])

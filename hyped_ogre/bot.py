@@ -2095,8 +2095,22 @@ async def on_ready():
             "GLOBAL COMMAND SYNC FAILED"
         )
 
-    # -------- Admin guild sync (safe) --------
-    if ADMIN_MODE and ADMIN_GUILD_ID:
+    # -------- Hyped guild-local commands --------
+    # /classrooms, /postcharacters and other guild-scoped commands are
+    # distinct from global commands. Previously they were synced only
+    # when ADMIN_MODE happened to be enabled, which could leave new
+    # commands unavailable despite a successful global sync.
+    if HYPED_GUILD_ID:
+        try:
+            guild_synced = await bot.tree.sync(
+                guild=discord.Object(id=HYPED_GUILD_ID)
+            )
+            log_event(f"HYPED GUILD COMMANDS SYNCED count={len(guild_synced)}")
+        except discord.HTTPException as exc:
+            log_error(f"HYPED GUILD COMMAND SYNC FAILED ({type(exc).__name__})")
+
+    # -------- Optional separate admin guild sync --------
+    if ADMIN_MODE and ADMIN_GUILD_ID and ADMIN_GUILD_ID != HYPED_GUILD_ID:
         guild_obj = bot.get_guild(ADMIN_GUILD_ID)
 
         if guild_obj:
