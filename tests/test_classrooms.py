@@ -467,6 +467,63 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(self.cog.allowed(interaction(PLAYER)))
             self.assertFalse(self.cog.allowed(interaction(400, guild_id=77)))
 
+    async def test_hunter_check_and_targeted_sync_repair_expected_rooms(self):
+        self.character("Hunter Main", "Hunter", "Survival", "DPS")
+        member = self.remote_members[PLAYER]
+        interaction = SimpleNamespace(
+            guild=self.guild,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        before = self.store.snapshot(config.GUILD_ID)
+        await self.cog.check_classrooms.callback(self.cog, interaction, member)
+        message = interaction.followup.send.await_args.args[0]
+        self.assertIn("Hunter Main", message)
+        self.assertIn("Survival Hunter", message)
+        self.assertIn(f"<#{CHANNEL_IDS['hunters']}>", message)
+        self.assertIn(f"<#{CHANNEL_IDS['dps']}>", message)
+        self.assertIn("no effective View Channel permission", message)
+        self.assertEqual(self.store.snapshot(config.GUILD_ID), before)
+        self.http_edit.assert_not_awaited()
+
+        interaction.followup.send.reset_mock()
+        await self.cog.sync_classrooms.callback(
+            self.cog, interaction, member=member
+        )
+        message = interaction.followup.send.await_args.args[0]
+        self.assertIn("2 member/channel grants", message)
+        self.assertTrue(self.current("hunters").view_channel)
+        self.assertTrue(self.current("dps").view_channel)
+        self.assertIsNone(self.current("tanks").view_channel)
+        self.assertIsNone(self.current("healers").view_channel)
+
+        interaction.followup.send.reset_mock()
+        await self.cog.check_classrooms.callback(self.cog, interaction, member)
+        message = interaction.followup.send.await_args.args[0]
+        self.assertIn("access OK", message)
+        self.assertEqual((await self.cog.sync_access(self.guild)).added, 0)
+
+    async def test_hunter_check_is_read_only_and_paused_sync_has_guidance(self):
+        self.character("Hunter Alt", "Hunter", "Beast Mastery", "DPS")
+        self.store.set_enabled(config.GUILD_ID, False)
+        member = self.remote_members[PLAYER]
+        interaction = SimpleNamespace(
+            guild=self.guild,
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+        )
+        await self.cog.sync_classrooms.callback(
+            self.cog, interaction, member=member
+        )
+        self.assertIn("/classrooms setup",
+                      interaction.followup.send.await_args.args[0])
+        self.http_edit.assert_not_awaited()
+        interaction.followup.send.reset_mock()
+        await self.cog.check_classrooms.callback(self.cog, interaction, member)
+        self.assertIn("paused / not set up",
+                      interaction.followup.send.await_args.args[0])
+        self.http_edit.assert_not_awaited()
+
     async def test_read_only_commands_leave_register_and_sheet_data_unchanged(self):
         self.character()
         with closing(sqlite3.connect(self.path)) as con:
@@ -493,7 +550,7 @@ class ClassroomLifecycleTests(unittest.IsolatedAsyncioTestCase):
                         cog = bot.get_cog("ClassroomsCog")
                         self.assertTrue(cog.maintenance.is_running())
                         group = bot.tree.get_command("classrooms", guild=discord.Object(id=config.GUILD_ID))
-                        self.assertEqual({c.name for c in group.commands}, {"setup", "sync", "status", "pause"})
+                        self.assertEqual({c.name for c in group.commands}, {"setup", "sync", "check", "status", "pause"})
                         self.assertFalse(cog.store.enabled(config.GUILD_ID))
                         await bot.unload_extension("hyped_ogre.features.classrooms.extension")
                         self.assertFalse(cog.maintenance.is_running())
