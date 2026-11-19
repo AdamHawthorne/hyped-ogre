@@ -426,6 +426,14 @@ def rename_character(discord_id, character_id, name, path=RAID_DB):
         )
 
 
+def remove_character_from_roster(discord_id, character_id, path=RAID_DB):
+    """Make an entry LFG-only while preserving canonical ID and raid history."""
+    with database(path) as con:
+        return character_mutations.remove_from_roster(
+            con, discord_id, character_id
+        )
+
+
 def save_signup(raid_id, discord_id, character_id, path=RAID_DB, *, note=None):
     """Accept one signed-up character per member/night with optional note."""
     if note is not None:
