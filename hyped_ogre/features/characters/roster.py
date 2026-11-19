@@ -1,5 +1,6 @@
 """Compact role-grouped roster embeds for main characters only."""
 
+import math
 import sqlite3
 
 import discord
@@ -133,6 +134,19 @@ def roster_sort_key(record):
     return (-level, -percent, record["name"].casefold(), record["character_id"])
 
 
+def display_ilvl(value):
+    """Use only plausible average item levels, never character levels."""
+    if isinstance(value, bool):
+        return "N/A"
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return "N/A"
+    if not math.isfinite(number) or not 1 <= number <= 250:
+        return "N/A"
+    return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+
 def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
@@ -169,9 +183,7 @@ def render(characters):
             # The V1 middle column is average item level, not character level.
             # rows() chooses an available WoWSims average or the cached Armory
             # average. Unknowns remain N/A instead of inventing an estimate.
-            average = row.get("ilvl")
-            ilvl_text = (str(average) if average not in (None, "", "N/A")
-                         else "N/A")
+            ilvl_text = display_ilvl(row.get("ilvl"))
             block.append((name, ilvl_text, row.get("professions") or "N/A"))
             length += len(name) + 1
         if block:
