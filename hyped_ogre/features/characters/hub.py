@@ -18,7 +18,11 @@ from . import armory
 from .v2 import CharacterBoardV2, groups as v2_groups, chunks as v2_chunks
 
 LOG = logging.getLogger(__name__)
-CHARACTERS_MESSAGE = "Add yer name to mighty Hyped roster!"
+CHARACTERS_MESSAGE = "Add yer main to mighty Hyped roster!"
+ROSTER_ANNOUNCEMENT = (
+    "Ogre wants yer main! Register it below to earn the **Rostered** "
+    "rank in-game and make raid sign-ups easier. Click **Add** to join!"
+)
 
 
 class RosterAddView(discord.ui.View):
@@ -206,6 +210,9 @@ class CharacterHub(commands.Cog):
             con.execute("""CREATE TABLE IF NOT EXISTS character_panel_parts (
                 channel_id INTEGER NOT NULL, position INTEGER NOT NULL,
                 message_id INTEGER NOT NULL, PRIMARY KEY(channel_id,position))""")
+            con.execute("""CREATE TABLE IF NOT EXISTS character_panel_announcements (
+                channel_id INTEGER PRIMARY KEY, message_id INTEGER NOT NULL
+            )""")
             # V2 is an isolated private pilot. Existing public board IDs and
             # stored messages are not replaced, changed or removed.
             con.execute("""CREATE TABLE IF NOT EXISTS character_v2_panels (
@@ -387,7 +394,7 @@ class CharacterHub(commands.Cog):
         if time.monotonic() >= self.armory_next_check:
             # An optional client-credentials lookup, never a requirement
             # for the board to function. The WSE cache remains the fallback.
-            self.armory_next_check = time.monotonic() + 600
+            self.armory_next_check = time.monotonic() + 300
             try:
                 await armory.refresh(raid.RAID_DB)
             except (sqlite3.Error, ValueError):
@@ -548,41 +555,160 @@ class CharacterHub(commands.Cog):
             )
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="postcharacters", description="Post or refresh the shared character board in this channel")
+    @app_commands.command(
+        name="postcharacters",
+        description="Refresh or repost the main-only guild roster",
+    )
+    @app_commands.describe(
+        repost="Publish a new V1 roster and remove the previous board",
+        ping_forever="Ping @Forever on a new post or repost (never on refresh)",
+    )
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.guild_only()
     @app_commands.default_permissions(manage_guild=True)
-    async def post_characters(self, interaction: discord.Interaction):
+    async def post_characters(
+        self, interaction: discord.Interaction, repost: bool = False,
+        ping_forever: bool = True,
+    ):
         if (interaction.guild_id != GUILD_ID or not (
                 interaction.user.id in (int(os.getenv("OWNER_ID") or 0), interaction.guild.owner_id)
                 or any(r.id == LEADERSHIP_ROLE_ID for r in interaction.user.roles))):
-            await interaction.response.send_message("Leadership manages the character board.", ephemeral=True)
+            await interaction.response.send_message(
+                "Leadership manages the character board.", ephemeral=True)
             return
         channel = interaction.channel
         if not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message("Post the board in a text channel.", ephemeral=True)
+            await interaction.response.send_message(
+                "Post the board in a text channel.", ephemeral=True)
             return
+
+        # Ping only on an explicitly published board, not background updates.
+        # Verify role access before making any change to existing messages.
+        forever_role = None
+        if ping_forever:
+            forever_role = next(
+                (role for role in channel.guild.roles
+                 if role.name.strip().casefold() == "forever"), None
+            )
+            if forever_role is None:
+                await interaction.response.send_message(
+                    "Ogre can't find the @Forever role. Choose "
+                    "ping_forever: False, or check the role name.",
+                    ephemeral=True,
+                )
+                return
+            permissions = channel.permissions_for(channel.guild.me)
+            if not (forever_role.mentionable or permissions.mention_everyone):
+                await interaction.response.send_message(
+                    "Ogre cannot mention @Forever in this channel. "
+                    "Allow role mentions, or choose ping_forever: False.",
+                    ephemeral=True,
+                )
+                return
+
         await interaction.response.defer(ephemeral=True)
+        # Manual posting can refresh up to 12 stale Armory entries; normally
+        # the background worker handles hourly character checks in batches.
+        try:
+            await armory.refresh(raid.RAID_DB, limit=armory.MAX_REFRESH)
+        except (ValueError, sqlite3.Error):
+            LOG.warning("Manual Armory refresh delayed; cached iLvls retained.")
+
         async with self.lock:
-            saved = next((r for r in await asyncio.to_thread(self.panels) if r[0] == channel.id), None)
-            if saved:
+            saved = next(
+                (entry for entry in await asyncio.to_thread(self.panels)
+                 if entry[0] == channel.id), None
+            )
+            if saved and not repost:
                 try:
                     await self.refresh(channel.id, saved[1], saved[2])
                 except discord.NotFound:
                     saved = None
-            if saved is None:
+                else:
+                    await interaction.followup.send(
+                        "Ogre refreshed the existing roster. No new post "
+                        "and no @Forever ping. Choose repost: True to announce it.",
+                        ephemeral=True,
+                    )
+                    return
+
+            # New post or deliberate repost: send exactly one role mention
+            # before the replacement board, then retire the previous board.
+            notice = None
+            message = None
+            try:
                 embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
+                if ping_forever:
+                    notice = await channel.send(
+                        content=f"{forever_role.mention} {ROSTER_ANNOUNCEMENT}",
+                        allowed_mentions=discord.AllowedMentions(
+                            everyone=False, users=False, roles=[forever_role],
+                        ),
+                    )
                 message = await channel.send(
                     content=CHARACTERS_MESSAGE,
                     embed=embeds[0], view=HubView(self, channel.id),
-                    allowed_mentions=discord.AllowedMentions.none())
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
                 with raid.database(raid.RAID_DB) as con:
-                    con.execute("INSERT INTO character_panels (guild_id,channel_id,message_id,page_index) "
-                                "VALUES (?,?,?,0) ON CONFLICT(channel_id) DO UPDATE SET "
-                                "message_id=excluded.message_id,page_index=0", (GUILD_ID, channel.id, message.id))
+                    previous_notice = con.execute(
+                        "SELECT message_id FROM character_panel_announcements "
+                        "WHERE channel_id=?", (channel.id,),
+                    ).fetchone()
+                    con.execute(
+                        "INSERT INTO character_panels "
+                        "(guild_id,channel_id,message_id,page_index) "
+                        "VALUES (?,?,?,0) ON CONFLICT(channel_id) DO UPDATE "
+                        "SET message_id=excluded.message_id,page_index=0",
+                        (GUILD_ID, channel.id, message.id),
+                    )
+                    if notice is not None:
+                        con.execute(
+                            "INSERT INTO character_panel_announcements "
+                            "(channel_id,message_id) VALUES (?,?) "
+                            "ON CONFLICT(channel_id) DO UPDATE "
+                            "SET message_id=excluded.message_id",
+                            (channel.id, notice.id),
+                        )
                 await self.sync_parts(channel, embeds[1:])
-        await interaction.followup.send("Ogre's roster is ready. Everyone can use /characters privately.", ephemeral=True)
+            except (sqlite3.Error, discord.HTTPException) as exc:
+                LOG.warning("Could not post V1 roster: %s", type(exc).__name__)
+                if message is not None:
+                    try:
+                        await message.delete()
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+                if notice is not None:
+                    try:
+                        await notice.delete()
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+                await interaction.followup.send(
+                    "Ogre couldn't publish the roster. Check channel "
+                    "permissions before retrying.", ephemeral=True,
+                )
+                return
 
+            # Only delete the previous posts once the new board exists.
+            old_ids = [saved[1]] if saved else []
+            if notice is not None and previous_notice:
+                old_ids.append(previous_notice[0])
+            for old_id in old_ids:
+                if old_id in (message.id, getattr(notice, "id", None)):
+                    continue
+                try:
+                    await channel.get_partial_message(old_id).delete()
+                except discord.NotFound:
+                    pass
+                except (discord.Forbidden, discord.HTTPException):
+                    LOG.warning("Old roster/announcement %s not removable.", old_id)
+
+        await interaction.followup.send(
+            "Ogre posted a fresh V1 roster with the @Forever invitation."
+            if notice is not None else
+            "Ogre posted a fresh V1 roster without a role ping.",
+            ephemeral=True,
+        )
 
 async def setup(bot):
     await bot.add_cog(CharacterHub(bot))
