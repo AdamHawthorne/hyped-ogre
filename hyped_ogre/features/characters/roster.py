@@ -166,11 +166,13 @@ def render(characters):
             if block and (length + len(name) + 1 > 1000 or len(block) >= 10):
                 blocks.append(block)
                 block, length = [], 0
-            level = row.get("level")
-            level_text = (str(level) if isinstance(level, int)
-                          and not isinstance(level, bool)
-                          and 1 <= level <= 60 else "N/A")
-            block.append((name, level_text, row.get("professions") or "N/A"))
+            # The V1 middle column is average item level, not character level.
+            # rows() chooses an available WoWSims average or the cached Armory
+            # average. Unknowns remain N/A instead of inventing an estimate.
+            average = row.get("ilvl")
+            ilvl_text = (str(average) if average not in (None, "", "N/A")
+                         else "N/A")
+            block.append((name, ilvl_text, row.get("professions") or "N/A"))
             length += len(name) + 1
         if block:
             blocks.append(block)
@@ -179,7 +181,7 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "Level", "Professions")
+            names = (heading, "iLvl", "Professions")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
             if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:
