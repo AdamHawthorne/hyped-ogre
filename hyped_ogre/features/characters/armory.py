@@ -55,12 +55,14 @@ def initialise(path):
             guild TEXT NOT NULL DEFAULT '',
             updated_at INTEGER NOT NULL,
             ilvl INTEGER,
-            professions TEXT NOT NULL DEFAULT '[]'
+            professions TEXT NOT NULL DEFAULT '[]',
+            average_ilvl_version INTEGER NOT NULL DEFAULT 1
         )""")
         columns = {
             row[1] for row in con.execute("PRAGMA table_info(character_armory_cache)")
         }
-        legacy = "ilvl" not in columns or "professions" not in columns
+        legacy = any(field not in columns for field in
+                     ("ilvl", "professions", "average_ilvl_version"))
         if "ilvl" not in columns:
             con.execute("ALTER TABLE character_armory_cache ADD COLUMN ilvl INTEGER")
         if "professions" not in columns:
@@ -68,9 +70,15 @@ def initialise(path):
                 "ALTER TABLE character_armory_cache "
                 "ADD COLUMN professions TEXT NOT NULL DEFAULT '[]'"
             )
+        if "average_ilvl_version" not in columns:
+            # Pre-existing entries favoured *equipped* iLvl. Force one
+            # bounded refresh so V1 displays Blizzard's average iLvl instead.
+            con.execute(
+                "ALTER TABLE character_armory_cache ADD COLUMN "
+                "average_ilvl_version INTEGER NOT NULL DEFAULT 1"
+            )
         if legacy:
-            # Existing level-only cache rows should be refetched soon to
-            # populate their new item-level/profession fields.
+            # Invalidate only once on migration; future restarts respect TTL.
             con.execute("UPDATE character_armory_cache SET updated_at=0")
 
 
