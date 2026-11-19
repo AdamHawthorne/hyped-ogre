@@ -247,7 +247,7 @@ class CharacterHub(commands.Cog):
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             raise ValueError("V2 character board channel is not in Hyped.")
         grouped = v2_groups(await asyncio.to_thread(rows, raid.RAID_DB))
-        pages = v2_chunks(grouped)
+        pages = v2_chunks(grouped, channel.guild)
         guild = channel.guild
         await channel.get_partial_message(message_id).edit(
             content=None, embeds=[],
@@ -369,7 +369,7 @@ class CharacterHub(commands.Cog):
                     saved = None
             if not saved:
                 grouped = v2_groups(await asyncio.to_thread(rows, raid.RAID_DB))
-                pages = v2_chunks(grouped)
+                pages = v2_chunks(grouped, interaction.guild)
                 message = await interaction.channel.send(
                     view=CharacterBoardV2(
                         self, interaction.channel_id, interaction.guild,
