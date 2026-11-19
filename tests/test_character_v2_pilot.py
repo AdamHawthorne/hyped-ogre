@@ -29,7 +29,8 @@ class CharacterV2Tests(unittest.TestCase):
         self.assertEqual([role for role, _ in grouped],
                          ["Tanks", "Healers", "Melee"])
         self.assertEqual([r["name"] for r in grouped[0][1]], ["Big Snore"])
-        self.assertEqual([r["name"] for r in grouped[1][1]], ["Snore Bis"])
+        self.assertEqual([r["name"] for r in grouped[1][1]], ["Other Gamer"])
+        self.assertEqual([r["name"] for r in grouped[2][1]], ["Snore Bis"])
         main = v2.character_line(records[1])
         alt = v2.character_line(records[0])
         self.assertIn("**Big Snore** · Prot Warrior · iLvl 58 · Att N/A", main)
