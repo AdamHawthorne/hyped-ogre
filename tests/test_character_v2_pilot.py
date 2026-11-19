@@ -233,14 +233,14 @@ class CharacterV2Tests(unittest.TestCase):
     def test_armory_additive_migration_and_profession_parser(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "cache.db")
-            with sqlite3.connect(path) as con:
+            with raid.database(path) as con:
                 con.execute(
                     "CREATE TABLE character_armory_cache "
                     "(character_id INTEGER PRIMARY KEY,character_name TEXT,"
                     "level INTEGER,race TEXT,guild TEXT,updated_at INTEGER)"
                 )
             armory.initialise(path)
-            with sqlite3.connect(path) as con:
+            with raid.database(path) as con:
                 names = [row[1] for row in con.execute(
                     "PRAGMA table_info(character_armory_cache)"
                 )]
