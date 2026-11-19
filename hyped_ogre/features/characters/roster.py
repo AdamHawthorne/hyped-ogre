@@ -199,32 +199,59 @@ def render(characters):
              signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
             key=v1_class_ilvl_sort_key,
         )
-        blocks, block, length = [], [], 0
-        for row in members:
-            # Discord renders the three inline fields independently. A full
-            # Discord username/mention often wraps onto a second line and
-            # misaligns the Level and Professions rows. Link the character
-            # name to the member's Discord profile instead, retaining a
-            # clickable owner without repeating a long display name.
-            linked_name = (
-                f"[{safe_name(row['name'])}]"
-                f"(https://discord.com/users/{int(row['discord_id'])})"
-            )
-            name = f"{markup(row['class_name'])} {linked_name}"
-            # 1024 is the per-field value limit, including emoji and mention markup.
-            if block and (length + len(name) + 1 > 1000 or len(block) >= 10):
+        # Discord permits at most 1024 characters per embed field. The
+        # former ten-row cutoff caused unnecessary "Ranged · continued"
+        # sections. Fit the whole role into one three-column block whenever
+        # possible, switching from linked to plain character names only if
+        # repeated profile URLs would consume the field limit.
+        def character_entry(row, *, linked):
+            name = safe_name(row["name"])
+            if linked:
+                name = (
+                    f"[{name}]"
+                    f"(https://discord.com/users/{int(row['discord_id'])})"
+                )
+            return f"{markup(row['class_name'])} {name}"
+
+        def lines_for_role(*, linked):
+            result = []
+            for row in members:
+                level = row.get("level")
+                level_text = (
+                    str(level) if type(level) is int and 1 <= level <= 60
+                    else "N/A"
+                )
+                ilvl_text = display_ilvl(row.get("ilvl"))
+                result.append((
+                    character_entry(row, linked=linked),
+                    f"{level_text} ({ilvl_text})",
+                    row.get("professions") or "N/A",
+                ))
+            return result
+
+        entries = lines_for_role(linked=True)
+        if any(
+            len("\n".join(entry[col] for entry in entries)) > 1024
+            for col in range(3)
+        ):
+            # Full Discord profile URLs count towards the 1024-character
+            # field limit even though they render as compact labels.
+            entries = lines_for_role(linked=False)
+
+        blocks, block = [], []
+        column_lengths = [0, 0, 0]
+        for entry in entries:
+            next_lengths = [
+                column_lengths[col] + len(entry[col]) + int(bool(block))
+                for col in range(3)
+            ]
+            if block and any(n > 1024 for n in next_lengths):
                 blocks.append(block)
-                block, length = [], 0
-            # Keep character level and average item level side by side,
-            # using the Armory cache and saved WoWSims values already in rows().
-            # Missing values stay explicit rather than being invented.
-            level = row.get("level")
-            level_text = (str(level) if type(level) is int
-                          and 1 <= level <= 60 else "N/A")
-            ilvl_text = display_ilvl(row.get("ilvl"))
-            block.append((name, f"{level_text} ({ilvl_text})",
-                          row.get("professions") or "N/A"))
-            length += len(name) + 1
+                block = []
+                column_lengths = [0, 0, 0]
+                next_lengths = [len(entry[col]) for col in range(3)]
+            block.append(entry)
+            column_lengths = next_lengths
         if block:
             blocks.append(block)
         if not blocks:
