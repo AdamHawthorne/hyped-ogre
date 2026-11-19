@@ -186,7 +186,10 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(fields[0].name, 'Healers (3)')
         self.assertEqual([len(field.value.splitlines()) for field in fields],
                          [3, 3, 3])
-        for index, record in enumerate(data):
+        # Druids are grouped before priests; priest names then sort
+        # alphabetically because all three have the same average iLvl.
+        expected = [data[1], data[2], data[0]]
+        for index, record in enumerate(expected):
             line = fields[0].value.splitlines()[index]
             self.assertIn(record['name'], line)
             self.assertIn(
@@ -194,7 +197,7 @@ class LayoutTests(unittest.TestCase):
             )
             self.assertNotIn(' / <@', line)
         self.assertEqual(fields[1].value.splitlines(),
-                         ['60 (67.5)', '60 (67.5)', '47 (67.5)'])
+                         ['60 (67.5)', '47 (67.5)', '60 (67.5)'])
 
     def test_professions_keep_one_line_per_character_and_fit_discord_fields(self):
         players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 11)]
@@ -244,35 +247,46 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
 
-    def test_sort_by_level_then_attendance_descending_and_name_for_ties(self):
-        # All players remain in the same category, including those without data.
-        players = [self.row(n, 'Tank', 'Warrior', 'Protection') for n in range(1, 10)]
+    def test_v1_groups_classes_then_sorts_descending_ilvl_with_unknowns_last(self):
+        # Deliberately scramble level, attendance, class and item level.
+        # Within Healers, the visible sequence must be Druid, Paladin,
+        # Priest; each class is sorted by iLvl, not character level.
+        players = [self.row(n, 'Healer', 'Priest', 'Holy') for n in range(1, 10)]
         updates = [
-            ('Level39', 39, '90%'),
-            ('Level60Low', 60, '25%'),
-            ('Level60High', 60, '100%'),
-            ('Level60MissingAtt', 60, 'N/A'),
-            ('Level39High', 39, '100%'),
-            ('UnknownHighAtt', None, '100%'),
-            ('UnknownMissingAtt', None, 'N/A'),
-            ('Level60TieZ', 60, '50%'),
-            ('Level60TieA', 60, '50%'),
+            ('PriestLow', 'Priest', '59', 60, '90%'),
+            ('DruidLow', 'Druid', 40, 60, '100%'),
+            ('PriestHigh', 'Priest', 70.5, 50, '10%'),
+            ('PaladinMissing', 'Paladin', 'N/A', 60, '100%'),
+            ('DruidHigh', 'Druid', '75', 40, '0%'),
+            ('PriestMissing', 'Priest', None, 60, '100%'),
+            ('PaladinHigh', 'Paladin', 80, 30, '0%'),
+            ('PriestTieZ', 'Priest', 62.0, 60, '50%'),
+            ('PriestTieA', 'Priest', 62, 45, '95%'),
         ]
-        for player, (name, level, attendance) in zip(players, updates):
-            player.update(name=name, level=level, attendance=attendance)
+        for row, (name, klass, ilvl, level, attendance) in zip(players, updates):
+            row.update(name=name, class_name=klass, ilvl=ilvl,
+                       level=level, attendance=attendance,
+                       professions=f'Min: {row["character_id"]}')
         embed = roster.render(players)[0]
-        ordered = [
-            'Level60High', 'Level60TieA', 'Level60TieZ', 'Level60Low',
-            'Level60MissingAtt', 'Level39High', 'Level39',
-            'UnknownHighAtt', 'UnknownMissingAtt',
+        fields = embed.fields[3:6]
+        self.assertEqual(fields[0].name, 'Healers (9)')
+        expected = [
+            'DruidHigh', 'DruidLow', 'PaladinHigh', 'PaladinMissing',
+            'PriestHigh', 'PriestTieA', 'PriestTieZ', 'PriestLow',
+            'PriestMissing',
         ]
-        character_lines = embed.fields[0].value.splitlines()
-        for index, name in enumerate(ordered):
-            self.assertIn(f'[{name}](https://discord.com/users/', character_lines[index])
-        self.assertEqual(embed.fields[1].value.splitlines(),
-                         ['60 (67.5)'] * 5 + ['39 (67.5)'] * 2
-                         + ['N/A (67.5)'] * 2)
-        self.assertEqual(embed.fields[2].value.splitlines(), ['N/A'] * 9)
+        input_by_name = {r['name']: r for r in players}
+        character_lines = fields[0].value.splitlines()
+        for index, name in enumerate(expected):
+            self.assertIn(f'[{name}](https://discord.com/users/',
+                          character_lines[index])
+        self.assertEqual(fields[1].value.splitlines(), [
+            '40 (75)', '60 (40)', '30 (80)', '60 (N/A)',
+            '50 (70.5)', '45 (62)', '60 (62)', '60 (59)', '60 (N/A)',
+        ])
+        self.assertEqual(fields[2].value.splitlines(), [
+            f'Min: {input_by_name[name]["character_id"]}' for name in expected
+        ])
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
