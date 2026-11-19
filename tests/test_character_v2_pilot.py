@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from cogs import raid_signup as raid, raid_schedule
-from hyped_ogre.features.characters import armory, roster, v2
+from hyped_ogre.features.characters import armory, roster, v2, admin_ui
 from hyped_ogre.features.characters.hub import CharacterHub
 from hyped_ogre.features.classrooms.config import GUILD_ID
 
@@ -116,6 +116,47 @@ class CharacterV2Tests(unittest.TestCase):
             self.assertEqual(registered[0]["level"], None)
             self.assertIsNone(registered[0]["level_source"])
 
+    def test_leadership_can_unlist_historic_character_without_losing_data(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = str(Path(temp) / "raid.db")
+            raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
+            raid.save_character(101, "Big Snore", "Warrior",
+                                "Protection", "Tank", path)
+            raid.save_character(101, "Snore Bis", "Warrior",
+                                "Fury", "DPS", path)
+            saved = {r[1]: r[0] for r in raid.member_characters(101, path)}
+            main_id, alt_id = saved["Big Snore"], saved["Snore Bis"]
+            with raid.database(path) as con:
+                con.execute(
+                    "INSERT INTO gear_exports "
+                    "(character_id,submitted_at,format,raw_text) "
+                    "VALUES (?,?,?,?)",
+                    (main_id, "2026-11-19", "wowsims_json",
+                     '{"name":"Big","level":60,"class":"warrior"}'),
+                )
+            self.assertTrue(raid.remove_character_from_roster(101, main_id, path))
+            with raid.database(path) as con:
+                hidden = con.execute(
+                    "SELECT roster_visible,is_main FROM characters "
+                    "WHERE character_id=?", (main_id,)
+                ).fetchone()
+                self.assertEqual(hidden, (0, 0))
+                self.assertEqual(con.execute(
+                    "SELECT roster_visible,is_main FROM characters "
+                    "WHERE character_id=?", (alt_id,)
+                ).fetchone(), (1, 1))
+                self.assertEqual(con.execute(
+                    "SELECT character_id FROM gear_exports"
+                ).fetchone()[0], main_id)
+            self.assertFalse(raid.remove_character_from_roster(101, main_id, path))
+            self.assertTrue(raid.promote_character_to_roster(101, main_id, path))
+            with raid.database(path) as con:
+                self.assertEqual(con.execute(
+                    "SELECT roster_visible FROM characters "
+                    "WHERE character_id=?", (main_id,)
+                ).fetchone()[0], 1)
+
     def test_armory_identity_is_verified_before_using_level(self):
         self.assertEqual(armory.slug("Fu Ming"), "fu-ming")
         self.assertIn("fu-ming", armory.public_url("Fu Ming"))
@@ -128,6 +169,26 @@ class CharacterV2Tests(unittest.TestCase):
         self.assertIsNone(armory.parse_character(
             {**good, "level": 61}, "Fu Ming"))
         self.assertIsNone(armory.slug("not-a-full-name"))
+
+
+class V2LeadershipGuardTests(unittest.TestCase):
+    def test_leadership_requires_owner_guild_and_private_channel(self):
+        def fake(gid, cid, uid):
+            return SimpleNamespace(
+                guild_id=gid, channel_id=cid,
+                user=SimpleNamespace(id=uid),
+                guild=SimpleNamespace(owner_id=42),
+            )
+        self.assertTrue(admin_ui.authorised(
+            fake(GUILD_ID, raid.TEST_CHANNEL_ID, 42)))
+        self.assertFalse(admin_ui.authorised(
+            fake(GUILD_ID, 555, 42)))
+        self.assertFalse(admin_ui.authorised(
+            fake(GUILD_ID, raid.TEST_CHANNEL_ID, 98)))
+        self.assertFalse(admin_ui.authorised(
+            fake(555, raid.TEST_CHANNEL_ID, 42)))
+        self.assertFalse(admin_ui.authorised(
+            fake(GUILD_ID, raid.TEST_CHANNEL_ID, 42), actor_id=98))
 
 
 class V2PrivateGuardTests(unittest.IsolatedAsyncioTestCase):
