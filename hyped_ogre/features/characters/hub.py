@@ -582,10 +582,16 @@ class CharacterHub(commands.Cog):
                 "Post the board in a text channel.", ephemeral=True)
             return
 
-        # Ping only on an explicitly published board, not background updates.
+        # A plain /postcharacters refresh should never require mention
+        # permissions or ping the role, even when ping_forever defaults True.
+        existing = next(
+            (entry for entry in await asyncio.to_thread(self.panels)
+             if entry[0] == channel.id), None
+        )
+        should_announce = ping_forever and (repost or existing is None)
         # Verify role access before making any change to existing messages.
         forever_role = None
-        if ping_forever:
+        if should_announce:
             forever_role = next(
                 (role for role in channel.guild.roles
                  if role.name.strip().casefold() == "forever"), None
@@ -638,7 +644,7 @@ class CharacterHub(commands.Cog):
             message = None
             try:
                 embeds = render(await asyncio.to_thread(rows, raid.RAID_DB))
-                if ping_forever:
+                if should_announce:
                     notice = await channel.send(
                         content=f"{forever_role.mention} {ROSTER_ANNOUNCEMENT}",
                         allowed_mentions=discord.AllowedMentions(
@@ -670,6 +676,11 @@ class CharacterHub(commands.Cog):
                             "SET message_id=excluded.message_id",
                             (channel.id, notice.id),
                         )
+                    else:
+                        con.execute(
+                            "DELETE FROM character_panel_announcements "
+                            "WHERE channel_id=?", (channel.id,),
+                        )
                 await self.sync_parts(channel, embeds[1:])
             except (sqlite3.Error, discord.HTTPException) as exc:
                 LOG.warning("Could not post V1 roster: %s", type(exc).__name__)
@@ -691,7 +702,7 @@ class CharacterHub(commands.Cog):
 
             # Only delete the previous posts once the new board exists.
             old_ids = [saved[1]] if saved else []
-            if notice is not None and previous_notice:
+            if previous_notice:
                 old_ids.append(previous_notice[0])
             for old_id in old_ids:
                 if old_id in (message.id, getattr(notice, "id", None)):
