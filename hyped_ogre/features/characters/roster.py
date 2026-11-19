@@ -6,7 +6,7 @@ import discord
 from cogs import raid_signup as raid
 from cogs.emojis import markup
 from hyped_ogre.features.raids.schedule import signup_role_group
-from . import equipment, items
+from . import armory, equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
 
@@ -64,6 +64,7 @@ def rows(path):
                 credits[row[0]] = row[1]
     catalog = items.cached_catalog(path)
     gear = {r["character_id"]: r for r in equipment.latest_profiles(path)}
+    armory_levels = armory.cached(path)
     for character in characters:
         character["attendance"] = (f"{100 * credits.get(character['discord_id'], 0) / len(window):.0f}%"
                                    if window else "N/A")
@@ -74,6 +75,14 @@ def rows(path):
         character["level"] = (level if isinstance(level, int)
                               and not isinstance(level, bool)
                               and 1 <= level <= 60 else None)
+        character["level_source"] = "WoWSims" if character["level"] is not None else None
+        live = armory_levels.get(character["character_id"], {})
+        live_level = live.get("level")
+        if (live.get("name") == character["name"]
+                and isinstance(live_level, int) and not isinstance(live_level, bool)
+                and 1 <= live_level <= 60):
+            character["level"] = live_level
+            character["level_source"] = "Blizzard"
         character["professions"] = profession_text(parsed)
         average, known, equipped = equipment.average_item_level(parsed, catalog)
         character["ilvl"] = (f"{average:.1f}" if average is not None and known == equipped else "N/A")
