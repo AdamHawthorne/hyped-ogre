@@ -105,6 +105,8 @@ class CharacterBoardV2(discord.ui.LayoutView):
                  "hyped_characters_v2_wse", self.wowsims),
                 ("Remove / Absent", discord.ButtonStyle.danger,
                  "hyped_characters_v2_remove", self.remove),
+                ("Leadership", discord.ButtonStyle.secondary,
+                 "hyped_characters_v2_leadership", self.leadership),
             ]
             for label, style, cid, callback in definitions:
                 button = discord.ui.Button(
@@ -158,6 +160,23 @@ class CharacterBoardV2(discord.ui.LayoutView):
                 ephemeral=True)
             return
         await cog.on_gear(interaction)
+
+    async def leadership(self, interaction):
+        from .admin_ui import authorised, LeaderCharacterPicker
+        if not authorised(interaction):
+            await interaction.response.send_message(
+                "Leadership corrections are only available to the guild "
+                "owner in Ogre's private channel.", ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            "Select a character. Rename, change main, remove from the "
+            "visible roster or delete an unused registration.",
+            view=LeaderCharacterPicker(
+                self.cog, interaction.user.id,
+            ),
+            ephemeral=True,
+        )
 
     async def remove(self, interaction):
         from .absence_ui import AbsenceActions
