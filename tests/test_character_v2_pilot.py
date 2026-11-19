@@ -27,21 +27,50 @@ class CharacterV2Tests(unittest.TestCase):
         ]
         grouped = v2.groups(records)
         self.assertEqual([role for role, _ in grouped],
-                         ["Tanks", "Healers", "Melee"])
+                         ["Tanks", "Melee", "Healers"])
         self.assertEqual([r["name"] for r in grouped[0][1]], ["Big Snore"])
-        self.assertEqual([r["name"] for r in grouped[2][1]], ["Snore Bis"])
+        self.assertEqual([r["name"] for r in grouped[1][1]], ["Snore Bis"])
         main = v2.character_line(records[1])
         alt = v2.character_line(records[0])
-        self.assertIn("**Big Snore** / 60 / 58 / N/A", main)
-        self.assertIn("Discord ID 101 (unverified)", main)
+        self.assertIn("**Big Snore** - iLvl 58 Prot Warrior", main)
+        self.assertIn("Profs: N/A - Attendance: N/A", main)
         self.assertIn("Alt:", alt)
-        self.assertIn("Snore Bis / 39 / 41.5 / Min: 65, BS: 120", alt)
+        self.assertIn("Snore Bis - iLvl 41.5 Fury Warrior", alt)
+        self.assertIn("Mining(65) and BS(120)", alt)
         self.assertTrue(alt.startswith("-# "))
         self.assertEqual(alt.count("\\n"), 0)
         pages = v2.chunks(grouped)
+        self.assertEqual(len(pages), 1)
         self.assertIn("Tanks (1)", pages[0][0])
-        self.assertIn("Healers (1)", pages[0][1])
-        self.assertIn("Melee (1)", pages[0][2])
+        self.assertIn("Melee (1)", pages[0][1])
+        self.assertIn("Healers (1)", pages[0][2])
+
+    def test_raid_style_v2_is_one_container_for_normal_roster(self):
+        import discord
+        entries = [
+            {"character_id": n, "discord_id": n, "name": f"Guild Player{n}",
+             "class_name": "Warrior" if n <= 20 else "Mage",
+             "spec": "Protection" if n <= 20 else "Frost",
+             "role": "Tank" if n <= 20 else "DPS",
+             "level": 60, "ilvl": "63", "attendance": "N/A",
+             "professions": "BS: 300 / Min: 300", "is_main": True}
+            for n in range(1, 41)
+        ]
+        pages = v2.chunks(v2.groups(entries))
+        self.assertEqual(len(pages), 1)
+        view = v2.CharacterBoardV2(
+            SimpleNamespace(bot=None), raid.TEST_CHANNEL_ID,
+            grouped=pages[0],
+        )
+        self.assertEqual(len(view.children), 2)
+        self.assertIsInstance(view.children[0], discord.ui.Container)
+        self.assertIsInstance(view.children[1], discord.ui.ActionRow)
+        self.assertIsInstance(view.children[0].children[0], discord.ui.Section)
+        self.assertIn("<Hyped> Characters",
+                      view.children[0].children[0].children[0].content)
+        self.assertEqual(len(view.children[1].children), 5)
+        self.assertTrue(view.is_persistent())
+        self.assertTrue(any("Attendance: N/A" in block for block in pages[0]))
 
     def test_discord_username_is_explicit_link_when_known(self):
         member = SimpleNamespace(display_name="Bread User", name="breaduser")
@@ -262,6 +291,42 @@ class CharacterV2Tests(unittest.TestCase):
             {"name": "Mining", "level": 155},
             {"name": "Blacksmithing", "level": 184},
         ])
+
+    def test_armory_equipped_ilvl_fallback_and_cache_coverage(self):
+        profile = {"name": "Big", "surname": "Snore", "level": 60,
+                   "equipped_item_level": 65}
+        self.assertEqual(
+            armory.parse_character(profile, "Big Snore")["ilvl"], 65)
+        profile["average_item_level"] = 58
+        self.assertEqual(
+            armory.parse_character(profile, "Big Snore")["ilvl"], 65)
+        profile["equipped_item_level"] = None
+        self.assertEqual(
+            armory.parse_character(profile, "Big Snore")["ilvl"], 58)
+        with tempfile.TemporaryDirectory() as temp:
+            path = str(Path(temp) / "raid.db")
+            raid.create_schema(path)
+            raid.save_character(101, "Big Snore", "Warrior",
+                                "Protection", "Tank", path)
+            cid = raid.member_characters(101, path)[0][0]
+            armory.initialise(path)
+            before = armory.coverage(path)
+            self.assertEqual(before["visible"], 1)
+            self.assertEqual(before["ilvls"], 0)
+            with raid.database(path) as con:
+                con.execute(
+                    "INSERT INTO character_armory_cache "
+                    "(character_id,character_name,level,ilvl,updated_at) "
+                    "VALUES (?,?,?,?,?)", (cid, "Big Snore", 60, 65, 100))
+            after = armory.coverage(path)
+            self.assertEqual(after["ilvls"], 1)
+            self.assertEqual(after["levels"], 1)
+            with patch.object(armory, "cached", return_value={
+                cid: {"name": "Big Snore", "level": 60, "ilvl": 65,
+                      "profession_details": []},
+            }):
+                raid_schedule.ensure_raid_fields(path)
+                self.assertEqual(roster.rows(path)[0]["ilvl"], "65")
 
     def test_armory_identity_is_verified_before_using_level(self):
         self.assertEqual(armory.slug("Fu Ming"), "fu-ming")
