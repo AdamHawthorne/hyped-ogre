@@ -94,7 +94,21 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
                      send_messages=True, read_message_history=True, manage_roles=True)
 
         async def fetch_channels(guild):
-            return self.channels()
+            # Deliberately fail if code regresses to the all-server endpoint:
+            # production has an unrelated Discord channel of unknown type 20.
+            raise discord.InvalidData(
+                "Unknown channel type 20 for channel ID 1569232802229129305"
+            )
+
+        async def fetch_channel(guild, ident):
+            # Targeted channel retrieval must not inspect unrelated channels.
+            for channel in self.channels():
+                if channel.id == ident:
+                    return channel
+            raise discord.NotFound(
+                SimpleNamespace(status=404, reason="Not Found"),
+                {"code": 10003, "message": "Unknown Channel"},
+            )
 
         async def fetch_member(guild, ident):
             if ident not in self.remote_members:
@@ -112,7 +126,11 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
                 if int(ow["id"]) != target_id
             ]
 
-        for name, value in (("fetch_channels", fetch_channels), ("fetch_member", fetch_member)):
+        for name, value in (
+            ("fetch_channels", fetch_channels),
+            ("fetch_channel", fetch_channel),
+            ("fetch_member", fetch_member),
+        ):
             self.addCleanup(patch.stopall)
             patch.object(discord.Guild, name, value).start()
         self.http_edit = patch.object(self.bot.http, "edit_channel_permissions",
@@ -312,6 +330,23 @@ class ClassroomFixture(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.current(key).read_message_history)
         self.assertEqual(len(self.store.snapshot(config.GUILD_ID)[1]), 2)
         self.assertEqual((await restarted.sync_access(self.guild)).added, 0)
+
+    async def test_unknown_unrelated_server_channel_does_not_block_classrooms(self):
+        # Discord recently introduced type 20; its presence in a guild-wide
+        # fetch previously raised InvalidData before any classroom could sync.
+        self.character("Hunter Main", "Hunter", "Survival", "DPS")
+        with patch.object(
+            discord.Guild, "fetch_channels",
+            side_effect=discord.InvalidData("Unknown channel type 20"),
+        ) as bulk:
+            category, channels = await self.cog.destinations(self.guild)
+            self.assertEqual(category.id, config.CATEGORY_ID)
+            self.assertEqual(len(channels), len(config.CHANNELS))
+            result = await self.cog.sync_access(self.guild)
+            self.assertEqual((result.added, result.errors), (2, []))
+            self.assertTrue(self.current("hunters").view_channel)
+            self.assertTrue(self.current("dps").view_channel)
+            bulk.assert_not_called()
 
     async def test_missing_entry_without_qualifying_character_is_not_restored(self):
         ident = self.character()
