@@ -41,21 +41,24 @@ def safe(text):
     )
 
 
-def discord_name(guild, user_id):
+def discord_name(guild, user_id, verified=None):
+    # Caller may have checked the Discord API to resolve an uncached member.
+    info = (verified or {}).get(user_id)
+    if info and info[0] == "departed":
+        return f"Discord ID {user_id} (left server)"
+    if info and info[0] == "member":
+        return f"[{safe(info[1])}](https://discord.com/users/{user_id})"
     member = guild.get_member(user_id) if guild else None
     if member:
         display = safe(
             getattr(member, "display_name", "") or getattr(member, "name", "")
         )
-        # A markdown profile link remains usable even when Discord cannot
-        # resolve a silent <@id> mention on the receiving client's cache.
+        # A profile link avoids Discord's non-pinging mention cache issue.
         return f"[{display}](https://discord.com/users/{user_id})"
-    # This is only an unresolved cache entry, NOT proof that they left.
-    # An explicit Leadership audit calls guild.fetch_member to verify it.
     return f"Discord ID {user_id} (unverified)"
 
 
-def character_line(record, guild=None):
+def character_line(record, guild=None, verified=None):
     """One plain line: class, name, level, iLvl, professions, alt and Discord."""
     klass = record.get("class_name") or ""
     class_icon = markup(klass) or ""
@@ -73,20 +76,20 @@ def character_line(record, guild=None):
     user_id = int(record["discord_id"])
     line = (
         f"{lead} {label} / {level_label} / {safe(ilvl_label)} / "
-        f"{professions} - {discord_name(guild, user_id)}"
+        f"{professions} - {discord_name(guild, user_id, verified)}"
     ).strip()
     # Only alt rows are muted: one line per entry, no player cards/columns.
     return line if is_main else "-# " + line
 
 
-def _role_blocks(role, members, guild):
+def _role_blocks(role, members, guild, verified):
     """Split oversized roles without truncating their individual character rows."""
     base = f"**{role} ({len(members)})**"
     heading = base
     lines = []
     size = len(heading)
     for record in members:
-        line = character_line(record, guild)
+        line = character_line(record, guild, verified)
         # Each entry is bounded by the character registration's length,
         # profession labels and Discord's maximum username length.
         if lines and size + len(line) + 1 > SECTION_CHAR_LIMIT:
@@ -100,11 +103,11 @@ def _role_blocks(role, members, guild):
         yield heading + "\n" + "\n".join(lines)
 
 
-def chunks(grouped, guild=None):
+def chunks(grouped, guild=None, verified=None):
     """Pack role blocks into bounded messages; never hide entries behind pages."""
     blocks = [
         block for role, members in grouped
-        for block in _role_blocks(role, members, guild)
+        for block in _role_blocks(role, members, guild, verified)
     ]
     pages = [[]]
     length = 0
