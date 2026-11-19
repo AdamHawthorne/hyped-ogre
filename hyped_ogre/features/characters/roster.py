@@ -71,9 +71,11 @@ def rows(path):
                                    if window else "N/A")
         export = gear.get(character["character_id"])
         parsed = equipment.parse_export(export["raw_text"]) if export else None
-        # Armory is the read-only default. An explicitly submitted WoWSims
-        # snapshot overrides fields it actually supplies, without replacing
-        # registered names, roles or ownership in the source-of-truth DB.
+        # Blizzard Armory takes precedence for level and average item level.
+        # Old WoWSims exports must not mask valid Blizzard stats. WoWSims
+        # still supplies immediate fallback values when an Armory field is
+        # unavailable, plus the latest submitted professions. Neither
+        # source changes canonical registration or Discord ownership.
         live = armory_levels.get(character["character_id"], {})
         if live.get("name") != character["name"]:
             live = {}
@@ -98,7 +100,7 @@ def rows(path):
 
         if parsed:
             wse_level = parsed.get("level")
-            if type(wse_level) is int and 1 <= wse_level <= 60:
+            if not valid_live and type(wse_level) is int and 1 <= wse_level <= 60:
                 character["level"] = wse_level
                 character["level_source"] = "WoWSims"
             wse_profs = profession_text(parsed)
@@ -106,7 +108,8 @@ def rows(path):
                 character["professions"] = wse_profs
                 character["professions_source"] = "WoWSims"
             average, known, equipped = equipment.average_item_level(parsed, catalog)
-            if average is not None and equipped > 0 and known == equipped:
+            if (character["ilvl_source"] is None
+                    and average is not None and equipped > 0 and known == equipped):
                 character["ilvl"] = f"{average:.1f}"
                 character["ilvl_source"] = "WoWSims"
     return characters
@@ -153,6 +156,9 @@ def render(characters):
     Inline columns are client-controlled and may stack on mobile. Build each
     three-column block from exactly the same rows; never truncate a roster.
     """
+    # V1 shows mains only, so the heading must not count hidden alt entries.
+    total_mains = sum(1 for record in characters if record["is_main"])
+
     def new_embed(first):
         # A thumbnail reserves width beside the role fields on desktop.
         # The author icon keeps the guild mark beside the heading without
@@ -162,7 +168,7 @@ def render(characters):
             colour=0xB84A3A,
         )
         if first:
-            result.set_author(name="Characters", icon_url=ROSTER_IMAGE)
+            result.set_author(name=f"Characters ({total_mains})", icon_url=ROSTER_IMAGE)
         return result
 
     embeds = [new_embed(True)]
@@ -180,11 +186,15 @@ def render(characters):
             if block and (length + len(name) + 1 > 1000 or len(block) >= 10):
                 blocks.append(block)
                 block, length = [], 0
-            # The V1 middle column is average item level, not character level.
-            # rows() chooses an available WoWSims average or the cached Armory
-            # average. Unknowns remain N/A instead of inventing an estimate.
+            # Keep character level and average item level side by side,
+            # using the Armory cache and saved WoWSims values already in rows().
+            # Missing values stay explicit rather than being invented.
+            level = row.get("level")
+            level_text = (str(level) if type(level) is int
+                          and 1 <= level <= 60 else "N/A")
             ilvl_text = display_ilvl(row.get("ilvl"))
-            block.append((name, ilvl_text, row.get("professions") or "N/A"))
+            block.append((name, f"{level_text} ({ilvl_text})",
+                          row.get("professions") or "N/A"))
             length += len(name) + 1
         if block:
             blocks.append(block)
@@ -193,7 +203,7 @@ def render(characters):
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
-            names = (heading, "iLvl", "Professions")
+            names = (heading, "Level (iLvl)", "Professions")
             addition = sum(map(len, values)) + sum(map(len, names))
             embed = embeds[-1]
             if len(embed.fields) + 3 > 25 or len(embed) + addition > 5900:

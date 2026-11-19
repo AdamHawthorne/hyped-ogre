@@ -134,7 +134,7 @@ class LayoutTests(unittest.TestCase):
     def row(self, n, role='DPS', klass='Mage', spec='Frost', is_main=True):
         return dict(character_id=n, discord_id=100000000000000000+n,
                     name=f'Character{n:04}', class_name=klass, spec=spec,
-                    role=role, is_main=is_main, attendance='75%', ilvl='67.5',
+                    role=role, is_main=is_main, attendance='75%', ilvl='67.5', level=None,
                     professions='N/A')
 
     def test_grouping_columns_and_every_main_in_one_guild_sized_embed(self):
@@ -147,7 +147,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embeds), 1)
         self.assertIsNone(embeds[0].title)
         self.assertIsNone(embeds[0].description)
-        self.assertEqual(embeds[0].author.name, 'Characters')
+        self.assertEqual(embeds[0].author.name, 'Characters (40)')
         self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].thumbnail.url)
         self.assertIsNone(embeds[0].footer.text)
@@ -160,9 +160,9 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
-            self.assertEqual([f.name for f in fields[1:]], ['iLvl', 'Professions'])
+            self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
-            self.assertTrue(all(v == '67.5' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == 'N/A (67.5)' for v in fields[1].value.splitlines()))
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
@@ -171,10 +171,11 @@ class LayoutTests(unittest.TestCase):
         for row in players:
             row['professions'] = 'Min: 65 / BS: 120'
             row['ilvl'] = '54.5'
+            row['level'] = 20
         fields = roster.render(players)[0].fields
-        self.assertEqual([f.name for f in fields[:3]], ['Tanks (10)', 'iLvl', 'Professions'])
+        self.assertEqual([f.name for f in fields[:3]], ['Tanks (10)', 'Level (iLvl)', 'Professions'])
         self.assertEqual(len(fields[0].value.splitlines()), 10)
-        self.assertEqual(fields[1].value.splitlines(), ['54.5'] * 10)
+        self.assertEqual(fields[1].value.splitlines(), ['20 (54.5)'] * 10)
         self.assertEqual(fields[2].value.splitlines(), ['Min: 65 / BS: 120'] * 10)
         self.assertTrue(all(len(field.value) <= 1024 for field in fields))
 
@@ -187,7 +188,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('title', embed.to_dict())
         self.assertEqual(len(embed.fields) % 3, 0)
         self.assertEqual([f.name for f in embed.fields[:3]],
-                         ['Tanks (0)', 'iLvl', 'Professions'])
+                         ['Tanks (0)', 'Level (iLvl)', 'Professions'])
         self.assertLessEqual(len(embed), 6000)
 
     def test_melee_and_ranged_follow_raid_signup_role_classification(self):
@@ -209,6 +210,7 @@ class LayoutTests(unittest.TestCase):
         content = str(embed.to_dict())
         self.assertIn('Character0001', content)
         self.assertNotIn('Character0002', content)
+        self.assertEqual(embed.author.name, 'Characters (1)')
         self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
 
@@ -237,22 +239,29 @@ class LayoutTests(unittest.TestCase):
         character_lines = embed.fields[0].value.splitlines()
         for index, name in enumerate(ordered):
             self.assertIn(name + ' /', character_lines[index])
-        self.assertEqual(embed.fields[1].value.splitlines(), ['67.5'] * 9)
+        self.assertEqual(embed.fields[1].value.splitlines(),
+                         ['60 (67.5)'] * 5 + ['39 (67.5)'] * 2
+                         + ['N/A (67.5)'] * 2)
         self.assertEqual(embed.fields[2].value.splitlines(), ['N/A'] * 9)
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
-    def test_average_ilvl_uses_validated_saved_profile_value_or_na(self):
+    def test_level_and_average_ilvl_share_one_column_without_invented_values(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, '67.5')
+        self.assertEqual(fields[1].value, 'N/A (67.5)')
+        main['level'] = 60
         main['ilvl'] = '43'
-        self.assertEqual(roster.render([main])[0].fields[1].value, '43')
+        self.assertEqual(roster.render([main])[0].fields[1].value, '60 (43)')
         main['ilvl'] = 55.37
-        self.assertEqual(roster.render([main])[0].fields[1].value, '55.4')
+        self.assertEqual(roster.render([main])[0].fields[1].value, '60 (55.4)')
         for invalid in (999, None, True, 0, -1, '', 'N/A', 'nan', 'infinity'):
             main['ilvl'] = invalid
-            self.assertEqual(roster.render([main])[0].fields[1].value, 'N/A')
+            self.assertEqual(roster.render([main])[0].fields[1].value, '60 (N/A)')
+        main['ilvl'] = 67
+        for invalid in (999, None, True, 0, -1, '', '60'):
+            main['level'] = invalid
+            self.assertEqual(roster.render([main])[0].fields[1].value, 'N/A (67)')
 
     def test_thirty_distinct_guild_players_fit_one_embed(self):
         specs = (('Tank', 'Warrior', 'Protection'),
@@ -270,7 +279,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embed.fields), 12)
         for index in range(0, len(embed.fields), 3):
             fields = embed.fields[index:index+3]
-            self.assertEqual([f.name for f in fields[1:]], ['iLvl', 'Professions'])
+            self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
             self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
         content = str(embed.to_dict())
         for player in players:
@@ -300,6 +309,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
         embed = roster.render([])[0]
+        self.assertEqual(embed.author.name, 'Characters (0)')
         self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (0)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
         self.assertIn('No mains registered', str(embed.to_dict()))
