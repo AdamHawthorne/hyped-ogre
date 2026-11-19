@@ -94,6 +94,15 @@ class ClassroomStore:
             journal[channel_id, ident] = (permissions, bool(pending))
         return desired, journal
 
+    def member_characters(self, ident):
+        """Read-only registration details for a private member diagnosis."""
+        with self.connection() as con:
+            return con.execute(
+                "SELECT name,class_name,spec,role,off_spec,off_role,roster_visible "
+                "FROM characters WHERE discord_id=? ORDER BY is_main DESC,LOWER(name)",
+                (ident,),
+            ).fetchall()
+
     def prepare_grant(self, guild_id, channel_id, ident, owned):
         """Write intent BEFORE Discord, allowing a crash/HTTP timeout to recover."""
         with self.connection() as con:
