@@ -176,3 +176,7 @@ class RosterAdmin(commands.GroupCog, group_name="roster",
             text[:1900], ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
+
+
+async def setup(bot):
+    await bot.add_cog(RosterAdmin(bot))
