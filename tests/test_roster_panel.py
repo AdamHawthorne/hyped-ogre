@@ -157,8 +157,11 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('WCL', content)
         for row in data:
             self.assertEqual(content.count(row['name']), 1)
-            self.assertIn(f"{row['name']} <@{row['discord_id']}>", content)
-            self.assertNotIn("https://discord.com/users/", content)
+            self.assertIn(
+                f"[{row['name']}](https://discord.com/users/{row['discord_id']})",
+                content,
+            )
+            self.assertNotIn(f"<@{row['discord_id']}>", content)
         for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
             self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
@@ -168,9 +171,9 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
     def test_long_discord_usernames_cannot_wrap_independent_roster_rows(self):
-        # Each saved name is followed by the owner's compact Discord mention.
-        # The raw field retains one source line for each character so all
-        # three columns stay paired regardless of the member display name.
+        # Character name doubles as a clickable Discord profile link.
+        # No separate @username can wrap and push the next line down while
+        # the Level and Professions columns remain in place.
         data = [
             dict(self.row(1, 'Healer', 'Priest', 'Holy'),
                  name='Doctor Suncles', level=60),
@@ -189,8 +192,10 @@ class LayoutTests(unittest.TestCase):
         for index, record in enumerate(expected):
             line = fields[0].value.splitlines()[index]
             self.assertIn(record['name'], line)
-            self.assertIn(f"<@{record['discord_id']}>", line)
-            self.assertNotIn("https://discord.com/users/", line)
+            self.assertIn(
+                f"https://discord.com/users/{record['discord_id']}", line
+            )
+            self.assertNotIn(' / <@', line)
         self.assertEqual(fields[1].value.splitlines(),
                          ['60 (67.5)', '47 (67.5)', '60 (67.5)'])
 
@@ -258,8 +263,7 @@ class LayoutTests(unittest.TestCase):
         for index, name in enumerate(
             ('Big Snore', 'Druid High', 'Paladin Middle', 'Warrior High')
         ):
-            self.assertIn(name, lines[index])
-            self.assertRegex(lines[index], r" <@\d+>$")
+            self.assertIn(f'[{name}](', lines[index])
         self.assertEqual(
             tanks[1].value.splitlines(),
             ['60 (40)', '60 (99)', '60 (60)', '60 (90)'],
@@ -267,7 +271,7 @@ class LayoutTests(unittest.TestCase):
         # The name match is case-insensitive, but only its Tank entry
         # is pinned. Other classes still use their standard group sort.
         snore['name'] = 'BIG SNORE'
-        self.assertIn('BIG SNORE <@', roster.render(
+        self.assertIn('[BIG SNORE](', roster.render(
             [druid, warrior, snore, paladin]
         )[0].fields[0].value.splitlines()[0])
 
@@ -302,10 +306,8 @@ class LayoutTests(unittest.TestCase):
         input_by_name = {r['name']: r for r in players}
         character_lines = fields[0].value.splitlines()
         for index, name in enumerate(expected):
-            self.assertIn(
-                f"{name} <@{input_by_name[name]['discord_id']}>",
-                character_lines[index],
-            )
+            self.assertIn(f'[{name}](https://discord.com/users/',
+                          character_lines[index])
         self.assertEqual(fields[1].value.splitlines(), [
             '40 (75)', '60 (40)', '30 (80)', '60 (N/A)',
             '50 (70.5)', '45 (62)', '60 (62)', '60 (59)', '60 (N/A)',
@@ -318,8 +320,8 @@ class LayoutTests(unittest.TestCase):
 
     def test_ranged_more_than_ten_are_one_continuous_section(self):
         # The old artificial ten-row limit produced "Ranged · continued".
-        # More than ten members fit by switching to plain names when
-        # mentions would exceed the field limit, without losing class icons.
+        # More than ten members fit if repeated Discord profile URLs are
+        # omitted from the long column, without losing any class icons.
         players = [
             self.row(n, "DPS", "Mage", "Frost") for n in range(1, 19)
         ]
@@ -341,9 +343,9 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(all(len(field.value) <= 1024 for field in ranged))
         for row in players:
             self.assertEqual(ranged[0].value.count(row["name"]), 1)
-        # Small role groups retain non-pinging Discord mentions.
+        # Small role groups retain clickable Discord profile links.
         shorter = roster.render(players[:2])[0].fields[-3].value
-        self.assertIn(f"<@{players[0]['discord_id']}>", shorter)
+        self.assertIn("https://discord.com/users/", shorter)
 
     def test_very_large_role_only_splits_at_discord_field_limit(self):
         players = [self.row(n, "DPS", "Mage", "Frost") for n in range(1, 66)]
