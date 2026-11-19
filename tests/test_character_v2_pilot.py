@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from cogs import raid_signup as raid
+from cogs import raid_signup as raid, raid_schedule
 from hyped_ogre.features.characters import armory, roster, v2
 from hyped_ogre.features.characters.hub import CharacterHub
 from hyped_ogre.features.classrooms.config import GUILD_ID
@@ -61,6 +61,7 @@ class CharacterV2Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "raid.db")
             raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
             raid.save_character(101, "Big Snore", "Warrior",
                                 "Protection", "Tank", path)
             raid.save_character(101, "Snore Bis", "Warrior",
@@ -94,6 +95,7 @@ class CharacterV2Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "raid.db")
             raid.create_schema(path)
+            raid_schedule.ensure_raid_fields(path)
             raid.save_character(101, "Big Snore", "Warrior",
                                 "Protection", "Tank", path)
             char_id = raid.member_characters(101, path)[0][0]
