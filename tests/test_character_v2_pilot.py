@@ -348,6 +348,41 @@ class CharacterV2Tests(unittest.TestCase):
                 raid_schedule.ensure_raid_fields(path)
                 self.assertEqual(roster.rows(path)[0]["ilvl"], "65")
 
+    def test_average_ilvl_migration_invalidates_old_cache_only_once(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = str(Path(temp) / "raids.db")
+            raid.create_schema(path)
+            raid.save_character(101, "Big Snore", "Warrior",
+                                "Protection", "Tank", path)
+            cid = raid.member_characters(101, path)[0][0]
+            with raid.database(path) as con:
+                con.execute(
+                    "CREATE TABLE character_armory_cache ("
+                    "character_id INTEGER PRIMARY KEY, character_name TEXT,"
+                    "level INTEGER, race TEXT, guild TEXT,"
+                    "updated_at INTEGER, ilvl INTEGER, professions TEXT)"
+                )
+                con.execute(
+                    "INSERT INTO character_armory_cache VALUES (?,?,?,?,?,?,?,?)",
+                    (cid, "Big Snore", 60, "", "", 5000, 65, "[]"),
+                )
+            armory.initialise(path)
+            with raid.database(path) as con:
+                self.assertEqual(con.execute(
+                    "SELECT updated_at FROM character_armory_cache"
+                ).fetchone()[0], 0)
+                con.execute(
+                    "UPDATE character_armory_cache SET updated_at=5000"
+                )
+            armory.initialise(path)
+            with raid.database(path) as con:
+                self.assertEqual(con.execute(
+                    "SELECT updated_at FROM character_armory_cache"
+                ).fetchone()[0], 5000)
+            self.assertEqual(armory.candidates(path, now=5001), [])
+            self.assertEqual(armory.candidates(path, now=9000),
+                             [(cid, "Big Snore")])
+
     def test_armory_identity_is_verified_before_using_level(self):
         self.assertEqual(armory.slug("Fu Ming"), "fu-ming")
         self.assertIn("fu-ming", armory.public_url("Fu Ming"))
