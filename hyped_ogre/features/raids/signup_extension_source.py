@@ -1052,6 +1052,7 @@ class CharacterRenameModal(discord.ui.Modal, title="Rename character"):
             return
         if changed:
             notify_classrooms(interaction, self.owner_id)
+            await refresh_lfg_for_member(interaction, self.owner_id)
         await interaction.response.send_message(
             f"**{discord.utils.escape_markdown(self.name.value.strip())}** "
             + ("renamed in the shared database. Existing raids, gear and LFG "
