@@ -2257,8 +2257,11 @@ async def bot_daily_roll():
                 except Exception:
                     pass
 
-        # Ogre's roll can change the lowest-ranked player.
+        # Ogre may overtake a human's daily high after that member has
+        # already received Lucky Gamer. Reconcile the reaction AND revoke
+        # the role immediately if Ogre now leads. Do not touch coin awards.
         await roll_reactions.sync()
+        await sync_high_roller_role()
 
 # ---------------- COMMANDS ----------------
 
