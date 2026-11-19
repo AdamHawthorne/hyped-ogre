@@ -123,6 +123,22 @@ async def refresh_character_signups(interaction, owner_id, character_id):
         await refresh_player_signup_panel(interaction, raid_id)
 
 
+async def refresh_private_character_board(interaction):
+    """Update the private V2 roster immediately when WoWSims is submitted."""
+    get_cog = getattr(getattr(interaction, "client", None), "get_cog", None)
+    cog = get_cog("CharacterHub") if callable(get_cog) else None
+    if cog is None:
+        return
+    try:
+        panels = await asyncio.to_thread(cog.v2_panels)
+        async with cog.lock:
+            for channel_id, message_id in panels:
+                if channel_id == TEST_CHANNEL_ID:
+                    await cog.refresh_v2(channel_id, message_id)
+    except (sqlite3.Error, discord.HTTPException, ValueError) as exc:
+        LOGGER.warning("Private character board refresh delayed: %s", exc)
+
+
 def save_character(discord_id, name, class_name, spec, role, path=RAID_DB, *,
                    roster_visible=True):
     """Update by player + character name, including records from the old realm form.
@@ -645,11 +661,13 @@ class WoWSimsExportModal(discord.ui.Modal):
                 "Ogre keep WoWSims open until raid completed. Update any time.",
                 ephemeral=True)
             await refresh_player_signup_panel(interaction, self.raid_id)
+            await refresh_private_character_board(interaction)
             return
         await interaction.response.send_message(
             f"Ogre got **{name}** WoWSims! Ogre keep this export. "
             "Use **WoWSims** again whenever gear changes, especially "
             "before roster confirmation. Ogre take updates until raid completed.", ephemeral=True)
+        await refresh_private_character_board(interaction)
 
 
 class WoWSimsInstructionsView(discord.ui.LayoutView):
