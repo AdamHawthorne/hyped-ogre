@@ -156,3 +156,12 @@ def ensure_signup_schema_on_connection(con):
         "idx_raid_characters_member_name "
         "ON characters(discord_id, name COLLATE NOCASE)"
     )
+
+    # Public board presentation only. Hiding/renaming here never changes
+    # character identity, raid attendance, LFG registration or classrooms.
+    con.execute("""CREATE TABLE IF NOT EXISTS character_board_overrides (
+        character_id INTEGER PRIMARY KEY REFERENCES characters(character_id)
+            ON DELETE CASCADE,
+        display_name TEXT NOT NULL DEFAULT '',
+        hidden INTEGER NOT NULL DEFAULT 0 CHECK(hidden IN (0,1))
+    )""")
