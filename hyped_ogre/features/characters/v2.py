@@ -44,10 +44,15 @@ def safe(text):
 def discord_name(guild, user_id):
     member = guild.get_member(user_id) if guild else None
     if member:
-        return safe(getattr(member, "display_name", "") or getattr(member, "name", ""))
-    # This renders the actual username without notifying the person;
-    # all sends/edits use allowed_mentions=none.
-    return f"<@{user_id}>"
+        display = safe(
+            getattr(member, "display_name", "") or getattr(member, "name", "")
+        )
+        # A markdown profile link remains usable even when Discord cannot
+        # resolve a silent <@id> mention on the receiving client's cache.
+        return f"[{display}](https://discord.com/users/{user_id})"
+    # This is only an unresolved cache entry, NOT proof that they left.
+    # An explicit Leadership audit calls guild.fetch_member to verify it.
+    return f"Discord ID {user_id} (unverified)"
 
 
 def character_line(record, guild=None):
@@ -64,11 +69,11 @@ def character_line(record, guild=None):
     name = safe(record.get("name"))
     is_main = bool(record.get("is_main"))
     label = f"**{name}**" if is_main else name
-    suffix = "" if is_main else " (Alt)"
+    lead = class_icon if is_main else f"Alt: {class_icon}"
     user_id = int(record["discord_id"])
     line = (
-        f"{class_icon} {label} / {level_label} / {safe(ilvl_label)} / "
-        f"{professions}{suffix} - {discord_name(guild, user_id)}"
+        f"{lead} {label} / {level_label} / {safe(ilvl_label)} / "
+        f"{professions} - {discord_name(guild, user_id)}"
     ).strip()
     # Only alt rows are muted: one line per entry, no player cards/columns.
     return line if is_main else "-# " + line
@@ -82,10 +87,8 @@ def _role_blocks(role, members, guild):
     size = len(heading)
     for record in members:
         line = character_line(record, guild)
-        # All field content originates from bounded registrations and
-        # two professions, but cap exceptionally long Discord nicknames.
-        if len(line) > 500:
-            line = line[:497] + "..."
+        # Each entry is bounded by the character registration's length,
+        # profession labels and Discord's maximum username length.
         if lines and size + len(line) + 1 > SECTION_CHAR_LIMIT:
             yield heading + "\n" + "\n".join(lines)
             heading = base + " · continued"
