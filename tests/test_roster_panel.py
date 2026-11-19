@@ -318,6 +318,54 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
 
+    def test_ranged_more_than_ten_are_one_continuous_section(self):
+        # The old artificial ten-row limit produced "Ranged · continued".
+        # More than ten members fit if repeated Discord profile URLs are
+        # omitted from the long column, without losing any class icons.
+        players = [
+            self.row(n, "DPS", "Mage", "Frost") for n in range(1, 19)
+        ]
+        for row in players:
+            row["name"] = f"MageName{row['character_id']:02}"
+            row["professions"] = "Min: 65 / BS: 120"
+            row["level"] = 60
+        embeds = roster.render(players)
+        self.assertEqual(len(embeds), 1)
+        fields = embeds[0].fields
+        self.assertEqual([field.name for field in fields[::3]], [
+            "Tanks (0)", "Healers (0)", "Melee (0)", "Ranged (18)"
+        ])
+        ranged = fields[-3:]
+        self.assertEqual(
+            [len(field.value.splitlines()) for field in ranged],
+            [18, 18, 18],
+        )
+        self.assertTrue(all(len(field.value) <= 1024 for field in ranged))
+        for row in players:
+            self.assertEqual(ranged[0].value.count(row["name"]), 1)
+        # Small role groups retain clickable Discord profile links.
+        shorter = roster.render(players[:2])[0].fields[-3].value
+        self.assertIn("https://discord.com/users/", shorter)
+
+    def test_very_large_role_only_splits_at_discord_field_limit(self):
+        players = [self.row(n, "DPS", "Mage", "Frost") for n in range(1, 66)]
+        embeds = roster.render(players)
+        field_names = [
+            field.name for embed in embeds for field in embed.fields
+        ]
+        self.assertIn("Ranged (65)", field_names)
+        self.assertTrue(any("continued" in name.lower() for name in field_names))
+        for embed in embeds:
+            self.assertLessEqual(len(embed), 6000)
+            for field in embed.fields:
+                self.assertLessEqual(len(field.value), 1024)
+        names = "\n".join(
+            field.value for embed in embeds for field in embed.fields
+            if field.name.startswith("Ranged")
+        )
+        for row in players:
+            self.assertEqual(names.count(row["name"]), 1)
+
     def test_level_and_average_ilvl_share_one_column_without_invented_values(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
