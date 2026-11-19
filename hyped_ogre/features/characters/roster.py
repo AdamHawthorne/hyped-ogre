@@ -150,6 +150,22 @@ def display_ilvl(value):
     return str(int(number)) if number.is_integer() else f"{number:.1f}"
 
 
+def v1_class_ilvl_sort_key(record):
+    """Group a role by class, then highest known average iLvl first.
+
+    Missing or invalid iLvls appear below all known values within their
+    own class. Ties sort by character name for a stable roster. Keep the
+    older level/attendance sort key for other character-board consumers.
+    """
+    klass = str(record.get("class_name") or "").casefold()
+    average = display_ilvl(record.get("ilvl"))
+    ilvl = float(average) if average != "N/A" else -1.0
+    return (
+        klass, -ilvl, str(record.get("name") or "").casefold(),
+        record["character_id"],
+    )
+
+
 def render(characters):
     """One embed normally; additional visible messages only at Discord limits.
 
@@ -177,7 +193,7 @@ def render(characters):
         members = sorted(
             (r for r in characters if r["is_main"] and
              signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
-            key=roster_sort_key,
+            key=v1_class_ilvl_sort_key,
         )
         blocks, block, length = [], [], 0
         for row in members:
