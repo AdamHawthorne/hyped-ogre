@@ -773,7 +773,4 @@ class CharacterHub(commands.Cog):
         )
 
 async def setup(bot):
-    from .board_admin import RosterAdmin
-
     await bot.add_cog(CharacterHub(bot))
-    await bot.add_cog(RosterAdmin(bot))
