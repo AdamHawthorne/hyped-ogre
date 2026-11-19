@@ -199,21 +199,18 @@ def render(characters):
              signup_role_group(r.get("class_name"), r.get("spec"), r.get("role")) == label),
             key=v1_class_ilvl_sort_key,
         )
-        # Discord permits at most 1024 characters per embed field. The
-        # former ten-row cutoff caused unnecessary "Ranged · continued"
-        # sections. Fit the whole role into one three-column block whenever
-        # possible, switching from linked to plain character names only if
-        # repeated profile URLs would consume the field limit.
-        def character_entry(row, *, linked):
+        # Discord permits at most 1024 characters per embed field.
+        # Compact, non-pinging Discord user mentions are much shorter than
+        # full profile URLs. Keep the full role in one three-column block
+        # where possible; fall back to plain names when mentions would
+        # exceed the field limit.
+        def character_entry(row, *, mentioned):
             name = safe_name(row["name"])
-            if linked:
-                name = (
-                    f"[{name}]"
-                    f"(https://discord.com/users/{int(row['discord_id'])})"
-                )
+            if mentioned:
+                name = f"{name} <@{int(row['discord_id'])}>"
             return f"{markup(row['class_name'])} {name}"
 
-        def lines_for_role(*, linked):
+        def lines_for_role(*, mentioned):
             result = []
             for row in members:
                 level = row.get("level")
@@ -223,20 +220,19 @@ def render(characters):
                 )
                 ilvl_text = display_ilvl(row.get("ilvl"))
                 result.append((
-                    character_entry(row, linked=linked),
+                    character_entry(row, mentioned=mentioned),
                     f"{level_text} ({ilvl_text})",
                     row.get("professions") or "N/A",
                 ))
             return result
 
-        entries = lines_for_role(linked=True)
+        entries = lines_for_role(mentioned=True)
         if any(
             len("\n".join(entry[col] for entry in entries)) > 1024
             for col in range(3)
         ):
-            # Full Discord profile URLs count towards the 1024-character
-            # field limit even though they render as compact labels.
-            entries = lines_for_role(linked=False)
+            # Mentions also count against the field limit in their raw form.
+            entries = lines_for_role(mentioned=False)
 
         blocks, block = [], []
         column_lengths = [0, 0, 0]
