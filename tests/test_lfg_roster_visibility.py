@@ -85,7 +85,7 @@ class SharedVisibilityTests(unittest.TestCase):
             self.assertEqual(db.execute(
                 "SELECT name FROM characters WHERE discord_id=42 AND "
                 "roster_visible=1 AND is_main=1").fetchall(), [("Raider",)])
-        self.assertEqual(len(roster.render(roster.rows(self.raid_path))[0].fields), 12)
+        self.assertEqual(len(roster.render(roster.rows(self.raid_path))[0].fields), 13)
 
     def test_deleting_visible_main_prefers_remaining_visible_character(self):
         raid.save_character(42, "Raider", "Mage", "Frost", "DPS", self.raid_path)
