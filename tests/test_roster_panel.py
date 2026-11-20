@@ -205,7 +205,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].author.name, 'Characters (40)')
         self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].thumbnail.url)
-        self.assertIsNone(embeds[0].footer.text)
+        self.assertEqual(embeds[0].footer.text, roster.GUILD_ARMORY_URL)
         self.assertEqual([f.name for f in embeds[0].fields[::3]],
                          ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
         content = str(embeds[0].to_dict())
@@ -224,6 +224,16 @@ class LayoutTests(unittest.TestCase):
             self.assertTrue(all(v == 'N/A (67.5)' for v in fields[1].value.splitlines()))
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
+
+    def test_gold_accent_and_guild_armory_footer(self):
+        embed = roster.render([self.row(1, 'Tank', 'Warrior', 'Protection')])[0]
+        self.assertEqual(embed.colour.value, 0xA87535)
+        self.assertEqual(
+            embed.footer.text,
+            'https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped',
+        )
+        self.assertNotIn('](http', embed.footer.text)
+        self.assertIn('footer', embed.to_dict())
 
     def test_long_discord_usernames_cannot_wrap_independent_roster_rows(self):
         # Character name doubles as a clickable Discord profile link.
@@ -371,7 +381,7 @@ class LayoutTests(unittest.TestCase):
             f'Min: {input_by_name[name]["character_id"]}' for name in expected
         ])
         self.assertEqual(len(embed.fields), 12)
-        self.assertIsNone(embed.footer.text)
+        self.assertEqual(embed.footer.text, roster.GUILD_ARMORY_URL)
 
     def test_ranged_more_than_ten_are_one_continuous_section(self):
         # The old artificial ten-row limit produced "Ranged · continued".
