@@ -43,6 +43,18 @@ def ensure_coin_schema(con):
         )
     con.execute("""CREATE INDEX IF NOT EXISTS idx_coin_awards_user
                    ON roll_coin_awards(guild_id, user_id)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS roll_ogre_events (
+        guild_id INTEGER NOT NULL, roll_date TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('rest', 'drop')),
+        PRIMARY KEY(guild_id, roll_date)
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS roll_coin_drops (
+        guild_id INTEGER NOT NULL, roll_date TEXT NOT NULL,
+        message_id INTEGER NOT NULL PRIMARY KEY,
+        claimed_by INTEGER, claimed_name TEXT, claimed_at INTEGER
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_roll_coin_drops_claim
+                   ON roll_coin_drops(guild_id, claimed_by)""")
     # Atomic, once-a-day gamble outcomes. A returned stake never generates
     # another coin; a lost stake subtracts from the currently held balance.
     con.execute("""CREATE TABLE IF NOT EXISTS roll_coin_gambles (
@@ -149,6 +161,10 @@ def coin_total(con, guild_id, user_id):
         SELECT COUNT(*) FROM roll_coin_gambles
         WHERE guild_id=? AND user_id=? AND stake_returned=0
     """, (guild_id, user_id)).fetchone()[0]
+    earned += con.execute("""
+        SELECT COUNT(*) FROM roll_coin_drops
+        WHERE guild_id=? AND claimed_by=?
+    """, (guild_id, user_id)).fetchone()[0]
     if user_id == 0:
         # Ogre receives each forfeited gamble stake; no new coin is minted.
         earned += con.execute("""
@@ -171,37 +187,38 @@ def day_award(con, guild_id, day):
 
 
 def coin_standings(con, guild_id):
-    """Rank spendable coins; failed gamble stakes transfer to Ogre (user 0)."""
-    rows = con.execute("""
-        WITH earned AS (
-            SELECT user_id, SUM(coins_awarded) AS total, MIN(roll_date) AS first_day
-            FROM roll_coin_awards WHERE guild_id=? GROUP BY user_id
-        ), spent AS (
-            SELECT user_id, COUNT(*) AS lost
-            FROM roll_coin_gambles
-            WHERE guild_id=? AND stake_returned=0 GROUP BY user_id
-        ), ogre_stakes AS (
-            SELECT COUNT(*) AS received, MIN(roll_date) AS first_day FROM roll_coin_gambles
-            WHERE guild_id=? AND stake_returned=0
-        ), balances AS (
-            SELECT earned.user_id,
-                   earned.total - COALESCE(spent.lost, 0)
-                     + CASE WHEN earned.user_id=0 THEN (SELECT received FROM ogre_stakes)
-                            ELSE 0 END AS coins,
-                   CASE WHEN earned.user_id=0 AND (SELECT first_day FROM ogre_stakes) IS NOT NULL
-                        THEN MIN(earned.first_day, (SELECT first_day FROM ogre_stakes))
-                        ELSE earned.first_day END AS first_day
-            FROM earned LEFT JOIN spent ON spent.user_id=earned.user_id
-            UNION ALL
-            SELECT 0, (SELECT received FROM ogre_stakes), (SELECT first_day FROM ogre_stakes)
-            WHERE NOT EXISTS (SELECT 1 FROM earned WHERE user_id=0)
-        )
-        SELECT user_id, coins FROM balances WHERE coins > 0
-        ORDER BY coins DESC, first_day ASC, user_id ASC
-    """, (guild_id, guild_id, guild_id)).fetchall()
+    """Rank spendable coins from awards, gambles and one-time dropped coins."""
+    earned_rows = con.execute("""
+        SELECT user_id, SUM(coins_awarded), MIN(roll_date)
+        FROM roll_coin_awards WHERE guild_id=? GROUP BY user_id
+    """, (guild_id,)).fetchall()
+    balances = {}
+    first_days = {}
+    for user_id, coins, day in earned_rows:
+        balances[user_id] = coins
+        first_days[user_id] = day
+    for user_id, amount, day in con.execute("""
+        SELECT claimed_by, COUNT(*), MIN(roll_date)
+        FROM roll_coin_drops WHERE guild_id=? AND claimed_by IS NOT NULL
+        GROUP BY claimed_by
+    """, (guild_id,)):
+        balances[user_id] = balances.get(user_id, 0) + amount
+        first_days[user_id] = min(first_days.get(user_id, day), day)
+    for user_id, lost, day in con.execute("""
+        SELECT user_id, COUNT(*), MIN(roll_date)
+        FROM roll_coin_gambles WHERE guild_id=? AND stake_returned=0
+        GROUP BY user_id
+    """, (guild_id,)):
+        balances[user_id] = balances.get(user_id, 0) - lost
+        balances[0] = balances.get(0, 0) + lost
+        first_days[0] = min(first_days.get(0, day), day)
     ranked = []
     previous, rank = None, 0
-    for position, (user_id, coins) in enumerate(rows, 1):
+    ordered = sorted(
+        ((uid, amount) for uid, amount in balances.items() if amount > 0),
+        key=lambda entry: (-entry[1], first_days[entry[0]], entry[0]),
+    )
+    for position, (user_id, coins) in enumerate(ordered, 1):
         if coins != previous:
             rank = position
         ranked.append({"rank": rank, "user_id": user_id, "coins": coins})
