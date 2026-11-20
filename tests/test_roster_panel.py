@@ -498,7 +498,7 @@ class LayoutTests(unittest.TestCase):
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
         embed = roster.render([])[0]
         self.assertEqual(embed.author.name, 'Characters (0)')
-        self.assertEqual([f.name for f in embed.fields[::3]],
+        self.assertEqual([f.name for f in embed.fields[:-1:3]],
                          ['Tanks (0)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
         self.assertIn('No mains registered', str(embed.to_dict()))
         self.assertNotIn('0%', str(embed.to_dict()))
