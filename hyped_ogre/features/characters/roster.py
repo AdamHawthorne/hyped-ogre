@@ -10,6 +10,8 @@ from hyped_ogre.features.raids.schedule import signup_role_group
 from . import armory, equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
+ROSTER_COLOUR = 0xA87535  # Muted gold, shared with other Ogre panels.
+GUILD_ARMORY_URL = "https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped"
 
 # Short enough to keep two primary professions aligned on one Discord row.
 PROFESSION_SHORT_NAMES = {
@@ -199,10 +201,12 @@ def render(characters):
     def new_embed(first):
         result = discord.Embed(
             title=None if first else "Characters (continued)",
-            colour=0xB84A3A,
+            colour=ROSTER_COLOUR,
         )
         if first:
             result.set_author(name=f"Characters ({total_mains})", icon_url=ROSTER_IMAGE)
+            # Discord embed footers render plain text, not Markdown links.
+            result.set_footer(text=GUILD_ARMORY_URL)
         return result
 
     def lines_for_role(members, *, linked):
