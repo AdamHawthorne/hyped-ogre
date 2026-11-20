@@ -10,9 +10,7 @@ from hyped_ogre.features.raids.schedule import signup_role_group
 from . import armory, equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
-ROSTER_BANNER_URL = "https://i.vgy.me/pjaR2X.png"
 ROSTER_COLOUR = 0xA87535  # Muted gold, shared with other Ogre panels.
-GUILD_ARMORY_URL = "https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped"
 
 # Short enough to keep two primary professions aligned on one Discord row.
 PROFESSION_SHORT_NAMES = {
@@ -272,16 +270,4 @@ def render(characters):
             for name, value in zip(names, values):
                 embed.add_field(name=name, value=value, inline=True)
 
-    # Discord footers cannot contain clickable Markdown. A single compact
-    # field after the final role gives the guild Armory a clickable label
-    # without exposing the URL or changing any three-column role rows.
-    armory_link = f"[Hyped Armory]({GUILD_ARMORY_URL})"
-    embed = embeds[-1]
-    if len(embed.fields) + 1 > 25 or len(embed) + len(armory_link) + 1 > 6000:
-        embed = new_embed(False)
-        embeds.append(embed)
-    embed.add_field(name="\u200b", value=armory_link, inline=False)
-    # Render the supplied 1920x180 artwork as a wide image beneath the
-    # clickable Armory link. No footer text or small footer icon.
-    embed.set_image(url=ROSTER_BANNER_URL)
     return embeds

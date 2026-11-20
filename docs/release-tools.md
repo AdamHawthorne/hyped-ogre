@@ -19,7 +19,7 @@ unknown values last. The guild mark is displayed as a compact icon
 beside the **Characters** heading (embed author icon), without a right-hand
 thumbnail or introductory embed description. Ogre writes the separate message
 `Add yer name to mighty Hyped roster!` immediately above the embed.
-The panel uses Ogre's muted gold accent and has a compact clickable **Hyped Armory** Markdown link below the role columns. The supplied 1920 × 180 image at `https://i.vgy.me/pjaR2X.png` appears as the full-width embed image below the clickable Armory link, without footer text or a tiny footer icon. Discord footers do not support clickable text, so the link lives in a separate non-inline embed field. The four buttons are **Add**,
+The panel uses Ogre's muted gold accent and has no footer link, banner or footer text. The three-column role layout is preserved. The four buttons are **Add**,
 **Manage**, **WoWSims** and **Remove / Absent**. All member actions open privately.
 Repeating `/postcharacters` refreshes the saved message; a confirmed missing
 message can be recreated. A normal guild roster fits in one embed. If Discord's
