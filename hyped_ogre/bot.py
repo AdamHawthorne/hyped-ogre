@@ -2226,7 +2226,8 @@ async def bot_daily_roll():
         with db() as con:
             resting = previous_day_ogre_won(con, datetime.now(TZ))
             event_kind = "rest" if resting else (
-                "drop" if secrets.randbelow(100) == 0 else None
+                "drop" if coin_total(con, HYPED_GUILD_ID, 0) >= 1
+                and secrets.randbelow(100) == 0 else None
             )
             if event_kind and not reserve_ogre_event(
                 con, HYPED_GUILD_ID, day_key, event_kind
@@ -2247,17 +2248,23 @@ async def bot_daily_roll():
                         continue
                 try:
                     if event_kind == "rest":
-                        await channel.send(
-                            "Ogre won yesterday. Ogre take day off rolling today. "
-                            "You lot have a chance now."
-                        )
+                        await channel.send(secrets.choice((
+                            "Ogre take day off rolling today.",
+                            "Ogre can afford to take day off.",
+                            "Ogre give someone else a chance.",
+                        )))
                     else:
                         message = await channel.send(
                             "*Ogre slips when rolling and a coin falls out of his pouch!*\n"
-                            "First to react with Ogre's coin keeps it."
+                            "First to react keeps it."
                         )
                         with db() as con:
-                            register_drop(con, guild_id, day_key, message.id)
+                            transferred = register_drop(con, guild_id, day_key, message.id)
+                        if not transferred:
+                            # Never offer a reaction reward without an Ogre coin.
+                            await message.delete()
+                            log_error("OGRE COIN DROP ABORTED: no spendable Ogre coin")
+                            continue
                         try:
                             await message.add_reaction(ogre_coin_emoji())
                         except (discord.Forbidden, discord.HTTPException) as exc:

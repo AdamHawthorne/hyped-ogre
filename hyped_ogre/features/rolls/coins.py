@@ -166,10 +166,14 @@ def coin_total(con, guild_id, user_id):
         WHERE guild_id=? AND claimed_by=?
     """, (guild_id, user_id)).fetchone()[0]
     if user_id == 0:
-        # Ogre receives each forfeited gamble stake; no new coin is minted.
+        # Ogre receives lost gamble stakes, but dropped coins leave the pouch
+        # immediately, even while no member has claimed the message yet.
         earned += con.execute("""
             SELECT COUNT(*) FROM roll_coin_gambles
             WHERE guild_id=? AND stake_returned=0
+        """, (guild_id,)).fetchone()[0]
+        lost += con.execute("""
+            SELECT COUNT(*) FROM roll_coin_drops WHERE guild_id=?
         """, (guild_id,)).fetchone()[0]
     return earned - lost
 
@@ -212,6 +216,13 @@ def coin_standings(con, guild_id):
         balances[user_id] = balances.get(user_id, 0) - lost
         balances[0] = balances.get(0, 0) + lost
         first_days[0] = min(first_days.get(0, day), day)
+    # Each drop is an actual coin transfer from Ogre, not a minted prize.
+    drops = con.execute("""
+        SELECT COUNT(*) FROM roll_coin_drops WHERE guild_id=?
+    """, (guild_id,)).fetchone()[0]
+    if drops:
+        balances[0] = balances.get(0, 0) - drops
+
     ranked = []
     previous, rank = None, 0
     ordered = sorted(

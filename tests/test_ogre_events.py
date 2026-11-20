@@ -23,6 +23,15 @@ class OgreEventsTests(unittest.TestCase):
             "actor_type TEXT, rolled_at INTEGER)"
         )
         ensure_coin_schema(self.con)
+        # Ogre starts with one legitimately earned coin, so a drop is a
+        # transfer rather than an extra coin created for a player.
+        self.con.execute(
+            """INSERT INTO roll_coin_awards
+               (guild_id, roll_date, user_id, username, winning_roll,
+                source, awarded_at, coins_awarded)
+               VALUES (1, '2026-11-19', 0, 'Hyped Ogre', 99,
+                       'rolls', 1795132800, 1)"""
+        )
         self.addCleanup(self.con.close)
         self.now = datetime(2026, 11, 20, 12, tzinfo=UK)
         self.yesterday = datetime(2026, 11, 19, 12, tzinfo=UK)
@@ -59,23 +68,41 @@ class OgreEventsTests(unittest.TestCase):
         self.assertFalse(reserve_ogre_event(self.con, 1, "2026-11-20", "drop"))
 
     def test_only_first_claim_gets_one_coin_and_leaderboard_updates(self):
-        register_drop(self.con, 1, "2026-11-20", 123)
+        self.assertEqual(coin_total(self.con, 1, 0), 1)
+        self.assertTrue(register_drop(self.con, 1, "2026-11-20", 123))
+        self.assertEqual(coin_total(self.con, 1, 0), 0)
         self.assertTrue(is_unclaimed_drop(self.con, 1, 123))
         self.assertTrue(claim_drop(self.con, 1, 123, 42, "First", self.now))
         self.assertFalse(claim_drop(self.con, 1, 123, 43, "Second", self.now))
         self.assertFalse(is_unclaimed_drop(self.con, 1, 123))
         self.assertEqual(coin_total(self.con, 1, 42), 1)
         self.assertEqual(coin_total(self.con, 1, 43), 0)
+        self.assertEqual(coin_total(self.con, 1, 0), 0)
+        self.assertEqual(
+            coin_total(self.con, 1, 0) + coin_total(self.con, 1, 42), 1
+        )
         self.assertEqual(
             coin_standings(self.con, 1),
             [{"rank": 1, "user_id": 42, "coins": 1}],
         )
 
     def test_repeated_registration_never_resets_claim(self):
-        register_drop(self.con, 1, "2026-11-20", 123)
+        self.assertTrue(register_drop(self.con, 1, "2026-11-20", 123))
         self.assertTrue(claim_drop(self.con, 1, 123, 42, "First"))
-        register_drop(self.con, 1, "2026-11-20", 123)
+        self.assertFalse(register_drop(self.con, 1, "2026-11-20", 123))
         self.assertFalse(claim_drop(self.con, 1, 123, 43, "Second"))
+
+    def test_no_balance_cannot_drop_or_go_negative(self):
+        self.con.execute("DELETE FROM roll_coin_awards")
+        self.assertFalse(register_drop(self.con, 1, "2026-11-20", 900))
+        self.assertFalse(is_unclaimed_drop(self.con, 1, 900))
+        self.assertEqual(coin_total(self.con, 1, 0), 0)
+
+    def test_unclaimed_drop_is_already_out_of_ogres_ledger(self):
+        self.assertTrue(register_drop(self.con, 1, "2026-11-20", 123))
+        self.assertEqual(coin_total(self.con, 1, 0), 0)
+        self.assertEqual(coin_standings(self.con, 1), [])
+        self.assertFalse(register_drop(self.con, 1, "2026-11-20", 124))
 
     def test_not_claimable_without_posted_drop(self):
         self.assertFalse(claim_drop(self.con, 1, 888, 42, "First"))
