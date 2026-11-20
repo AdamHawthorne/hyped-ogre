@@ -206,9 +206,9 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].thumbnail.url)
         self.assertIsNone(embeds[0].footer.text)
-        self.assertEqual(embeds[0].image.url, roster.ROSTER_BANNER_URL)
-        self.assertEqual(embeds[0].fields[-1].value, f'[Hyped Armory]({roster.GUILD_ARMORY_URL})')
-        self.assertEqual([f.name for f in embeds[0].fields[:-1:3]],
+        self.assertIsNone(embeds[0].image.url)
+        self.assertNotIn('image', embeds[0].to_dict())
+        self.assertEqual([f.name for f in embeds[0].fields[::3]],
                          ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
         content = str(embeds[0].to_dict())
         self.assertNotIn('WCL', content)
@@ -219,7 +219,7 @@ class LayoutTests(unittest.TestCase):
                 content,
             )
             self.assertNotIn(f"<@{row['discord_id']}>", content)
-        for i in range(0, len(embeds[0].fields) - 1, 3):
+        for i in range(0, len(embeds[0].fields), 3):
             fields = embeds[0].fields[i:i+3]
             self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
@@ -227,19 +227,16 @@ class LayoutTests(unittest.TestCase):
             self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
-    def test_gold_accent_and_clickable_guild_armory_label(self):
+    def test_gold_accent_and_clean_roster_without_footer_or_banner(self):
         embed = roster.render([self.row(1, 'Tank', 'Warrior', 'Protection')])[0]
         self.assertEqual(embed.colour.value, 0xA87535)
-        self.assertEqual(
-            embed.fields[-1].value,
-            '[Hyped Armory](https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped)',
-        )
-        self.assertFalse(embed.fields[-1].inline)
+        self.assertEqual(len(embed.fields), 12)
         self.assertIsNone(embed.footer.text)
-        self.assertEqual(embed.image.url, roster.ROSTER_BANNER_URL)
-        self.assertEqual(embed.to_dict()['image']['url'], 'https://i.vgy.me/pjaR2X.png')
+        self.assertIsNone(embed.image.url)
         self.assertNotIn('footer', embed.to_dict())
-        self.assertEqual(len(embed.fields[:-1]) % 3, 0)
+        self.assertNotIn('image', embed.to_dict())
+        self.assertNotIn('Hyped Armory', str(embed.to_dict()))
+        self.assertEqual(len(embed.fields) % 3, 0)
 
     def test_long_discord_usernames_cannot_wrap_independent_roster_rows(self):
         # Character name doubles as a clickable Discord profile link.
@@ -290,7 +287,7 @@ class LayoutTests(unittest.TestCase):
         self.assertNotIn('thumbnail', embed.to_dict())
         self.assertNotIn('description', embed.to_dict())
         self.assertNotIn('title', embed.to_dict())
-        self.assertEqual(len(embed.fields[:-1]) % 3, 0)
+        self.assertEqual(len(embed.fields) % 3, 0)
         self.assertEqual([f.name for f in embed.fields[:3]],
                          ['Tanks (0)', 'Level (iLvl)', 'Professions'])
         self.assertLessEqual(len(embed), 6000)
@@ -301,7 +298,7 @@ class LayoutTests(unittest.TestCase):
                 self.row(3, 'DPS', 'Druid', 'Feral'),
                 self.row(4, 'Tank', 'Druid', 'Feral')]
         fields = roster.render(data)[0].fields
-        groups = {fields[i].name: fields[i].value for i in range(0, len(fields)-1, 3)}
+        groups = {fields[i].name: fields[i].value for i in range(0, len(fields), 3)}
         self.assertIn('Character0001', groups['Melee (2)'])
         self.assertIn('Character0003', groups['Melee (2)'])
         self.assertIn('Character0002', groups['Ranged (1)'])
@@ -315,7 +312,7 @@ class LayoutTests(unittest.TestCase):
         self.assertIn('Character0001', content)
         self.assertNotIn('Character0002', content)
         self.assertEqual(embed.author.name, 'Characters (1)')
-        self.assertEqual([f.name for f in embed.fields[:-1:3]],
+        self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (1)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
 
     def test_big_snore_is_first_tank_regardless_of_class_or_ilvl(self):
@@ -386,8 +383,7 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(fields[2].value.splitlines(), [
             f'Min: {input_by_name[name]["character_id"]}' for name in expected
         ])
-        self.assertEqual(len(embed.fields), 13)
-        self.assertEqual(embed.fields[-1].value, f'[Hyped Armory]({roster.GUILD_ARMORY_URL})')
+        self.assertEqual(len(embed.fields), 12)
 
     def test_ranged_more_than_ten_are_one_continuous_section(self):
         # The old artificial ten-row limit produced "Ranged · continued".
@@ -403,10 +399,10 @@ class LayoutTests(unittest.TestCase):
         embeds = roster.render(players)
         self.assertEqual(len(embeds), 1)
         fields = embeds[0].fields
-        self.assertEqual([field.name for field in fields[:-1:3]], [
+        self.assertEqual([field.name for field in fields[::3]], [
             "Tanks (0)", "Healers (0)", "Melee (0)", "Ranged (18)"
         ])
-        ranged = fields[-4:-1]
+        ranged = fields[-3:]
         self.assertEqual(
             [len(field.value.splitlines()) for field in ranged],
             [18, 18, 18],
@@ -415,7 +411,7 @@ class LayoutTests(unittest.TestCase):
         for row in players:
             self.assertEqual(ranged[0].value.count(row["name"]), 1)
         # Small role groups retain clickable Discord profile links.
-        shorter = roster.render(players[:2])[0].fields[-4].value
+        shorter = roster.render(players[:2])[0].fields[-3].value
         self.assertIn("https://discord.com/users/", shorter)
 
     def test_very_large_role_only_splits_at_discord_field_limit(self):
@@ -467,8 +463,8 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(len(embeds), 1)
         embed = embeds[0]
         self.assertLessEqual(len(embed), 6000)
-        self.assertEqual(len(embed.fields), 13)
-        for index in range(0, len(embed.fields)-1, 3):
+        self.assertEqual(len(embed.fields), 12)
+        for index in range(0, len(embed.fields), 3):
             fields = embed.fields[index:index+3]
             self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
             self.assertEqual(len({len(f.value.splitlines()) for f in fields}), 1)
@@ -480,7 +476,7 @@ class LayoutTests(unittest.TestCase):
         players = [self.row(n) for n in range(30)]
         embeds = roster.render(players)
         self.assertEqual(len(embeds), 1)
-        self.assertEqual(len(embeds[0].fields[:-1]) % 3, 0)
+        self.assertEqual(len(embeds[0].fields) % 3, 0)
         content = str(embeds[0].to_dict())
         for player in players:
             self.assertEqual(content.count(player['name']), 1)
@@ -501,7 +497,7 @@ class LayoutTests(unittest.TestCase):
     def test_empty_roster_has_all_role_sections_and_no_fake_numbers(self):
         embed = roster.render([])[0]
         self.assertEqual(embed.author.name, 'Characters (0)')
-        self.assertEqual([f.name for f in embed.fields[:-1:3]],
+        self.assertEqual([f.name for f in embed.fields[::3]],
                          ['Tanks (0)', 'Healers (0)', 'Melee (0)', 'Ranged (0)'])
         self.assertIn('No mains registered', str(embed.to_dict()))
         self.assertNotIn('0%', str(embed.to_dict()))
