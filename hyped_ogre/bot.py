@@ -28,6 +28,10 @@ from cogs.roll_coins import (
 )
 from cogs.roll_panels import DailyRollPanel, CoinLeaderboard
 from cogs.roll_gamble import gamble_once, GambleError
+from hyped_ogre.features.rolls.ogre_events import (
+    previous_day_ogre_won, reserve_ogre_event, register_drop,
+    claim_drop, is_unclaimed_drop,
+)
 from hyped_ogre.features.rolls.scoring import reconcile_scores
 from hyped_ogre.features.rolls.crown import eligible_lucky_gamer
 from cogs.ogre_voice import pick as ogre_say
@@ -2187,7 +2191,12 @@ async def bot_daily_roll():
     while not bot.is_closed():
         now = datetime.now(TZ)
 
-        if bot_rolled_today():
+        with db() as con:
+            already_event = con.execute(
+                "SELECT kind FROM roll_ogre_events WHERE guild_id=? AND roll_date=?",
+                (HYPED_GUILD_ID, now.date().isoformat()),
+            ).fetchone()
+        if bot_rolled_today() or already_event:
             tomorrow = (now + timedelta(days=1)).replace(hour=5, minute=55, second=0, microsecond=0)
             await asyncio.sleep((tomorrow.timestamp() - now.timestamp()))
             continue
@@ -2210,6 +2219,52 @@ async def bot_daily_roll():
         # If Fly came online after the scheduled time, roll immediately,
         # including late evening, rather than silently missing this day.
         if bot_rolled_today():
+            continue
+
+        # A day off follows an actual Ogre win (including ties decided by
+        # earliest roll and members' gamble scores). No score is saved today.
+        with db() as con:
+            resting = previous_day_ogre_won(con, datetime.now(TZ))
+            event_kind = "rest" if resting else (
+                "drop" if secrets.randbelow(100) == 0 else None
+            )
+            if event_kind and not reserve_ogre_event(
+                con, HYPED_GUILD_ID, day_key, event_kind
+            ):
+                continue
+
+        if event_kind:
+            with db() as con:
+                channels = con.execute(
+                    "SELECT guild_id, channel_id FROM guild_channels"
+                ).fetchall()
+            for guild_id, channel_id in channels:
+                channel = bot.get_channel(channel_id)
+                if channel is None:
+                    try:
+                        channel = await bot.fetch_channel(channel_id)
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        continue
+                try:
+                    if event_kind == "rest":
+                        await channel.send(
+                            "Ogre won yesterday. Ogre take day off rolling today. "
+                            "You lot have a chance now."
+                        )
+                    else:
+                        message = await channel.send(
+                            "*Ogre slips when rolling and a coin falls out of his pouch!*\n"
+                            "First to react with Ogre's coin keeps it."
+                        )
+                        with db() as con:
+                            register_drop(con, guild_id, day_key, message.id)
+                        try:
+                            await message.add_reaction(ogre_coin_emoji())
+                        except (discord.Forbidden, discord.HTTPException) as exc:
+                            log_error(f"OGRE DROP REACTION FAILED: {exc!r}")
+                except (discord.Forbidden, discord.HTTPException) as exc:
+                    log_error(f"OGRE {event_kind.upper()} MESSAGE FAILED: {exc!r}")
+            log_event(f"OGRE EVENT kind={event_kind} date={day_key}")
             continue
 
         value = secrets.randbelow(100) + 1
@@ -2276,6 +2331,44 @@ async def bot_daily_roll():
         # the role immediately if Ogre now leads. Do not touch coin awards.
         await roll_reactions.sync()
         await sync_high_roller_role()
+
+@bot.listen("on_raw_reaction_add")
+async def claim_ogre_dropped_coin(payload):
+    """The first member reacting to Ogre's original coin reaction wins."""
+    if payload.guild_id != HYPED_GUILD_ID or payload.channel_id != ROLL_CHANNEL_ID:
+        return
+    if not payload.emoji.is_custom_emoji() or payload.emoji.name != "ogrecoin":
+        return
+    if bot.user is None or payload.user_id == bot.user.id:
+        return
+    if getattr(payload.member, "bot", False):
+        return
+    with db() as con:
+        if not is_unclaimed_drop(con, payload.guild_id, payload.message_id):
+            return
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        if channel is None:
+            channel = await bot.fetch_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        # Members must react after Ogre has laid out the coin reaction.
+        if not any(str(r.emoji) == str(payload.emoji) and r.me
+                   for r in message.reactions):
+            return
+        member = payload.member or await bot.fetch_user(payload.user_id)
+        with db() as con:
+            won = claim_drop(con, payload.guild_id, payload.message_id,
+                             payload.user_id, member.display_name)
+        if won:
+            await channel.send(
+                f"<@{payload.user_id}> found Ogre's coin. "
+                "Finders keepers... for now.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            log_event(f"OGRE DROP CLAIM user={payload.user_id} message={payload.message_id}")
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log_error(f"OGRE DROP CLAIM DELIVERY FAILED message={payload.message_id}: {exc!r}")
+
 
 # ---------------- COMMANDS ----------------
 
