@@ -10,7 +10,7 @@ from hyped_ogre.features.raids.schedule import signup_role_group
 from . import armory, equipment, items
 
 ROSTER_IMAGE = "https://i.vgy.me/asI88C.png"
-ROSTER_FOOTER_ICON = "https://i.vgy.me/pjaR2X.png"
+ROSTER_BANNER_URL = "https://i.vgy.me/pjaR2X.png"
 ROSTER_COLOUR = 0xA87535  # Muted gold, shared with other Ogre panels.
 GUILD_ARMORY_URL = "https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped"
 
@@ -281,7 +281,7 @@ def render(characters):
         embed = new_embed(False)
         embeds.append(embed)
     embed.add_field(name="\u200b", value=armory_link, inline=False)
-    # Discord footer artwork is a small icon beside its text, not a wide banner.
-    # Keep it below the linked Armory field on the final visible embed.
-    embed.set_footer(text="Hyped", icon_url=ROSTER_FOOTER_ICON)
+    # Render the supplied 1920x180 artwork as a wide image beneath the
+    # clickable Armory link. No footer text or small footer icon.
+    embed.set_image(url=ROSTER_BANNER_URL)
     return embeds
