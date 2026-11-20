@@ -2247,14 +2247,15 @@ async def bot_daily_roll():
                         continue
                 try:
                     if event_kind == "rest":
-                        await channel.send(
-                            "Ogre won yesterday. Ogre take day off rolling today. "
-                            "You lot have a chance now."
-                        )
+                        await channel.send(secrets.choice((
+                            "Ogre take day off rolling today.",
+                            "Ogre can afford to take day off.",
+                            "Ogre give someone else a chance.",
+                        )))
                     else:
                         message = await channel.send(
                             "*Ogre slips when rolling and a coin falls out of his pouch!*\n"
-                            "First to react with Ogre's coin keeps it."
+                            "First to react keeps it."
                         )
                         with db() as con:
                             register_drop(con, guild_id, day_key, message.id)
