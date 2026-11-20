@@ -33,12 +33,30 @@ def reserve_ogre_event(con, guild_id, day, kind):
 
 
 def register_drop(con, guild_id, day, message_id):
-    """Attach the posted message; never overwrite a previously claimed coin."""
-    con.execute(
-        """INSERT OR IGNORE INTO roll_coin_drops
-           (guild_id, roll_date, message_id) VALUES (?, ?, ?)""",
-        (guild_id, day, message_id),
-    )
+    """Reserve one existing Ogre coin before anyone can claim the drop.
+
+    The drop row is the debit, including while the coin is still unclaimed.
+    Never overwrite a claim or allow a negative Ogre balance.
+    """
+    from hyped_ogre.features.rolls.coins import coin_total
+
+    con.execute("SAVEPOINT ogre_coin_drop")
+    try:
+        if coin_total(con, guild_id, 0) < 1:
+            con.execute("ROLLBACK TO ogre_coin_drop")
+            con.execute("RELEASE ogre_coin_drop")
+            return False
+        inserted = con.execute(
+            """INSERT OR IGNORE INTO roll_coin_drops
+               (guild_id, roll_date, message_id) VALUES (?, ?, ?)""",
+            (guild_id, day, message_id),
+        ).rowcount == 1
+        con.execute("RELEASE ogre_coin_drop")
+        return inserted
+    except Exception:
+        con.execute("ROLLBACK TO ogre_coin_drop")
+        con.execute("RELEASE ogre_coin_drop")
+        raise
 
 
 def claim_drop(con, guild_id, message_id, user_id, username, now=None):
