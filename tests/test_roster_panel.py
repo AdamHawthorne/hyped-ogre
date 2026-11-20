@@ -205,8 +205,8 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(embeds[0].author.name, 'Characters (40)')
         self.assertEqual(embeds[0].author.icon_url, roster.ROSTER_IMAGE)
         self.assertIsNone(embeds[0].thumbnail.url)
-        self.assertEqual(embeds[0].footer.text, 'Hyped')
-        self.assertEqual(embeds[0].footer.icon_url, roster.ROSTER_FOOTER_ICON)
+        self.assertIsNone(embeds[0].footer.text)
+        self.assertEqual(embeds[0].image.url, roster.ROSTER_BANNER_URL)
         self.assertEqual(embeds[0].fields[-1].value, f'[Hyped Armory]({roster.GUILD_ARMORY_URL})')
         self.assertEqual([f.name for f in embeds[0].fields[:-1:3]],
                          ['Tanks (10)', 'Healers (10)', 'Melee (10)', 'Ranged (10)'])
@@ -235,9 +235,10 @@ class LayoutTests(unittest.TestCase):
             '[Hyped Armory](https://worldofwarcraft.blizzard.com/en-gb/forever/eu/armory/guild/hyped)',
         )
         self.assertFalse(embed.fields[-1].inline)
-        self.assertEqual(embed.footer.text, 'Hyped')
-        self.assertEqual(embed.footer.icon_url, roster.ROSTER_FOOTER_ICON)
-        self.assertEqual(embed.to_dict()['footer']['icon_url'], 'https://i.vgy.me/pjaR2X.png')
+        self.assertIsNone(embed.footer.text)
+        self.assertEqual(embed.image.url, roster.ROSTER_BANNER_URL)
+        self.assertEqual(embed.to_dict()['image']['url'], 'https://i.vgy.me/pjaR2X.png')
+        self.assertNotIn('footer', embed.to_dict())
         self.assertEqual(len(embed.fields[:-1]) % 3, 0)
 
     def test_long_discord_usernames_cannot_wrap_independent_roster_rows(self):
