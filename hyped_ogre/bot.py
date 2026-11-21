@@ -1329,20 +1329,7 @@ async def show_gamble_rules(interaction):
         )
         return
 
-    prize = daily_coin_prize(datetime.now(TZ).date())
-    rules = (
-        "**Ogre's Gamble**\n"
-        f"Your first roll: **{first_roll[0]}**.\n"
-        f"Stake: **1 {ogre_coin_emoji()} coin**, once per UK day.\n"
-        "Ogre gives you **one extra roll** if you choose to gamble.\n"
-        "**Higher second roll:** Ogre return your coin and use your new high. "
-        "**Tie or lower:** Ogre keep coin; your best stays.\n"
-        "Your best of the two rolls counts toward today's competition. "
-        f"Today's highest roller gets **{prize}** "
-        f"{'coin' if prize == 1 else 'coins'}; "
-        "gambling does not create a second daily prize.\n"
-        "-# Choose Gamble to confirm, or Cancel. Nothing spent until confirmed."
-    )
+    rules = "Gamble? Risk your coin and roll again. Roll lower and lose it!"
     await interaction.response.send_message(
         rules, view=GambleConfirmView(interaction.user.id),
         allowed_mentions=discord.AllowedMentions.none(), ephemeral=True,
