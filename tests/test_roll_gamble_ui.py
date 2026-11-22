@@ -184,10 +184,10 @@ class GambleUiTests(unittest.IsolatedAsyncioTestCase):
         await self.ns["show_gamble_rules"](i)
         kwargs = i.response.send_message.await_args.kwargs
         self.assertTrue(kwargs["ephemeral"])
-        self.assertIn("Higher second roll", i.response.send_message.await_args.args[0])
-        self.assertIn("Your first roll: **19**", i.response.send_message.await_args.args[0])
-        self.assertNotIn("back to back", i.response.send_message.await_args.args[0])
-        self.assertIn("once per UK day", i.response.send_message.await_args.args[0])
+        self.assertEqual(
+            i.response.send_message.await_args.args[0],
+            "Gamble? Risk your coin and roll again. Roll lower and lose it!",
+        )
         view = kwargs["view"]
         self.assertIsInstance(view, self.ns["GambleConfirmView"])
         self.assertFalse(await view.interaction_check(self.interaction(999)))
