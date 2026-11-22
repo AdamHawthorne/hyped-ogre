@@ -448,9 +448,9 @@ def _header(event, body, tab, *, current_selected_total=None):
         ["Warcraft Logs", event.get("wcl_url") or "", "Raid Notes",
          event.get("archive_notes") or "", "", "", *coverage_cells[2]],
         [f"{signed} signed · {absent} absent", "", "", "", "", "",
-         *coverage_cells[3], "Selected players",
+         *coverage_cells[3]],
+        ["", "", "", "", "", "", "", "", "Selected players",
          str(selected if current_selected_total is None else current_selected_total)],
-        ["", ""],
         list(COLUMNS),
     ]
     return [(r + [""] * (len(COLUMNS) - len(r)))[:len(COLUMNS)]
@@ -728,7 +728,7 @@ SELECTED_TOTAL_FORMULA = (
 
 
 def _refresh_selected_total_formula(session, title):
-    """Restore the live J5 total after a RAW roster rewrite.
+    """Restore the live J6 total after a RAW roster rewrite.
 
     G is leadership's Selection dropdown, U is Status and B is Character.
     Unlike a count computed by the bot, this responds immediately to edits
@@ -737,7 +737,7 @@ def _refresh_selected_total_formula(session, title):
     raid_sheets._json(
         session, "PUT",
         f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-        + quote(f"'{title}'!J5", safe="'!:"),
+        + quote(f"'{title}'!J6", safe="'!:"),
         params={"valueInputOption": "USER_ENTERED"},
         json={"values": [[SELECTED_TOTAL_FORMULA]]},
     )
@@ -938,8 +938,8 @@ def _one(session, db_path, event, names, titles, attendance_rows=None):
     legacy = _legacy_choices(session, event) if new or not existing else None
     body = _rows(db_path, event, names, old_rows=existing, legacy=legacy,
                  attendance_rows=attendance_rows)
-    existing_total = (existing[4][9] if len(existing) > 4
-                      and len(existing[4]) > 9 and existing[4][8] == "Selected players"
+    existing_total = (existing[5][9] if len(existing) > 5
+                      and len(existing[5]) > 9 and existing[5][8] == "Selected players"
                       else None)
     full = _header(event, body, title, current_selected_total=existing_total)
     if invalid_wcl is not None:
