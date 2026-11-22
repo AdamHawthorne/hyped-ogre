@@ -210,6 +210,27 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("**1.", text)
         self.assertLess(text.index("-# Zulu"), text.index("-# Alpha"))
 
+    async def test_preview_counts_roles_per_instance_and_unique_players(self):
+        selected = [
+            ("41", "Tank One", "Hyjal, Barrows 🔸",
+             "Warrior", "Tank", "Protection"),
+            ("42", "Healer One", "Hyjal, Barrows 🔸",
+             "Priest", "Healer", "Holy"),
+            ("43", "Melee One", "Hyjal, Barrows 🔹",
+             "Rogue", "DPS", "Combat"),
+            ("44", "Ranged One", "Hyjal",
+             "Mage", "DPS", "Frost"),
+        ]
+        text = "\\n".join(poster.roster_preview_pages(self.event, selected))
+        self.assertIn("Total selected: 4 players", text)
+        self.assertIn("**Hyjal** 🔹🔸 · **4 players**", text)
+        self.assertIn("**Barrows** 🔸 · **2 players**", text)
+        self.assertIn("**Barrows** 🔹 · **1 players**", text)
+        for role in ("Tanks (1)", "Healers (1)", "Melee (1)", "Ranged (1)"):
+            self.assertIn(role, text)
+        self.assertEqual(text.count("-# Tank One"), 2)
+        self.assertEqual(text.count("-# Ranged One"), 1)
+
     async def test_large_preview_shows_every_selected_name_within_message_limits(self):
         selected = [
             (
