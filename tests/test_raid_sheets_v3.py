@@ -64,6 +64,31 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(header[6][:9], list(sheet.COLUMNS[:9]))
             self.assertEqual(header[1][3], "Forming")
 
+    def test_selected_total_header_and_live_sheet_formula(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "raid.db")
+            event = self.setup_raid(path)
+            body = sheet._rows(path, event, {})
+            total = sheet._header(event, body, sheet.tab_title(event))
+            self.assertEqual(total[5][8], "Selected players")
+            self.assertEqual(total[5][9], "3")
+            # Manual Sheet edits must recalculate without a bot sync.
+            self.assertEqual(
+                sheet.SELECTED_TOTAL_FORMULA,
+                '=COUNTIFS(G8:G500,"Selected",U8:U500,"Signed",B8:B500,"<>")',
+            )
+            with patch.object(sheet.raid_sheets, "_json", return_value={}) as api:
+                sheet._refresh_selected_total_formula(object(), sheet.tab_title(event))
+                self.assertEqual(api.call_args.kwargs["params"]["valueInputOption"],
+                                 "USER_ENTERED")
+                self.assertEqual(api.call_args.kwargs["json"]["values"],
+                                 [[sheet.SELECTED_TOTAL_FORMULA]])
+                self.assertIn("J6", api.call_args.args[2])
+            # Preserve a formatted value already calculated by Sheets.
+            retained = sheet._header(
+                event, body, sheet.tab_title(event), current_selected_total="2")
+            self.assertEqual(retained[5][9], "2")
+
     def test_more_than_two_tanks_repositions_headings_and_repairs_styles(self):
         """A third tank must not retain the former Healers heading's dark style."""
         with tempfile.TemporaryDirectory() as tmp:

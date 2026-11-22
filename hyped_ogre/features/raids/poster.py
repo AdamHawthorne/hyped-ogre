@@ -36,12 +36,36 @@ ANNOUNCEMENTS = {
 
 
 def roster_preview_pages(event, selected, *, limit=1650):
-    """Instance headings once, small-text names, and no silently omitted players."""
-    members = [(entry[1], entry[2], "", "", "", entry[0]) for entry in selected]
-    lines = [f"**Raid #{event['raid_id']} · Confirm roster?**"]
-    for title, players in roster_groups(event, members):
-        lines.extend(["", roster_group_heading(title)])
-        lines.extend("-# " + name for name in players)
+    """Four raid roles and headcounts for every assigned instance.
+
+    The overall total counts unique players, not appearances across multiple
+    instances (one raider may be assigned to Hyjal and Barrows).
+    """
+    from cogs.raid_schedule import signup_role_group
+
+    entries = [
+        (entry[1], entry[2], entry[3] if len(entry) > 3 else "",
+         entry[4] if len(entry) > 4 else "",
+         entry[5] if len(entry) > 5 else "", entry[0])
+        for entry in selected
+    ]
+    unique = {
+        str(entry[0]) if entry[0] else str(entry[1]).casefold()
+        for entry in selected
+    }
+    lines = [
+        f"**Raid #{event['raid_id']} · Confirm roster?**",
+        f"**Total selected: {len(unique)} players**",
+    ]
+    for title, players in roster_groups(event, entries, by_role="four"):
+        grouped = {role: [] for role in ("Tanks", "Healers", "Melee", "Ranged")}
+        for role, name in players:
+            grouped[role].append(name)
+        lines.extend(["", f"{roster_group_heading(title)} · **{len(players)} players**"])
+        for role, names in grouped.items():
+            if names:
+                lines.append(f"**{role} ({len(names)})**")
+                lines.extend("-# " + name for name in names)
         if not players:
             lines.append("-# No selected players")
     pages, page = [], ""
