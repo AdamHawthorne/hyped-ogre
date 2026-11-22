@@ -70,8 +70,8 @@ class RaidTabsTests(unittest.TestCase):
             event = self.setup_raid(path)
             body = sheet._rows(path, event, {})
             total = sheet._header(event, body, sheet.tab_title(event))
-            self.assertEqual(total[4][8], "Selected players")
-            self.assertEqual(total[4][9], "3")
+            self.assertEqual(total[5][8], "Selected players")
+            self.assertEqual(total[5][9], "3")
             # Manual Sheet edits must recalculate without a bot sync.
             self.assertEqual(
                 sheet.SELECTED_TOTAL_FORMULA,
@@ -83,11 +83,11 @@ class RaidTabsTests(unittest.TestCase):
                                  "USER_ENTERED")
                 self.assertEqual(api.call_args.kwargs["json"]["values"],
                                  [[sheet.SELECTED_TOTAL_FORMULA]])
-                self.assertIn("J5", api.call_args.args[2])
+                self.assertIn("J6", api.call_args.args[2])
             # Preserve a formatted value already calculated by Sheets.
             retained = sheet._header(
                 event, body, sheet.tab_title(event), current_selected_total="2")
-            self.assertEqual(retained[4][9], "2")
+            self.assertEqual(retained[5][9], "2")
 
     def test_more_than_two_tanks_repositions_headings_and_repairs_styles(self):
         """A third tank must not retain the former Healers heading's dark style."""
