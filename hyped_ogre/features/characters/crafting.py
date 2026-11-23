@@ -10,9 +10,29 @@ import time
 from contextlib import closing
 from difflib import get_close_matches
 
-PROFESSIONS = ("Alchemy", "Blacksmithing", "Cooking", "Enchanting",
-               "Engineering", "First Aid", "Fishing", "Herbalism",
-               "Leatherworking", "Mining", "Skinning", "Tailoring")
+# V2 board display order: primary crafts, gathering, secondary skills.
+CRAFTING_PROFESSIONS = (
+    "Alchemy", "Blacksmithing", "Enchanting", "Engineering",
+    "Leatherworking", "Tailoring",
+)
+GATHERING_PROFESSIONS = ("Herbalism", "Mining", "Skinning")
+SECONDARY_PROFESSIONS = ("Cooking", "Fishing", "First Aid")
+PROFESSIONS = (
+    CRAFTING_PROFESSIONS + GATHERING_PROFESSIONS + SECONDARY_PROFESSIONS
+)
+# A deliberately small, audited starter set of valuable Forever crafts.
+# Counts cannot be inferred from skill or from the general catalogue.
+NOTABLE_RECIPE_IDS = {
+    "Alchemy": {17187, 17635, 17637},  # Arcanite, Titans, Supreme Power
+    "Blacksmithing": {16729},           # Lionheart Helm
+    "Enchanting": {20034, 22749},      # Crusader, Spell Power
+    "Tailoring": {18560},               # Mooncloth
+}
+# Filenames, not Discord emoji IDs. Resolve uploaded guild emoji at display.
+PROFESSION_ICON_NAMES = {
+    name: "ui_profession_" + name.lower().replace(" ", "")
+    for name in PROFESSIONS
+}
 COOKING = {"cooking", "first aid", "fishing"}
 MIN_SKILL = 200
 # Verified independent Forever item and classic vendor references, not guesses.
@@ -248,6 +268,20 @@ def leaderboard(path):
     return grouped
 
 
+def _notable_counts(path):
+    """Per-player audited featured recipe IDs, not every trainer recipe."""
+    with closing(connect(path)) as con:
+        entries = con.execute(
+            "SELECT character_id,profession,recipe_id FROM craft_known"
+        ).fetchall()
+    counts = {}
+    for character_id, profession, recipe_id in entries:
+        if recipe_id in NOTABLE_RECIPE_IDS.get(profession, set()):
+            key = (character_id, profession)
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def board_rows(path):
     """Guild crafters 200+: verified API first, WSE skill-only fallback.
 
@@ -299,11 +333,21 @@ def board_rows(path):
                 "recipe_count": -1,
                 "source": "WoWSims",
             })
-    for rows in grouped.values():
+    featured = _notable_counts(path)
+    for profession, rows in grouped.items():
+        for row in rows:
+            # Only confirmed Blizzard known_recipes count towards featured
+            # recipes; WSE-only and incomplete records are unverified.
+            row["featured_count"] = (
+                featured.get((row["character_id"], profession), 0)
+                if row["recipe_count"] >= 0 else None
+            )
         rows.sort(key=lambda row: (
-            -(row["recipe_count"] if row["recipe_count"] >= 0 else -1),
+            -(row["featured_count"] if row["featured_count"] is not None else -1),
             -row["skill"], row["name"].casefold()
         ))
+        if profession in GATHERING_PROFESSIONS:
+            rows.sort(key=lambda row: (-row["skill"], row["name"].casefold()))
     return grouped
 
 
