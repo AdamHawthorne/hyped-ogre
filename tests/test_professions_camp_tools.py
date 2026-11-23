@@ -117,7 +117,7 @@ class CampToolTests(unittest.TestCase):
         self.assertIn(
             "**Blacksmithing (1)** · [Anvil]", grouped_text
         )
-        self.assertIn("not verified", grouped_text)
+        self.assertIn("Ogre not found anyone with this yet", grouped_text)
         self.assertNotIn("**Blacksmithing (1)** · [Anvil]", "filler")
 
     def test_three_discord_mentions_max_with_overflow(self):

@@ -108,7 +108,7 @@ def heading_suffix(profession, ownership, *, max_owners=3):
         return ""
     players = ownership.get(profession, [])
     if not players:
-        return f" · {target} · not verified"
+        return f" · {target} · Ogre not found anyone with this yet"
     tags = ", ".join(
         f"<@{player['discord_id']}>" for player in players[:max_owners]
     )

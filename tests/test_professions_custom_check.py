@@ -49,6 +49,8 @@ class CustomCheckTests(unittest.IsolatedAsyncioTestCase):
             emoji=SimpleNamespace(id=9999),
         )
         with (
+            patch.object(feature.crafting, "channel", return_value=(
+                raid.TEST_CHANNEL_ID, 8888)),
             patch.object(feature.crafting, "request_exists", return_value=True),
             patch.object(feature.crafting, "resolve_request") as resolved,
         ):
