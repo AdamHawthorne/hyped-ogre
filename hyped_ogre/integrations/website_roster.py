@@ -9,7 +9,7 @@ from cogs import raid_sheets
 from cogs.raid_schedule import signup_role_group
 from hyped_ogre.features.characters import roster as character_roster
 
-TAB = "Hyped Website Roster"
+TAB = "Full Roster"
 ROLES = ("Tanks", "Healers", "Melee", "Ranged")
 HEADERS = ("In-game name", "Class", "Spec", "Level", "iLvl", "Professions")
 WIDTH = len(HEADERS)
