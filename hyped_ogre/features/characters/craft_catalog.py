@@ -55,7 +55,7 @@ def extract_tier(tier, profession):
                             output[recipe["id"]] = {
                                 "id": recipe["id"], "name": _label(recipe.get("name")),
                                 "profession": profession,
-                                "skill_required": skill,
+                                **({"skill_required": skill} if skill is not None else {}),
                             }
                 elif key in ("categories", "subcategories", "children", "recipes"):
                     walk(v)
