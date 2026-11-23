@@ -520,6 +520,20 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                     prior = await channel.fetch_message(record[1])
                 except (discord.NotFound, discord.Forbidden):
                     pass
+            if prior is None and channel.id != raid.TEST_CHANNEL_ID:
+                # On migration, look for a single old bot-created legacy
+                # professions board before posting a new one.
+                candidates = []
+                async for item in channel.history(limit=50):
+                    if (self.bot.user and item.author.id == self.bot.user.id
+                            and any(
+                                embed.title in ("<Hyped> Guild Crafters",
+                                                "<Hyped> Professions V2")
+                                for embed in item.embeds
+                            )):
+                        candidates.append(item)
+                if len(candidates) == 1:
+                    prior = candidates[0]
             if prior:
                 # Never delete/repost the large board in response to chat.
                 await prior.edit(
