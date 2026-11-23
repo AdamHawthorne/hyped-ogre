@@ -85,7 +85,12 @@ def _recipes_for(entry):
 
 def parse_profile(payload):
     """Professions with actual recipe lists; returns None if API is incomplete."""
-    if not isinstance(payload, dict):
+    if not isinstance(payload, dict) or not any(
+        key in payload for key in (
+            "primaries", "primary_professions", "secondaries",
+            "secondary_professions"
+        )
+    ):
         return None
     groups = []
     for key in ("primaries", "primary_professions", "secondaries", "secondary_professions"):
@@ -120,6 +125,27 @@ def save_profile(path, character_id, payload, observed_at=None):
         return False
     stamp = int(observed_at if observed_at is not None else time.time())
     with closing(connect(path)) as con, con:
+        # An authoritative full snapshot must retire a profession a player
+        # unlearned. A partial snapshot cannot prove a profession was dropped.
+        both_groups_present = (
+            ("primaries" in payload or "primary_professions" in payload)
+            and ("secondaries" in payload or "secondary_professions" in payload)
+        )
+        if both_groups_present:
+            current = {name for name, _, _ in parsed}
+            previous = con.execute(
+                "SELECT profession FROM craft_professions WHERE character_id=?",
+                (character_id,)
+            ).fetchall()
+            for (old_name,) in previous:
+                if old_name not in current:
+                    con.execute(
+                        "DELETE FROM craft_known WHERE character_id=? AND profession=?",
+                        (character_id, old_name))
+                    con.execute(
+                        "DELETE FROM craft_professions "
+                        "WHERE character_id=? AND profession=?",
+                        (character_id, old_name))
         for name, skill, recipes in parsed:
             if recipes is None:
                 # If the endpoint omits known_recipes altogether, do not
