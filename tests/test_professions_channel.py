@@ -169,7 +169,7 @@ class CraftingTests(unittest.TestCase):
                 )
         no_owner = channel.answer(self.path, "+100 hp on chest")
         self.assertIn("Enchant Chest - Major Health", no_owner)
-        self.assertIn("nobody", no_owner)
+        self.assertIn("no verified guild crafter", no_owner)
 
     def test_recipe_ownership_and_uncertain_suggestions_are_not_invented(self):
         crafting.save_catalog(self.path, [
