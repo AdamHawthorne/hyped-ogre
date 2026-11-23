@@ -51,6 +51,17 @@ def initialise(path):
             CREATE TABLE IF NOT EXISTS craft_state (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """)
+        # Known Forever craft: a checked seed so Arcanite lookups work even
+        # before the static Blizzard catalogue's first successful import.
+        prof, output, skill, source, url = CURATED["transmute arcanite"]
+        con.execute(
+            "INSERT OR IGNORE INTO craft_catalog "
+            "(recipe_id,profession,name,output_name,skill_required,"
+            "acquisition,source_url,verified,observed_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (17187, prof, "Transmute: Arcanite", output, skill,
+             source, url, 1, int(time.time())),
+        )
 
 
 def _recipes_for(entry):
