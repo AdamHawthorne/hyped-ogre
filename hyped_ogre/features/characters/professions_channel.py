@@ -395,5 +395,64 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             await interaction.followup.send(f"Crafting refresh failed: {exc}", ephemeral=True)
 
 
+class ProfessionPilotCommands(commands.Cog):
+    """Top-level commands matching other established private Ogre V2 pilots."""
+
+    def __init__(self, bot, board):
+        self.bot = bot
+        self.board = board
+
+    @staticmethod
+    def authorised(interaction):
+        owner_id = int(os.getenv("OWNER_ID") or 0)
+        return (
+            interaction.guild_id == GUILD_ID
+            and interaction.channel_id == raid.TEST_CHANNEL_ID
+            and interaction.user.id in (
+                owner_id, getattr(interaction.guild, "owner_id", None)
+            )
+        )
+
+    @app_commands.command(
+        name="postprofessions-v2",
+        description="Owner-only: post the V2 crafter board in private Ogre",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    async def post_professions(self, interaction: discord.Interaction):
+        # Delegate to the same owner-only handler as /professions preview.
+        await self.board.preview.callback(self.board, interaction)
+
+    @app_commands.command(
+        name="profession-status",
+        description="Owner-only: inspect Blizzard professions API and recipe coverage",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    async def profession_status(self, interaction: discord.Interaction):
+        if not self.authorised(interaction):
+            await interaction.response.send_message(
+                "Use this only as guild owner in private Ogre.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        stats = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
+        await interaction.followup.send(
+            "**Private Ogre professions diagnostics**\n"
+            f"Blizzard credentials: **{'configured' if stats['credentials'] else 'MISSING'}**\n"
+            f"Registered visible characters: **{stats['visible']}**\n"
+            f"Characters with Blizzard professions: **{stats['blizzard_characters']}**\n"
+            f"Profession entries with verified recipe lists: **{stats['verified_professions']}**\n"
+            f"Individual learned-recipe records: **{stats['verified_recipes']}**\n"
+            f"Official recipe catalogue: **{stats['catalog']}**\n"
+            f"Saved WoWSims gear exports: **{stats['wowsims_exports']}**\n"
+            "WoWSims supplies profession skills only, not verified recipe ownership. "
+            "If credentials are missing, configure BLIZZARD_CLIENT_ID and "
+            "BLIZZARD_CLIENT_SECRET on Fly.io.",
+            ephemeral=True,
+        )
+
+
 async def setup(bot):
-    await bot.add_cog(ProfessionBoard(bot))
+    board = ProfessionBoard(bot)
+    await bot.add_cog(board)
+    await bot.add_cog(ProfessionPilotCommands(bot, board))
