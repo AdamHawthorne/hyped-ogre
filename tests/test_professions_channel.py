@@ -113,10 +113,31 @@ class CraftingTests(unittest.TestCase):
         self.assertIn("2 recipes", str(board.fields[0].value))
 
     def test_natural_language_asks_only_crafting_questions(self):
-        self.assertEqual(channel.extract_question("Can anyone do arcanite bar?"), "arcanite bar")
-        self.assertEqual(channel.extract_question("Who can craft Crusader?"), "Crusader")
-        self.assertIsNone(channel.extract_question("Thanks for the dungeon"))
-        self.assertIsNone(channel.extract_question("Can anyone join the dungeon?"))
+        examples = {
+            "Can anyone do arcanite bar?": "arcanite bar",
+            "Who can craft Crusader?": "Crusader",
+            "Who can enchant Crusader?": "Crusader",
+            "Who can make Arcanite Bar?": "Arcanite Bar",
+            "Who can do enchant Crusader?": "Crusader",
+            "Anyone know Crusader?": "Crusader",
+            "Does anyone have enchant Crusader?": "Crusader",
+            "Ogre, can anyone transmute Arcanite Bar?": "Arcanite Bar",
+            "Need someone to make Arcanite Bar": "Arcanite Bar",
+            "Looking for a crafter for Arcanite Bar?": "Arcanite Bar",
+            "Crusader enchant?": "Crusader enchant",
+        }
+        for message, expected in examples.items():
+            with self.subTest(message=message):
+                self.assertEqual(
+                    channel.extract_question(message), expected
+                )
+        for ordinary in (
+            "Thanks for the dungeon", "Can anyone join the dungeon?",
+            "How was the raid?", "Who can tank tonight?",
+            "Anyone interested in PvP?",
+        ):
+            with self.subTest(ordinary=ordinary):
+                self.assertIsNone(channel.extract_question(ordinary))
 
     def test_extract_blizzard_static_nested_categories(self):
         result = craft_catalog.extract_tier(

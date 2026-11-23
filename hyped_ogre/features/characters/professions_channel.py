@@ -159,7 +159,14 @@ class ProfessionsV2(discord.ui.LayoutView):
             elements.append(discord.ui.TextDisplay(
                 "-# No eligible crafters found yet. Try /profession-status."
             ))
-        fresh = ["### New recipes"]
+        note_emoji = (
+            str(discord.utils.get(guild.emojis, name="updates_note"))
+            if guild and discord.utils.get(guild.emojis, name="updates_note")
+            else ""
+        )
+        fresh = [
+            f"### {note_emoji + ' ' if note_emoji else ''}New recipes"
+        ]
         for recipe in new_recipes[:3]:
             # Blizzard recipe IDs are not guaranteed to be Wowhead spell IDs.
             # A Wowhead Forever *search* link avoids linking the wrong spell.
@@ -178,36 +185,90 @@ class ProfessionsV2(discord.ui.LayoutView):
             fresh.append("-# No newly verified 300-skill recipes yet.")
         elements.append(discord.ui.TextDisplay("\n".join(fresh)))
         elements.append(discord.ui.TextDisplay(
-            'Ask Ogre, "Who can do enchant Crusader?"'
+            'Ask Ogre, "Who can enchant Crusader?", '
+            '"Who can make Arcanite Bar?"'
         ))
         self.add_item(discord.ui.Container(*elements, accent_color=COLOUR))
 
 
 def extract_question(content):
-    """Respond to crafting requests, not unrelated guild conversation."""
-    text = " ".join(str(content).strip().split())
-    if len(text) > 240 or len(text) < 7:
-        return None
-    prefixes = (
-        r"^(?:hey |ogre[, ]+)?(?:can (?:anyone|anybody|someone|you) "
-        r"(?:make|craft|do|enchant|transmute)|who (?:can|knows|makes|crafts) "
-        r"|(?:anyone|anybody) (?:know|make|craft|do)"
-        r"|(?:looking for|need) (?:someone to )?(?:make|craft|enchant)?"
-        r"|(?:can you find|find) (?:a )?(?:crafter for)?"
-        r"|(?:craft|make) )\s*(.*?)[?!.]*$"
-    )
-    match = re.match(prefixes, text, re.IGNORECASE)
-    if not match:
-        return None
-    phrase = match.group(1).strip(" ?.!").strip()
-    # The "who can" branch does not consume the action verb.
-    phrase = re.sub(r"^(?:make|craft|do|enchant|transmute)\s+", "", phrase,
-                    flags=re.IGNORECASE)
-    phrase = re.sub(
-        r"^(?:me |an? |the |some |recipe (?:for |to )?|one |any )",
-        "", phrase, flags=re.IGNORECASE)
-    return phrase if len(phrase) >= 3 else None
+    """Recognise common crafting requests without replying to general chat.
 
+    A question need not use one particular template. Gate on either a
+    craft/action verb, a recipe/profession keyword, or a short 'who can'
+    construction. Exact recipe verification still happens in crafting.query.
+    """
+    text = " ".join(str(content or "").split()).strip()
+    if not 3 <= len(text) <= 240:
+        return None
+    # Remove mentions/addressing Ogre and trailing punctuation.
+    text = re.sub(r"^(?:(?:hey|hi|ogre|hyped ogre)[,:! ]+)+", "",
+                  text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"[?!.]+$", "", text).strip()
+    if not text:
+        return None
+
+    # Specific request wordings, including informal guild chat.
+    patterns = (
+        r"^(?:who(?:'s| is)? (?:able to |around to )?"
+        r"(?:can |could |knows how to |knows |has )?)"
+        r"(?:make|craft|enchant|transmute|forge|smith|brew|sew|do|learned|got|know)"
+        r"\s+(.+)$",
+        r"^(?:can|could|does|is) (?:anyone|anybody|someone|somebody|you|we)"
+        r"\s+(?:(?:here|in (?:the )?guild)\s+)?"
+        r"(?:(?:make|craft|enchant|transmute|forge|smith|brew|sew|do|know|"
+        r"have|got|learned|provide|create)\s+)(.+)$",
+        r"^(?:anyone|anybody|someone|somebody)\s+"
+        r"(?:able to |who can |that can |know |knows |got |have |has |"
+        r"make |makes |craft |crafts |enchant |enchants |do |does |"
+        r"transmute |transmutes )(.+)$",
+        r"^(?:(?:i(?:'m| am)? )?(?:looking for|after|needing|need|want|"
+        r"looking to get|could use)|(?:lf|wtb|lfg))\s+(.+)$",
+        r"^(?:do (?:we|you) have|is there (?:anyone|a crafter) (?:for|who can))"
+        r"\s+(.+)$",
+        r"^(?:(?:please |could you |can you )?(?:find|show|tell me|"
+        r"check|ask ogre)\s+(?:me )?(?:a |someone |who |whether )?"
+        r"(?:can |to )?(?:make|craft|enchant|transmute|do)?\s*)(.+)$",
+        r"^(?:make|craft|enchant|transmute|forge|smith|brew|sew)\s+(.+)$",
+    )
+    request = None
+    for pattern in patterns:
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if match:
+            request = match.group(1).strip(" ,.!?")
+            break
+    if request is None:
+        # Shorthand requests like "Crusader enchant?", "Arcanite bar crafter?"
+        # need an explicit profession/craft noun to avoid unrelated replies.
+        if re.search(
+            r"\b(?:enchant(?:ment|ing|er)?|crafter|crafting|recipe|"
+            r"transmute|transmutation|blacksmith|alchemist|tailor|"
+            r"leatherworker|engineer)\b", text, flags=re.IGNORECASE
+        ) and (text.endswith("?") or "?" in str(content)):
+            request = text
+        else:
+            return None
+    # Strip boilerplate without removing meaningful recipe names.
+    request = re.sub(
+        r"^(?:someone (?:to|who can) |"
+        r"(?:to |for |me |us |a |an |the |some |any )+|"
+        r"(?:a )?crafter (?:for|to) |"
+        r"(?:someone )?(?:to )?(?:make|craft|do|enchant|transmute|"
+        r"forge|smith|brew|sew)\s+)",
+        "", request, flags=re.IGNORECASE
+    ).strip(" ,.!?")
+    request = re.sub(
+        r"^(?:(?:someone|somebody) (?:to|who can) |"
+        r"(?:a )?crafter (?:for|to) |"
+        r"(?:make|craft|do|enchant|transmute|forge|smith|brew|sew) )+",
+        "", request, flags=re.IGNORECASE
+    ).strip()
+    request = re.sub(
+        r"^(?:a |an |the |some |my |their |our |one |"
+        r"recipe (?:for |to )?|enchant (?:for |on |my |the )?)+",
+        "", request, flags=re.IGNORECASE
+    ).strip()
+    return request if len(request) >= 3 else None
 
 def answer(path, term):
     result = crafting.query(path, term)
