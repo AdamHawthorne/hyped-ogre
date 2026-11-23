@@ -123,7 +123,7 @@ class ProfessionsV2(discord.ui.LayoutView):
                 discord.ui.TextDisplay(
                     '## <Hyped> Guild Crafters\n'
                     'Ask Ogre, "Who can enchant Crusader?", '
-                    '"Who can make Arcanite Bar?"'
+                    '"Who can make Arcanite Bar?", etc.'
                 ),
                 accessory=discord.ui.Thumbnail(
                     roster.ROSTER_IMAGE, description="Hyped guild logo"
@@ -224,6 +224,15 @@ def extract_question(content):
 
     # Specific request wordings, including informal guild chat.
     patterns = (
+        # Recognise a member supplying a full canonical enchant name.
+        r"^(?:(?:chest|weapon|gloves|boots|bracer|bracers|cloak|shield)"
+        r"\s*:\s*)?((?:enchant|transmute|recipe|pattern|schematic|plans)"
+        r"\s+.+)$",
+        r"^(?:who (?:has|knows|does|can do|can make|can craft|can enchant)"
+        r"\s+)(.+)$",
+        r"^(?:can (?:we|someone|anybody|anyone) (?:get|sort|provide|do)"
+        r"\s+)(.+)$",
+        r"^(?:anyone (?:for|with)\s+)(.+)$",
         r"^(?:who(?:'s| is)? (?:able to |around to )?"
         r"(?:can |could |knows how to |knows |has )?)"
         r"(?:make|craft|enchant|transmute|forge|smith|brew|sew|do|learned|got|know)"
@@ -287,14 +296,30 @@ def extract_question(content):
 def answer(path, term):
     result = crafting.query(path, term)
     if not result or result["status"] == "unknown":
-        return ("Ogre can't match that craft to a verified Forever recipe yet. "
-                "Try the exact item or recipe name.")
+        options = (result or {}).get("suggestions", [])
+        if options:
+            names = ", ".join(
+                f"**{discord.utils.escape_markdown(name)}**"
+                for name in options[:3]
+            )
+            return (
+                f"Ogre couldn't verify **{discord.utils.escape_markdown(term)}** "
+                f"as a recipe. Did you mean {names}? "
+                "Reply with a recipe name and Ogre will check the guild."
+            )
+        return (
+            f"Ogre couldn't match **{discord.utils.escape_markdown(term)}** "
+            "to the Forever recipe database. Try a full recipe name, "
+            "an item, or an enchant bonus and equipment slot, "
+            "for example '+100 HP on chest'."
+        )
     if result["status"] == "unavailable":
         return ("Ogre hasn't finished collecting the Forever recipe list. "
                 "Try again after the next Blizzard sync.")
     if result["status"] == "ambiguous":
         labels = ", ".join(result["matches"][:4])
-        return f"Ogre found several recipes: {labels}. Ask for a more specific one."
+        return (f"Ogre found multiple matching crafts: {labels}. "
+                "Which one do you need? Reply with its full name.")
     recipes = result["recipes"]
     people = result["crafters"]
     recipe_label = recipes[0]["name"] if len(recipes) == 1 else term
@@ -320,8 +345,9 @@ def answer(path, term):
             f"It requires **{verified['acquisition']}**. "
             f"Source: {verified['source_url']}"
         )
-    return (f"Ogre has no verified guild crafter for **{recipe_label}** yet. "
-            "Recipe source not verified. Ogre won't guess.")
+    return (f"Ogre recognises **{recipe_label}**, but nobody in the "
+            "currently verified guild recipe records is confirmed to know it. "
+            "Recipe acquisition source not verified yet.")
 
 
 class ProfessionBoard(commands.GroupCog, group_name="professions",
@@ -476,10 +502,14 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             reply_id = reply.id
         except (sqlite3.Error, discord.HTTPException):
             LOG.exception("Private crafting answer unavailable")
-        try:
-            await message.add_reaction("✅")
-        except discord.HTTPException:
-            LOG.warning("Could not add a completion reaction to craft request")
+        check = discord.utils.get(message.guild.emojis, name="check")
+        if check is not None:
+            try:
+                await message.add_reaction(check)
+            except discord.HTTPException:
+                LOG.warning("Could not add custom :check: reaction to craft request")
+        else:
+            LOG.warning("Guild :check: emoji missing; crafting request tracked without tick")
         await asyncio.to_thread(
             crafting.store_request, raid.RAID_DB,
             request_id=message.id, guild_id=GUILD_ID,
@@ -491,8 +521,11 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
     async def on_raw_reaction_add(self, payload):
         if (payload.guild_id != GUILD_ID
                 or payload.channel_id != raid.TEST_CHANNEL_ID
-                or str(payload.emoji) != "✅"
                 or (self.bot.user and payload.user_id == self.bot.user.id)):
+            return
+        guild = self.bot.get_guild(GUILD_ID)
+        check = discord.utils.get(guild.emojis, name="check") if guild else None
+        if check is None or payload.emoji.id != check.id:
             return
         if not await asyncio.to_thread(
             crafting.request_exists, raid.RAID_DB,
