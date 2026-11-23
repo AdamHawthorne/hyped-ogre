@@ -20,14 +20,6 @@ SECONDARY_PROFESSIONS = ("Cooking", "Fishing", "First Aid")
 PROFESSIONS = (
     CRAFTING_PROFESSIONS + GATHERING_PROFESSIONS + SECONDARY_PROFESSIONS
 )
-# A deliberately small, audited starter set of valuable Forever crafts.
-# Counts cannot be inferred from skill or from the general catalogue.
-NOTABLE_RECIPE_IDS = {
-    "Alchemy": {17187, 17635, 17637},  # Arcanite, Titans, Supreme Power
-    "Blacksmithing": {16729},           # Lionheart Helm
-    "Enchanting": {20034, 22749},      # Crusader, Spell Power
-    "Tailoring": {18560},               # Mooncloth
-}
 # Filenames, not Discord emoji IDs. Resolve uploaded guild emoji at display.
 PROFESSION_ICON_NAMES = {
     name: "ui_profession_" + name.lower().replace(" ", "")
@@ -70,6 +62,15 @@ def initialise(path):
                 panel_id INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS craft_state (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS craft_discoveries (
+                character_id INTEGER NOT NULL, profession TEXT NOT NULL,
+                recipe_id INTEGER NOT NULL, detected_at INTEGER NOT NULL,
+                PRIMARY KEY(character_id,profession,recipe_id));
+            CREATE TABLE IF NOT EXISTS craft_requests (
+                request_id INTEGER PRIMARY KEY, guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL, reply_id INTEGER,
+                requested_at INTEGER NOT NULL, resolved_at INTEGER,
+                resolved_by INTEGER);
         """)
         # Known Forever craft: a checked seed so Arcanite lookups work even
         # before the static Blizzard catalogue's first successful import.
@@ -178,6 +179,27 @@ def save_profile(path, character_id, payload, observed_at=None):
                 count = existing[0] if existing is not None else -1
             else:
                 count = len(recipes)
+                # A first imported snapshot is a baseline, not a newly
+                # learned recipe. Only report additions after a prior
+                # complete known_recipes snapshot was already recorded.
+                prior_count = con.execute(
+                    "SELECT recipe_count FROM craft_professions "
+                    "WHERE character_id=? AND profession=?",
+                    (character_id, name),
+                ).fetchone()
+                if prior_count is not None and prior_count[0] >= 0:
+                    previous = {
+                        row[0] for row in con.execute(
+                            "SELECT recipe_id FROM craft_known "
+                            "WHERE character_id=? AND profession=?",
+                            (character_id, name),
+                        )
+                    }
+                    con.executemany(
+                        "INSERT OR IGNORE INTO craft_discoveries VALUES (?,?,?,?)",
+                        ((character_id, name, ident, stamp)
+                         for ident in recipes if ident not in previous),
+                    )
                 con.execute(
                     "DELETE FROM craft_known WHERE character_id=? AND profession=?",
                     (character_id, name))
@@ -217,11 +239,16 @@ def save_catalog(path, recipes, observed_at=None):
                 "skill_required,acquisition,source_url,verified,observed_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(recipe_id) DO UPDATE SET "
                 "profession=excluded.profession,name=excluded.name,"
+                "skill_required=COALESCE(excluded.skill_required,"
+                "craft_catalog.skill_required),"
                 "output_name=CASE WHEN excluded.output_name<>'' "
                 "THEN excluded.output_name ELSE craft_catalog.output_name END,"
                 "observed_at=excluded.observed_at",
                 (ident, prof, name[:140], str(item.get("output") or "")[:140],
-                 None, "", "", 0, stamp))
+                 item.get("skill_required") if
+                 type(item.get("skill_required")) is int and
+                 1 <= item["skill_required"] <= 450 else None,
+                 "", "", 0, stamp))
         # Apply carefully sourced overrides only to name-matched recipes.
         for recipe_name, (prof, product, skill, source, url) in CURATED.items():
             con.execute(
@@ -266,20 +293,6 @@ def leaderboard(path):
     for row in rows:
         grouped.setdefault(row["profession"], []).append(dict(row))
     return grouped
-
-
-def _notable_counts(path):
-    """Per-player audited featured recipe IDs, not every trainer recipe."""
-    with closing(connect(path)) as con:
-        entries = con.execute(
-            "SELECT character_id,profession,recipe_id FROM craft_known"
-        ).fetchall()
-    counts = {}
-    for character_id, profession, recipe_id in entries:
-        if recipe_id in NOTABLE_RECIPE_IDS.get(profession, set()):
-            key = (character_id, profession)
-            counts[key] = counts.get(key, 0) + 1
-    return counts
 
 
 def board_rows(path):
@@ -333,21 +346,10 @@ def board_rows(path):
                 "recipe_count": -1,
                 "source": "WoWSims",
             })
-    featured = _notable_counts(path)
     for profession, rows in grouped.items():
-        for row in rows:
-            # Only confirmed Blizzard known_recipes count towards featured
-            # recipes; WSE-only and incomplete records are unverified.
-            row["featured_count"] = (
-                featured.get((row["character_id"], profession), 0)
-                if row["recipe_count"] >= 0 else None
-            )
-        rows.sort(key=lambda row: (
-            -(row["featured_count"] if row["featured_count"] is not None else -1),
-            -row["skill"], row["name"].casefold()
-        ))
-        if profession in GATHERING_PROFESSIONS:
-            rows.sort(key=lambda row: (-row["skill"], row["name"].casefold()))
+        # V2 no longer ranks or displays arbitrary featured recipe totals.
+        # Prefer the most skilled crafters, with names breaking ties.
+        rows.sort(key=lambda row: (-row["skill"], row["name"].casefold()))
     return grouped
 
 
@@ -380,6 +382,82 @@ def diagnostics(path):
     }
 
 
+def latest_high_skill_discoveries(path, limit=3):
+    """Newly detected learned recipes requiring 300 skill, when verified.
+
+    The Armory lacks the in-game time learned. detected_at is the first
+    snapshot in which Ogre saw the recipe, not a claimed game timestamp.
+    Do not mistake a character at 300 skill for a 300-required recipe.
+    """
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        entries = con.execute("""
+            SELECT c.name AS character_name,d.profession,d.recipe_id,
+                   d.detected_at,r.name AS recipe_name
+            FROM craft_discoveries d
+            JOIN characters c ON c.character_id=d.character_id
+            LEFT JOIN character_board_overrides h
+                ON h.character_id=c.character_id
+            JOIN craft_catalog r ON r.recipe_id=d.recipe_id
+            JOIN craft_known k ON k.character_id=d.character_id
+                AND k.profession=d.profession AND k.recipe_id=d.recipe_id
+            WHERE c.roster_visible=1 AND COALESCE(h.hidden,0)=0
+                AND r.skill_required>=300
+            ORDER BY d.detected_at DESC,d.rowid DESC LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(row) for row in entries]
+
+
+def store_request(path, *, request_id, guild_id, channel_id, reply_id=None,
+                  requested_at=None):
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "INSERT OR IGNORE INTO craft_requests "
+            "(request_id,guild_id,channel_id,reply_id,requested_at) "
+            "VALUES (?,?,?,?,?)",
+            (request_id,guild_id,channel_id,reply_id,
+             int(requested_at if requested_at is not None else time.time())),
+        )
+
+
+def resolve_request(path, *, request_id, user_id, resolved_at=None):
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "UPDATE craft_requests SET resolved_at=?,resolved_by=? "
+            "WHERE request_id=? AND resolved_at IS NULL",
+            (int(resolved_at if resolved_at is not None else time.time()),
+             user_id,request_id),
+        )
+        return bool(con.total_changes)
+
+
+def expired_requests(path, now=None):
+    now = int(now if now is not None else time.time())
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT * FROM craft_requests
+            WHERE (resolved_at IS NOT NULL AND resolved_at + 86400 <= ?)
+               OR (resolved_at IS NULL AND requested_at + 259200 <= ?)
+        """, (now,now)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def forget_request(path, request_id):
+    with closing(connect(path)) as con, con:
+        con.execute("DELETE FROM craft_requests WHERE request_id=?", (request_id,))
+
+
+def request_exists(path, request_id, channel_id):
+    with closing(connect(path)) as con:
+        row = con.execute(
+            "SELECT 1 FROM craft_requests "
+            "WHERE request_id=? AND channel_id=?",
+            (request_id,channel_id),
+        ).fetchone()
+    return bool(row)
+
+
 def _search_terms(text):
     text = re.sub(r"[^a-z0-9 ]", " ", text.casefold())
     text = re.sub(r"\s+", " ", text).strip()
@@ -408,6 +486,19 @@ def query(path, question):
         else:
             matches = [r for r in all_recipes if any(
                 term in _search_terms(x) for x in aliases(r) if x)]
+        if not matches:
+            # "enchant Crusader" should match "Enchant Weapon - Crusader"
+            # without requiring the user to know the full spell title.
+            tokens = set(term.split())
+            if "enchant" in tokens:
+                tokens.discard("enchant")
+            if "craft" in tokens:
+                tokens.discard("craft")
+            if tokens:
+                matches = [r for r in all_recipes if any(
+                    tokens.issubset(set(_search_terms(x).split()))
+                    for x in aliases(r) if x
+                )]
         if not matches:
             return {"status": "unknown"}
         # Avoid pretending we identified a recipe when a term matches dozens.

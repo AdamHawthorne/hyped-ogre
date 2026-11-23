@@ -42,9 +42,20 @@ def extract_tier(tier, profession):
                 if key == "recipes" and isinstance(v, list):
                     for recipe in v:
                         if isinstance(recipe, dict) and type(recipe.get("id")) is int:
+                            # Only take a recipe-specific required skill
+                            # exposed explicitly by Blizzard. A tier's max
+                            # skill is NOT a recipe's required level.
+                            skill = next((
+                                recipe[key] for key in (
+                                    "required_skill", "skill_level",
+                                    "required_skill_level",
+                                ) if type(recipe.get(key)) is int
+                                and 1 <= recipe[key] <= 450
+                            ), None)
                             output[recipe["id"]] = {
                                 "id": recipe["id"], "name": _label(recipe.get("name")),
                                 "profession": profession,
+                                **({"skill_required": skill} if skill is not None else {}),
                             }
                 elif key in ("categories", "subcategories", "children", "recipes"):
                     walk(v)
