@@ -70,6 +70,15 @@ def initialise(path):
                 panel_id INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS craft_state (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS craft_discoveries (
+                character_id INTEGER NOT NULL, profession TEXT NOT NULL,
+                recipe_id INTEGER NOT NULL, detected_at INTEGER NOT NULL,
+                PRIMARY KEY(character_id,profession,recipe_id));
+            CREATE TABLE IF NOT EXISTS craft_requests (
+                request_id INTEGER PRIMARY KEY, guild_id INTEGER NOT NULL,
+                channel_id INTEGER NOT NULL, reply_id INTEGER,
+                requested_at INTEGER NOT NULL, resolved_at INTEGER,
+                resolved_by INTEGER);
         """)
         # Known Forever craft: a checked seed so Arcanite lookups work even
         # before the static Blizzard catalogue's first successful import.
@@ -178,6 +187,27 @@ def save_profile(path, character_id, payload, observed_at=None):
                 count = existing[0] if existing is not None else -1
             else:
                 count = len(recipes)
+                # A first imported snapshot is a baseline, not a newly
+                # learned recipe. Only report additions after a prior
+                # complete known_recipes snapshot was already recorded.
+                prior_count = con.execute(
+                    "SELECT recipe_count FROM craft_professions "
+                    "WHERE character_id=? AND profession=?",
+                    (character_id, name),
+                ).fetchone()
+                if prior_count is not None and prior_count[0] >= 0:
+                    previous = {
+                        row[0] for row in con.execute(
+                            "SELECT recipe_id FROM craft_known "
+                            "WHERE character_id=? AND profession=?",
+                            (character_id, name),
+                        )
+                    }
+                    con.executemany(
+                        "INSERT OR IGNORE INTO craft_discoveries VALUES (?,?,?,?)",
+                        ((character_id, name, ident, stamp)
+                         for ident in recipes if ident not in previous),
+                    )
                 con.execute(
                     "DELETE FROM craft_known WHERE character_id=? AND profession=?",
                     (character_id, name))
@@ -217,11 +247,16 @@ def save_catalog(path, recipes, observed_at=None):
                 "skill_required,acquisition,source_url,verified,observed_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(recipe_id) DO UPDATE SET "
                 "profession=excluded.profession,name=excluded.name,"
+                "skill_required=COALESCE(excluded.skill_required,"
+                "craft_catalog.skill_required),"
                 "output_name=CASE WHEN excluded.output_name<>'' "
                 "THEN excluded.output_name ELSE craft_catalog.output_name END,"
                 "observed_at=excluded.observed_at",
                 (ident, prof, name[:140], str(item.get("output") or "")[:140],
-                 None, "", "", 0, stamp))
+                 item.get("skill_required") if
+                 type(item.get("skill_required")) is int and
+                 1 <= item["skill_required"] <= 450 else None,
+                 "", "", 0, stamp))
         # Apply carefully sourced overrides only to name-matched recipes.
         for recipe_name, (prof, product, skill, source, url) in CURATED.items():
             con.execute(
@@ -378,6 +413,82 @@ def diagnostics(path):
         "verified_recipes": counts[2] or 0,
         "catalog": index_count, "wowsims_exports": exports,
     }
+
+
+def latest_high_skill_discoveries(path, limit=3):
+    """Newly detected learned recipes requiring 300 skill, when verified.
+
+    The Armory lacks the in-game time learned. detected_at is the first
+    snapshot in which Ogre saw the recipe, not a claimed game timestamp.
+    Do not mistake a character at 300 skill for a 300-required recipe.
+    """
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        entries = con.execute("""
+            SELECT c.name AS character_name,d.profession,d.recipe_id,
+                   d.detected_at,r.name AS recipe_name
+            FROM craft_discoveries d
+            JOIN characters c ON c.character_id=d.character_id
+            LEFT JOIN character_board_overrides h
+                ON h.character_id=c.character_id
+            JOIN craft_catalog r ON r.recipe_id=d.recipe_id
+            JOIN craft_known k ON k.character_id=d.character_id
+                AND k.profession=d.profession AND k.recipe_id=d.recipe_id
+            WHERE c.roster_visible=1 AND COALESCE(h.hidden,0)=0
+                AND r.skill_required>=300
+            ORDER BY d.detected_at DESC,d.rowid DESC LIMIT ?
+        """, (limit,)).fetchall()
+    return [dict(row) for row in entries]
+
+
+def store_request(path, *, request_id, guild_id, channel_id, reply_id=None,
+                  requested_at=None):
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "INSERT OR IGNORE INTO craft_requests "
+            "(request_id,guild_id,channel_id,reply_id,requested_at) "
+            "VALUES (?,?,?,?,?)",
+            (request_id,guild_id,channel_id,reply_id,
+             int(requested_at if requested_at is not None else time.time())),
+        )
+
+
+def resolve_request(path, *, request_id, user_id, resolved_at=None):
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "UPDATE craft_requests SET resolved_at=?,resolved_by=? "
+            "WHERE request_id=? AND resolved_at IS NULL",
+            (int(resolved_at if resolved_at is not None else time.time()),
+             user_id,request_id),
+        )
+        return bool(con.total_changes)
+
+
+def expired_requests(path, now=None):
+    now = int(now if now is not None else time.time())
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT * FROM craft_requests
+            WHERE (resolved_at IS NOT NULL AND resolved_at + 86400 <= ?)
+               OR (resolved_at IS NULL AND requested_at + 259200 <= ?)
+        """, (now,now)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def forget_request(path, request_id):
+    with closing(connect(path)) as con, con:
+        con.execute("DELETE FROM craft_requests WHERE request_id=?", (request_id,))
+
+
+def request_exists(path, request_id, channel_id):
+    with closing(connect(path)) as con:
+        row = con.execute(
+            "SELECT 1 FROM craft_requests "
+            "WHERE request_id=? AND channel_id=?",
+            (request_id,channel_id),
+        ).fetchone()
+    return bool(row)
 
 
 def _search_terms(text):
