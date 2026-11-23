@@ -134,10 +134,8 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.assertIn("Primary professions", contents)
         self.assertIn("Gathering", contents)
         self.assertIn("New recipes", contents)
-        self.assertIn(
-            'Ask Ogre, "Who can enchant Crusader?", '
-            '"Who can make Arcanite Bar?"', contents
-        )
+        # The example moved into the header Section.
+        self.assertNotIn("Ask Ogre", contents)
         self.assertNotIn("Secondary professions", contents)
         self.assertNotIn("Cook", contents)
         self.assertNotIn("featured", contents)
