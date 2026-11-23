@@ -283,7 +283,7 @@ def extract_question(content):
     # Health", when supplied in full in a follow-up or sourcing question.
     if re.match(
         r"^(?:enchant|transmute) (?:chest|weapon|boots|gloves|"
-        r"bracer|bracers|cloak|shield)\\b",
+        r"bracer|bracers|cloak|shield)\b",
         request, flags=re.IGNORECASE
     ):
         return request
