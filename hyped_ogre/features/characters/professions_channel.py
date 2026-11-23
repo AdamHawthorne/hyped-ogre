@@ -120,7 +120,11 @@ class ProfessionsV2(discord.ui.LayoutView):
         updated_at = int(time.time() if updated_at is None else updated_at)
         elements = [
             discord.ui.Section(
-                discord.ui.TextDisplay("## <Hyped> Guild Crafters"),
+                discord.ui.TextDisplay(
+                    '## <Hyped> Guild Crafters\n'
+                    'Ask Ogre, "Who can enchant Crusader?", '
+                    '"Who can make Arcanite Bar?"'
+                ),
                 accessory=discord.ui.Thumbnail(
                     roster.ROSTER_IMAGE, description="Hyped guild logo"
                 ),
@@ -146,7 +150,17 @@ class ProfessionsV2(discord.ui.LayoutView):
                     label = discord.utils.escape_mentions(
                         discord.utils.escape_markdown(person["name"])
                     )
-                    lines.append(f"-# **{label}** · {person['skill']} skill")
+                    discord_id = person.get("discord_id")
+                    # Display the registered Discord handle without pinging
+                    # every crafter whenever the board refreshes.
+                    handle = (
+                        f" / <@{discord_id}>"
+                        if type(discord_id) is int and discord_id > 0
+                        else ""
+                    )
+                    lines.append(
+                        f"-# **{label}**{handle} · {person['skill']} skill"
+                    )
                 blocks.append("\n".join(lines))
                 shown += len(selected)
             if blocks:
@@ -182,10 +196,6 @@ class ProfessionsV2(discord.ui.LayoutView):
         if len(fresh) == 1:
             fresh.append("-# No newly verified 300-skill recipes yet.")
         elements.append(discord.ui.TextDisplay("\n".join(fresh)))
-        elements.append(discord.ui.TextDisplay(
-            'Ask Ogre, "Who can enchant Crusader?", '
-            '"Who can make Arcanite Bar?"'
-        ))
         # Discord renders both absolute and relative times in the reader's
         # timezone. This is the board's last successful render, not a claim
         # that every Blizzard character profile was refreshed successfully.

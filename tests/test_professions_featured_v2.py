@@ -61,6 +61,41 @@ class ProfessionsV2Tests(unittest.TestCase):
             ["a", "b", "c"],
         )
 
+    def test_header_prompt_and_crafter_discord_handles(self):
+        guild = SimpleNamespace(emojis=[])
+        grouped = {"Alchemy": [
+            {"name": "Character One", "skill": 300, "discord_id": 123456789},
+            {"name": "Character Two", "skill": 299, "discord_id": None},
+        ]}
+        view = p.ProfessionsV2(grouped, guild, updated_at=1795460000)
+        blocks = [
+            getattr(component, "content", "")
+            for child in view.children
+            for component in getattr(child, "children", [])
+        ]
+        # Header is displayed in the Section rather than the container's
+        # standalone text elements.
+        section = next(
+            component for child in view.children
+            for component in getattr(child, "children", [])
+            if isinstance(component, p.discord.ui.Section)
+        )
+        header = section.children[0].content
+        self.assertIn("## <Hyped> Guild Crafters", header)
+        self.assertIn(
+            'Ask Ogre, "Who can enchant Crusader?", '
+            '"Who can make Arcanite Bar?"', header
+        )
+        self.assertEqual(
+            sum("Ask Ogre" in item for item in blocks), 0
+        )
+        roster = "\\n".join(blocks)
+        self.assertIn(
+            "**Character One** / <@123456789> · 300 skill", roster
+        )
+        self.assertIn("**Character Two** · 299 skill", roster)
+        self.assertNotIn("<@None>", roster)
+
     def test_v2_footer_timestamp_and_exact_top_three(self):
         guild = SimpleNamespace(emojis=[])
         grouped = {"Alchemy": [
@@ -99,10 +134,8 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.assertIn("Primary professions", contents)
         self.assertIn("Gathering", contents)
         self.assertIn("New recipes", contents)
-        self.assertIn(
-            'Ask Ogre, "Who can enchant Crusader?", '
-            '"Who can make Arcanite Bar?"', contents
-        )
+        # The example moved into the header Section.
+        self.assertNotIn("Ask Ogre", contents)
         self.assertNotIn("Secondary professions", contents)
         self.assertNotIn("Cook", contents)
         self.assertNotIn("featured", contents)
