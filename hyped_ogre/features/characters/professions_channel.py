@@ -159,7 +159,14 @@ class ProfessionsV2(discord.ui.LayoutView):
             elements.append(discord.ui.TextDisplay(
                 "-# No eligible crafters found yet. Try /profession-status."
             ))
-        fresh = ["### New recipes"]
+        note_emoji = (
+            str(discord.utils.get(guild.emojis, name="updates_note"))
+            if guild and discord.utils.get(guild.emojis, name="updates_note")
+            else ""
+        )
+        fresh = [
+            f"### {note_emoji + ' ' if note_emoji else ''}New recipes"
+        ]
         for recipe in new_recipes[:3]:
             # Blizzard recipe IDs are not guaranteed to be Wowhead spell IDs.
             # A Wowhead Forever *search* link avoids linking the wrong spell.
