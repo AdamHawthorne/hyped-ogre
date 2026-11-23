@@ -458,6 +458,58 @@ def request_exists(path, request_id, channel_id):
     return bool(row)
 
 
+# Informal in-game terminology mapped only to confirmed canonical recipe
+# names. Ownership still must be proven via Blizzard known_recipes.
+RECIPE_ALIASES = {
+    "100 hp chest": "enchant chest major health",
+    "100hp chest": "enchant chest major health",
+    "100 health chest": "enchant chest major health",
+    "chest 100 hp": "enchant chest major health",
+    "chest 100 health": "enchant chest major health",
+    "100 hp on chest": "enchant chest major health",
+    "100 health on chest": "enchant chest major health",
+    "100 hp on my chest": "enchant chest major health",
+    "100 health on my chest": "enchant chest major health",
+    "100hp on chest": "enchant chest major health",
+    "major health chest": "enchant chest major health",
+    "chest major health": "enchant chest major health",
+    "major health enchant": "enchant chest major health",
+    "100 hp chest enchant": "enchant chest major health",
+    "100 health chest enchant": "enchant chest major health",
+    "enchant 100 hp chest": "enchant chest major health",
+    "100hp on my chest": "enchant chest major health",
+    "100 hp to chest": "enchant chest major health",
+    "30 spellpower weapon": "enchant weapon spell power",
+    "30 spell power weapon": "enchant weapon spell power",
+    "spellpower weapon": "enchant weapon spell power",
+    "55 healing weapon": "enchant weapon healing power",
+    "healing power weapon": "enchant weapon healing power",
+    "fiery weapon": "enchant weapon fiery weapon",
+    "arcanite bar": "transmute arcanite",
+    "arcanite bars": "transmute arcanite",
+    "crusader": "enchant weapon crusader",
+    "crusader enchant": "enchant weapon crusader",
+    "enchant crusader": "enchant weapon crusader",
+    "weapon crusader": "enchant weapon crusader",
+}
+
+
+def _recipe_key(text):
+    text = _search_terms(text)
+    return text
+
+
+def _suggestions(recipes, term, *, limit=3):
+    from difflib import get_close_matches
+    keys = {}
+    for recipe in recipes:
+        for value in (recipe["name"], recipe["output_name"]):
+            if value:
+                keys.setdefault(_recipe_key(value), recipe["name"])
+    names = get_close_matches(term, list(keys), n=limit, cutoff=0.62)
+    return list(dict.fromkeys(keys[name] for name in names))[:limit]
+
+
 def _search_terms(text):
     text = re.sub(r"[^a-z0-9 ]", " ", text.casefold())
     text = re.sub(r"\s+", " ", text).strip()
@@ -467,10 +519,16 @@ def _search_terms(text):
 
 
 def query(path, question):
-    """Return exact or distinct fuzzy match; never claim skill implies ownership."""
-    term = _search_terms(question)
-    if not term or len(term) < 3:
+    """Resolve normal speech against actual catalog; never infer ownership.
+
+    Uses explicit aliases for established enchant nicknames, then exact,
+    full-token and unique substring matching. Uncertain requests return
+    candidate names, not a randomly selected recipe or fabricated crafter.
+    """
+    original = _recipe_key(question)
+    if len(original) < 3:
         return None
+    target = RECIPE_ALIASES.get(original, original)
     with closing(connect(path)) as con:
         con.row_factory = sqlite3.Row
         all_recipes = [dict(row) for row in con.execute(
@@ -478,32 +536,47 @@ def query(path, question):
         if not all_recipes:
             return {"status": "unavailable"}
         def aliases(recipe):
-            return [recipe["name"], recipe["output_name"]]
-        exact = [r for r in all_recipes if term in
-                 [_search_terms(x) for x in aliases(r) if x]]
+            return [
+                _recipe_key(name) for name in
+                (recipe["name"], recipe["output_name"])
+                if name
+            ]
+        exact = [r for r in all_recipes if target in aliases(r)]
         if exact:
             matches = exact
         else:
-            matches = [r for r in all_recipes if any(
-                term in _search_terms(x) for x in aliases(r) if x)]
-        if not matches:
-            # "enchant Crusader" should match "Enchant Weapon - Crusader"
-            # without requiring the user to know the full spell title.
-            tokens = set(term.split())
-            if "enchant" in tokens:
-                tokens.discard("enchant")
-            if "craft" in tokens:
-                tokens.discard("craft")
-            if tokens:
+            tokens = set(target.split())
+            # Only remove generic words, not item names such as
+            # "weapon", "chest", "health", "bar" or stat values.
+            tokens -= {"enchant", "enchantment", "craft", "recipe", "on",
+                       "my", "for", "the", "can", "do", "make", "an"}
+            matches = [
+                r for r in all_recipes if tokens and any(
+                    tokens.issubset(set(name.split()))
+                    for name in aliases(r)
+                )
+            ]
+            if not matches:
                 matches = [r for r in all_recipes if any(
-                    tokens.issubset(set(_search_terms(x).split()))
-                    for x in aliases(r) if x
+                    target in name or name in target
+                    for name in aliases(r) if len(name) >= 6
                 )]
         if not matches:
-            return {"status": "unknown"}
-        # Avoid pretending we identified a recipe when a term matches dozens.
-        if len(matches) > 5:
-            return {"status": "ambiguous", "matches": [r["name"] for r in matches[:5]]}
+            return {
+                "status": "unknown",
+                "suggestions": _suggestions(all_recipes, target),
+            }
+        if len(matches) > 1:
+            # Multiple recipe IDs can legitimately refer to the same
+            # spell name. Resolve those together, but do not combine
+            # distinct crafts into one answer.
+            names = {_recipe_key(r["name"]) for r in matches}
+            if len(names) > 1:
+                return {
+                    "status": "ambiguous",
+                    "matches": list(dict.fromkeys(
+                        r["name"] for r in matches))[:5],
+                }
         match_ids = [r["recipe_id"] for r in matches]
         found = con.execute(
             "SELECT c.discord_id,c.name,k.recipe_id,p.skill "
@@ -516,7 +589,6 @@ def query(path, question):
             "ORDER BY p.skill DESC,LOWER(c.name) LIMIT 12", match_ids).fetchall()
         crafters = [dict(row) for row in found]
     return {"status": "found", "recipes": matches, "crafters": crafters}
-
 
 def channel(path, guild_id):
     with closing(connect(path)) as con:
