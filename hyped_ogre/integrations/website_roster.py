@@ -56,7 +56,7 @@ def website_rows(records):
         ))
     rows = [
         ["<Hyped> Guild Roster"] + [""] * (WIDTH - 1),
-        [f"{sum(map(len, groups.values()))} main characters"] + [""] * (WIDTH - 1),
+        [f"{sum(map(len, groups.values()))} characters"] + [""] * (WIDTH - 1),
         list(HEADERS),
     ]
     sections = []
