@@ -382,18 +382,53 @@ def diagnostics(path):
     }
 
 
-def latest_high_skill_discoveries(path, limit=3):
-    """Newly detected learned recipes requiring 300 skill, when verified.
+# Selected late-game/Artisan additions explicitly listed in the
+# 19 Nov 2026 Wowhead Forever profession overview's new recipe tables.
+# These are *name-verified* inclusions, not a claim that all have an
+# explicitly reported skill_required=300 in the Blizzard API.
+# Additional recipes enter via the API's verified skill_required >= 300.
+ARTISAN_GUIDE_RECIPES = {
+    ("Alchemy", "alchemy laboratory"),
+    ("Alchemy", "flask of natural accuracy"),
+    ("Alchemy", "flask of natural aggression"),
+    ("Alchemy", "flask of natural precision"),
+    ("Alchemy", "flask of natural swiftness"),
+    ("Blacksmithing", "master forge"),
+    ("Enchanting", "arcane forge"),
+    ("Enchanting", "enchant 2h weapon mighty healing power"),
+    ("Enchanting", "enchant 2h weapon mighty spell power"),
+    ("Engineering", "anarchist s workbench"),
+    ("Engineering", "ultralight goblin glider"),
+    ("Engineering", "swiftfeather arrow"),
+    ("Engineering", "swiftstrike shot"),
+    ("Leatherworking", "sewing machine"),
+    ("Tailoring", "loom"),
+    ("Tailoring", "bottomless reagent bag"),
+    ("Herbalism", "seed hybridizer"),
+    ("Mining", "molten foundry"),
+    ("Skinning", "trapper s workbench"),
+}
 
-    The Armory lacks the in-game time learned. detected_at is the first
-    snapshot in which Ogre saw the recipe, not a claimed game timestamp.
-    Do not mistake a character at 300 skill for a 300-required recipe.
+
+def _artisan_from_guide(profession, name):
+    normalized = re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip()
+    return (profession, normalized) in ARTISAN_GUIDE_RECIPES
+
+
+def latest_high_skill_discoveries(path, limit=3):
+    """Recently detected Artisan recipes, never inferred from character skill.
+
+    Include recipes with an explicit API-required skill >=300 or matched
+    against the source-checked Forever Artisan new-recipe shortlist.
+    detected_at marks when Ogre observed it, not when the player learned it.
+    Initial imports are excluded by save_profile's baseline guard.
     """
     with closing(connect(path)) as con:
         con.row_factory = sqlite3.Row
         entries = con.execute("""
             SELECT c.name AS character_name,d.profession,d.recipe_id,
-                   d.detected_at,r.name AS recipe_name
+                   d.detected_at,r.name AS recipe_name,
+                   r.skill_required
             FROM craft_discoveries d
             JOIN characters c ON c.character_id=d.character_id
             LEFT JOIN character_board_overrides h
@@ -402,10 +437,16 @@ def latest_high_skill_discoveries(path, limit=3):
             JOIN craft_known k ON k.character_id=d.character_id
                 AND k.profession=d.profession AND k.recipe_id=d.recipe_id
             WHERE c.roster_visible=1 AND COALESCE(h.hidden,0)=0
-                AND r.skill_required>=300
-            ORDER BY d.detected_at DESC,d.rowid DESC LIMIT ?
-        """, (limit,)).fetchall()
-    return [dict(row) for row in entries]
+            ORDER BY d.detected_at DESC,d.rowid DESC
+        """).fetchall()
+    selected = []
+    for row in entries:
+        if (row["skill_required"] is not None and row["skill_required"] >= 300
+                or _artisan_from_guide(row["profession"], row["recipe_name"])):
+            selected.append(dict(row))
+            if len(selected) >= limit:
+                break
+    return selected
 
 
 def store_request(path, *, request_id, guild_id, channel_id, reply_id=None,
