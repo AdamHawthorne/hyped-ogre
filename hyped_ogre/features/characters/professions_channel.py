@@ -104,6 +104,9 @@ def profession_emoji(guild, profession):
         stem, "prof_" + profession.casefold().replace(" ", ""),
         profession.casefold().replace(" ", ""),
     )
+    # User-uploaded :tailoring: may not have the UI_Profession prefix.
+    if profession == "Tailoring":
+        candidates += ("tailoring",)
     for name in candidates:
         emoji = discord.utils.get(guild.emojis, name=name)
         if emoji:
@@ -112,17 +115,14 @@ def profession_emoji(guild, profession):
 
 
 class ProfessionsV2(discord.ui.LayoutView):
-    """A real Discord Components V2 layout, not a legacy embed."""
+    """One persistent V2 board, edited in place and pinned."""
 
-    def __init__(self, grouped, guild=None, *, status=None):
+    def __init__(self, grouped, guild=None, *, new_recipes=()):
         super().__init__(timeout=None)
         from . import roster
         elements = [
             discord.ui.Section(
-                discord.ui.TextDisplay(
-                    "## <Hyped> Guild Crafters\n"
-                    "-# Skill 200+ · Top 3 per profession + everyone 295+"
-                ),
+                discord.ui.TextDisplay("## <Hyped> Guild Crafters"),
                 accessory=discord.ui.Thumbnail(
                     roster.ROSTER_IMAGE, description="Hyped guild logo"
                 ),
@@ -132,7 +132,6 @@ class ProfessionsV2(discord.ui.LayoutView):
         for group_name, names in (
             ("Primary professions", crafting.CRAFTING_PROFESSIONS),
             ("Gathering", crafting.GATHERING_PROFESSIONS),
-            ("Secondary professions", crafting.SECONDARY_PROFESSIONS),
         ):
             blocks = []
             for profession in names:
@@ -140,49 +139,47 @@ class ProfessionsV2(discord.ui.LayoutView):
                 if not people:
                     continue
                 selected = featured_selection(profession, people)
-                prefix = profession_emoji(guild, profession)
-                heading = f"-# **{prefix + ' ' if prefix else ''}{profession} ({len(people)})**"
+                icon = profession_emoji(guild, profession)
+                heading = (
+                    f"-# **{icon + ' ' if icon else ''}{profession} ({len(people)})**"
+                )
                 lines = [heading]
                 for person in selected:
                     label = discord.utils.escape_mentions(
                         discord.utils.escape_markdown(person["name"])
                     )
-                    extra = ""
-                    if profession in crafting.NOTABLE_RECIPE_IDS:
-                        featured = person.get("featured_count")
-                        extra = (
-                            f" · {featured} featured"
-                            if featured is not None else " · featured unknown"
-                        )
-                    lines.append(
-                        f"-# **{label}** · {person['skill']} skill{extra}"
-                    )
+                    lines.append(f"-# **{label}** · {person['skill']} skill")
                 blocks.append("\n".join(lines))
                 shown += len(selected)
             if blocks:
-                elements.append(
-                    discord.ui.TextDisplay(
-                        f"### {group_name}\n" + "\n\n".join(blocks)
-                    )
-                )
+                elements.append(discord.ui.TextDisplay(
+                    f"### {group_name}\n" + "\n\n".join(blocks)
+                ))
         if not shown:
             elements.append(discord.ui.TextDisplay(
-                "-# No verified 200+ profession skills found yet. "
-                "Try /profession-status."
+                "-# No eligible crafters found yet. Try /profession-status."
             ))
-        elements.append(
-            discord.ui.TextDisplay(
-                "-# Featured recipes count only a small curated set of "
-                "high-value known crafts, not all learned recipes. "
-                "Unknown totals are not zero.\n"
-                "-# Ask Ogre: Can anyone make Arcanite Bar?"
+        fresh = ["### New recipes"]
+        for recipe in new_recipes[:3]:
+            # Blizzard recipe IDs are not guaranteed to be Wowhead spell IDs.
+            # A Wowhead Forever *search* link avoids linking the wrong spell.
+            from urllib.parse import quote
+            name = discord.utils.escape_markdown(recipe["recipe_name"])
+            url = "https://www.wowhead.com/forever/search?q=" + quote(
+                recipe["recipe_name"], safe=""
             )
-        )
-        if status:
-            elements.append(discord.ui.TextDisplay(
-                f"-# Private pilot · {status['blizzard_characters']} Blizzard profiles"
-                f" · {status['verified_recipes']} learned-recipe records"
-            ))
+            player = discord.utils.escape_mentions(
+                discord.utils.escape_markdown(recipe["character_name"])
+            )
+            fresh.append(
+                f"-# [{name}](<{url}>) · {player}"
+            )
+        if len(fresh) == 1:
+            fresh.append("-# No newly verified 300-skill recipes yet.")
+        elements.append(discord.ui.TextDisplay("\n".join(fresh)))
+        elements.append(discord.ui.TextDisplay(
+            'Ask Ogre, "Who can do enchant Crusader?"'
+        ))
         self.add_item(discord.ui.Container(*elements, accent_color=COLOUR))
 
 
@@ -347,69 +344,132 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                 crafting.channel, raid.RAID_DB, GUILD_ID)
             grouped = await asyncio.to_thread(crafting.board_rows, raid.RAID_DB)
             status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
-            panel = ProfessionsV2(grouped, channel.guild, status=status)
+            newest = await asyncio.to_thread(
+                crafting.latest_high_skill_discoveries, raid.RAID_DB)
+            panel = ProfessionsV2(grouped, channel.guild, new_recipes=newest)
             prior = None
             if record and record[1]:
                 try:
                     prior = await channel.fetch_message(record[1])
                 except (discord.NotFound, discord.Forbidden):
                     pass
-            if not bump and prior:
-                # A restart may have missed chat messages. Restore the panel
-                # to the bottom instead of only editing its old position.
-                if channel.last_message_id in (None, prior.id):
-                    await prior.edit(content=None, embed=None, view=panel)
-                    return True
-                bump = True
-            # After a message or answer, re-post as the latest message.
-            # Delete only Ogre's own former panel, never member messages.
             if prior:
-                try:
-                    await prior.delete()
-                except discord.HTTPException:
-                    LOG.warning("Old crafter panel couldn't be deleted")
-            new = await channel.send(view=panel,
-                                     allowed_mentions=discord.AllowedMentions.none())
+                # Never delete/repost the large board in response to chat.
+                await prior.edit(content=None, embed=None, view=panel)
+                if not prior.pinned:
+                    try:
+                        await prior.pin(reason="Hyped crafting reference board")
+                    except discord.HTTPException:
+                        LOG.warning("Could not pin private crafter board")
+                return True
+            new = await channel.send(
+                view=panel, allowed_mentions=discord.AllowedMentions.none()
+            )
+            try:
+                await new.pin(reason="Hyped crafting reference board")
+            except discord.HTTPException:
+                LOG.warning("Could not pin private crafter board")
             await asyncio.to_thread(
                 crafting.set_panel, raid.RAID_DB, GUILD_ID, channel.id, new.id)
         return True
 
-    async def _debounced_panel(self, channel_id):
-        try:
-            await asyncio.sleep(3)
-            await self.publish_panel(bump=True)
-        except (discord.HTTPException, sqlite3.Error, ValueError):
-            LOG.exception("Crafting board bump failed")
-        finally:
-            self.scheduled.pop(channel_id, None)
-
     @commands.Cog.listener()
     async def on_message(self, message):
-        if message.author.bot or message.guild is None or message.guild.id != GUILD_ID:
+        if (message.author.bot or message.guild is None
+                or message.guild.id != GUILD_ID):
             return
-        configured = await asyncio.to_thread(
+        record = await asyncio.to_thread(
             crafting.channel, raid.RAID_DB, GUILD_ID)
-        if (not configured or configured[0] != raid.TEST_CHANNEL_ID
-                or configured[1] == 0
-                or message.channel.id != raid.TEST_CHANNEL_ID):
+        if (not record or record[0] != raid.TEST_CHANNEL_ID
+                or not record[1] or message.channel.id != raid.TEST_CHANNEL_ID):
             return
         term = extract_question(message.content)
-        if term:
+        if not term:
+            return
+        reply_id = None
+        try:
+            answer_text = await asyncio.to_thread(
+                answer, raid.RAID_DB, term
+            )
+            reply = await message.reply(
+                answer_text, mention_author=False,
+                allowed_mentions=discord.AllowedMentions(
+                    everyone=False, roles=False, users=False,
+                    replied_user=False,
+                ),
+            )
+            reply_id = reply.id
+        except (sqlite3.Error, discord.HTTPException):
+            LOG.exception("Private crafting answer unavailable")
+        try:
+            await message.add_reaction("✅")
+        except discord.HTTPException:
+            LOG.warning("Could not add a completion reaction to craft request")
+        await asyncio.to_thread(
+            crafting.store_request, raid.RAID_DB,
+            request_id=message.id, guild_id=GUILD_ID,
+            channel_id=message.channel.id, reply_id=reply_id,
+            requested_at=int(message.created_at.timestamp()),
+        )
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload):
+        if (payload.guild_id != GUILD_ID
+                or payload.channel_id != raid.TEST_CHANNEL_ID
+                or str(payload.emoji) != "✅"
+                or (self.bot.user and payload.user_id == self.bot.user.id)):
+            return
+        if not await asyncio.to_thread(
+            crafting.request_exists, raid.RAID_DB,
+            payload.message_id, payload.channel_id,
+        ):
+            return
+        await asyncio.to_thread(
+            crafting.resolve_request, raid.RAID_DB,
+            request_id=payload.message_id, user_id=payload.user_id,
+        )
+
+    async def expire_requests(self):
+        """Clean ONLY tracked craft requests and their bot replies.
+
+        A tick starts a one-day timer; otherwise requests expire three
+        days after the original message, even across bot restarts.
+        """
+        due = await asyncio.to_thread(
+            crafting.expired_requests, raid.RAID_DB)
+        if not due:
+            return 0
+        channel = await self._channel()
+        if channel is None:
+            return 0
+        removed = 0
+        for request in due:
+            if request["channel_id"] != channel.id:
+                continue
             try:
-                reply = await asyncio.to_thread(answer, raid.RAID_DB, term)
-                await message.reply(
-                    reply, mention_author=False,
-                    allowed_mentions=discord.AllowedMentions(
-                        everyone=False, roles=False, users=False,
-                        replied_user=False),
-                )
-            except (sqlite3.Error, discord.HTTPException):
-                LOG.exception("Crafting answer unavailable")
-        previous = self.scheduled.get(message.channel.id)
-        if previous:
-            previous.cancel()
-        self.scheduled[message.channel.id] = asyncio.create_task(
-            self._debounced_panel(message.channel.id))
+                request_msg = await channel.fetch_message(request["request_id"])
+                await request_msg.delete()
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
+                LOG.warning("Unable to delete expired crafting request")
+                continue
+            if request["reply_id"]:
+                try:
+                    reply_msg = await channel.fetch_message(request["reply_id"])
+                    if reply_msg.author.id == self.bot.user.id:
+                        await reply_msg.delete()
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException:
+                    LOG.warning("Unable to delete old Ogre crafting reply")
+                    continue
+            await asyncio.to_thread(
+                crafting.forget_request, raid.RAID_DB,
+                request["request_id"],
+            )
+            removed += 1
+        return removed
 
     @tasks.loop(seconds=REFRESH_SECONDS)
     async def maintenance(self):
@@ -428,6 +488,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                 except (sqlite3.Error, ValueError, aiohttp.ClientError):
                     LOG.warning("Profession API refresh delayed.")
             await craft_catalog.refresh(raid.RAID_DB)
+            await self.expire_requests()
             record = await asyncio.to_thread(
                 crafting.channel, raid.RAID_DB, GUILD_ID)
             if record and record[0] == raid.TEST_CHANNEL_ID and record[1]:
