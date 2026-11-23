@@ -22,43 +22,68 @@ MAX_PER_PROFESSION = 6
 REFRESH_SECONDS = 900
 
 
-def format_crafters(grouped):
-    """Maximum ten profession fields; show only eligible 200+ skill crafters."""
+def format_crafters(grouped, status=None):
+    """V2: one full-width section per profession, with crafters beneath it."""
     embed = discord.Embed(
-        title="<Hyped> Guild Crafters",
-        description=("Verified learned recipes from Forever Armory. "
-                     "Only crafters with 200+ skill are listed. "
-                     "Ask Ogre below: **Can anyone make Arcanite Bar?**"),
+        title="<Hyped> Professions V2",
+        description=(
+            "**Guild crafters · 200+ skill**\n"
+            "Ordered by confirmed learned recipes. Unknown recipe totals "
+            "appear last and are never treated as zero.\n"
+            "Ask: **Can anyone make Arcanite Bar?**"
+        ),
         colour=COLOUR,
     )
-    count = 0
+    total = 0
     for profession in crafting.PROFESSIONS:
         people = grouped.get(profession, [])
         if not people:
             continue
-        count += len(people)
-        # Listing more than six per profession makes the board too tall.
-        lines = [
-            f"**{discord.utils.escape_markdown(person['name'])}** · "
-            f"{person['skill']} skill · {person['recipe_count']} recipes"
-            for person in people[:MAX_PER_PROFESSION]
-        ]
+        total += len(people)
+        lines = []
+        for person in people[:MAX_PER_PROFESSION]:
+            name = discord.utils.escape_markdown(person["name"])
+            count = person["recipe_count"]
+            label = (
+                f"{count} recipes"
+                if type(count) is int and count >= 0
+                else "recipes not verified"
+            )
+            source = (
+                " · WSE" if person.get("source") == "WoWSims"
+                else ""
+            )
+            lines.append(f"**{name}** · {person['skill']}/300 · {label}{source}")
         if len(people) > MAX_PER_PROFESSION:
-            lines.append(f"+{len(people) - MAX_PER_PROFESSION} more")
+            lines.append(f"*+{len(people) - MAX_PER_PROFESSION} others*")
         embed.add_field(
-            name=f"{profession} ({len(people)})",
-            value="\n".join(lines)[:1024], inline=True,
-        )
-    if not count:
-        embed.add_field(
-            name="Crafters syncing",
-            value="No verified 200+ skill crafters recorded yet. "
-                  "Ogre will update this board as the Forever API responds.",
+            name=f"{profession}  ({len(people)})",
+            value="\n".join(lines)[:1024],
             inline=False,
         )
-    embed.set_footer(text="Hyped · Recipe counts are verified, not estimated")
+    if not total:
+        embed.add_field(
+            name="No eligible professions recorded",
+            value=(
+                "Ogre hasn't confirmed any 200+ profession skills yet. "
+                "Use **/profession-status** in private Ogre to check "
+                "Blizzard connectivity and WoWSims data."
+            ),
+            inline=False,
+        )
+    if status:
+        credential = (
+            "configured" if status.get("credentials") else "NOT configured"
+        )
+        embed.set_footer(text=(
+            f"Private pilot · Blizzard credentials {credential} · "
+            f"{status.get('blizzard_characters', 0)} API profiles · "
+            f"{status.get('wowsims_exports', 0)} WoWSims exports · "
+            f"{status.get('verified_recipes', 0)} verified recipe records"
+        )[:2048])
+    else:
+        embed.set_footer(text="Private pilot · Verified counts only")
     return embed
-
 
 def extract_question(content):
     """Respond to crafting requests, not unrelated guild conversation."""
@@ -219,8 +244,9 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         async with self.lock:
             record = await asyncio.to_thread(
                 crafting.channel, raid.RAID_DB, GUILD_ID)
-            grouped = await asyncio.to_thread(crafting.leaderboard, raid.RAID_DB)
-            embed = format_crafters(grouped)
+            grouped = await asyncio.to_thread(crafting.board_rows, raid.RAID_DB)
+            status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
+            embed = format_crafters(grouped, status)
             prior = None
             if record and record[1]:
                 try:
@@ -263,6 +289,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         configured = await asyncio.to_thread(
             crafting.channel, raid.RAID_DB, GUILD_ID)
         if (not configured or configured[0] != raid.TEST_CHANNEL_ID
+                or configured[1] == 0
                 or message.channel.id != raid.TEST_CHANNEL_ID):
             return
         term = extract_question(message.content)
@@ -320,13 +347,24 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         await interaction.response.defer(ephemeral=True)
         try:
+            refreshed = await armory.refresh(
+                raid.RAID_DB, for_crafting=True, limit=6,
+            )
             await asyncio.to_thread(
                 crafting.set_channel, raid.RAID_DB, GUILD_ID,
                 raid.TEST_CHANNEL_ID,
             )
-            await self.publish_panel(bump=True)
+            posted = await self.publish_panel(bump=True)
+            status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
             await interaction.followup.send(
-                "Private crafter preview posted. No public channel was created.",
+                ("Private Professions V2 posted. " if posted else
+                 "Private preview could not be posted. ")
+                + f"Refreshed {refreshed} Armory profiles; "
+                + f"{status['blizzard_characters']} with recorded professions; "
+                + f"{status['verified_recipes']} confirmed recipe records. "
+                + ("Blizzard credentials are configured." if status['credentials']
+                   else "Blizzard credentials are NOT configured on Fly.io. ")
+                + "Use /profession-status for details.",
                 ephemeral=True,
             )
         except (sqlite3.Error, discord.HTTPException, ValueError):
@@ -348,7 +386,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            await armory.refresh(raid.RAID_DB)
+            await armory.refresh(raid.RAID_DB, for_crafting=True, limit=6)
             await craft_catalog.refresh(raid.RAID_DB)
             await self.publish_panel(bump=True)
             await interaction.followup.send(
