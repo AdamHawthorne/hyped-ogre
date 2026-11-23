@@ -60,6 +60,20 @@ class CraftingTests(unittest.TestCase):
         )
         self.assertEqual(crafting.leaderboard(self.path)["Alchemy"][0]["recipe_count"], 1)
 
+    def test_full_snapshot_retires_dropped_profession(self):
+        crafting.save_profile(self.path, 2, self.payload())
+        crafting.save_profile(
+            self.path, 2,
+            {"primaries": [], "secondaries": []},
+        )
+        self.assertNotIn("Alchemy", crafting.leaderboard(self.path))
+        self.assertEqual(crafting.query(self.path, "transmute arcanite")["crafters"], [])
+
+    def test_incomplete_payload_does_not_retire_profession(self):
+        crafting.save_profile(self.path, 2, self.payload())
+        self.assertFalse(crafting.save_profile(self.path, 2, {}))
+        self.assertEqual(crafting.leaderboard(self.path)["Alchemy"][0]["recipe_count"], 1)
+
     def test_explicit_empty_recipe_list_clears_previous_snapshot(self):
         crafting.save_profile(self.path, 2, self.payload())
         crafting.save_profile(self.path, 2, self.payload(recipes=[]))
