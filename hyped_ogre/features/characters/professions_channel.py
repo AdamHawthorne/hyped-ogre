@@ -7,6 +7,7 @@ import sqlite3
 import time
 
 import discord
+import aiohttp
 from discord import app_commands
 from discord.ext import commands, tasks
 
@@ -84,6 +85,106 @@ def format_crafters(grouped, status=None):
     else:
         embed.set_footer(text="Private pilot · Verified counts only")
     return embed
+
+def featured_selection(profession, people):
+    """Show three ranked crafters, plus any remaining at 295+ skill."""
+    selected = []
+    for index, person in enumerate(people):
+        if index < 3 or person["skill"] >= 295:
+            selected.append(person)
+    return selected
+
+
+def profession_emoji(guild, profession):
+    """Custom Discord emoji only, when the guild has uploaded that icon."""
+    stem = crafting.PROFESSION_ICON_NAMES.get(profession, "")
+    if not guild or not stem:
+        return ""
+    candidates = (
+        stem, "prof_" + profession.casefold().replace(" ", ""),
+        profession.casefold().replace(" ", ""),
+    )
+    for name in candidates:
+        emoji = discord.utils.get(guild.emojis, name=name)
+        if emoji:
+            return str(emoji)
+    return ""
+
+
+class ProfessionsV2(discord.ui.LayoutView):
+    """A real Discord Components V2 layout, not a legacy embed."""
+
+    def __init__(self, grouped, guild=None, *, status=None):
+        super().__init__(timeout=None)
+        from . import roster
+        elements = [
+            discord.ui.Section(
+                discord.ui.TextDisplay(
+                    "## <Hyped> Guild Crafters\n"
+                    "-# Skill 200+ · Top 3 per profession + everyone 295+"
+                ),
+                accessory=discord.ui.Thumbnail(
+                    roster.ROSTER_IMAGE, description="Hyped guild logo"
+                ),
+            ),
+        ]
+        shown = 0
+        for group_name, names in (
+            ("Primary professions", crafting.CRAFTING_PROFESSIONS),
+            ("Gathering", crafting.GATHERING_PROFESSIONS),
+            ("Secondary professions", crafting.SECONDARY_PROFESSIONS),
+        ):
+            blocks = []
+            for profession in names:
+                people = grouped.get(profession, [])
+                if not people:
+                    continue
+                selected = featured_selection(profession, people)
+                prefix = profession_emoji(guild, profession)
+                heading = f"-# **{prefix + ' ' if prefix else ''}{profession} ({len(people)})**"
+                lines = [heading]
+                for person in selected:
+                    label = discord.utils.escape_mentions(
+                        discord.utils.escape_markdown(person["name"])
+                    )
+                    extra = ""
+                    if profession in crafting.NOTABLE_RECIPE_IDS:
+                        featured = person.get("featured_count")
+                        extra = (
+                            f" · {featured} featured"
+                            if featured is not None else " · featured unknown"
+                        )
+                    lines.append(
+                        f"-# **{label}** · {person['skill']} skill{extra}"
+                    )
+                blocks.append("\n".join(lines))
+                shown += len(selected)
+            if blocks:
+                elements.append(
+                    discord.ui.TextDisplay(
+                        f"### {group_name}\n" + "\n\n".join(blocks)
+                    )
+                )
+        if not shown:
+            elements.append(discord.ui.TextDisplay(
+                "-# No verified 200+ profession skills found yet. "
+                "Try /profession-status."
+            ))
+        elements.append(
+            discord.ui.TextDisplay(
+                "-# Featured recipes count only a small curated set of "
+                "high-value known crafts, not all learned recipes. "
+                "Unknown totals are not zero.\n"
+                "-# Ask Ogre: Can anyone make Arcanite Bar?"
+            )
+        )
+        if status:
+            elements.append(discord.ui.TextDisplay(
+                f"-# Private pilot · {status['blizzard_characters']} Blizzard profiles"
+                f" · {status['verified_recipes']} learned-recipe records"
+            ))
+        self.add_item(discord.ui.Container(*elements, accent_color=COLOUR))
+
 
 def extract_question(content):
     """Respond to crafting requests, not unrelated guild conversation."""
@@ -246,7 +347,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                 crafting.channel, raid.RAID_DB, GUILD_ID)
             grouped = await asyncio.to_thread(crafting.board_rows, raid.RAID_DB)
             status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
-            embed = format_crafters(grouped, status)
+            panel = ProfessionsV2(grouped, channel.guild, status=status)
             prior = None
             if record and record[1]:
                 try:
@@ -257,7 +358,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                 # A restart may have missed chat messages. Restore the panel
                 # to the bottom instead of only editing its old position.
                 if channel.last_message_id in (None, prior.id):
-                    await prior.edit(embed=embed)
+                    await prior.edit(content=None, embed=None, view=panel)
                     return True
                 bump = True
             # After a message or answer, re-post as the latest message.
@@ -267,7 +368,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                     await prior.delete()
                 except discord.HTTPException:
                     LOG.warning("Old crafter panel couldn't be deleted")
-            new = await channel.send(embed=embed,
+            new = await channel.send(view=panel,
                                      allowed_mentions=discord.AllowedMentions.none())
             await asyncio.to_thread(
                 crafting.set_panel, raid.RAID_DB, GUILD_ID, channel.id, new.id)
@@ -315,8 +416,17 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         try:
             if not self.public_cleanup_done:
                 self.public_cleanup_done = await self.retract_unapproved_channel()
-            # Collect data without posting anything publicly or creating
-            # channels. The private panel requires owner /professions preview.
+            # Refresh profession ownership every 15 minutes, including
+            # members whose level/iLvl cache is otherwise still fresh.
+            # 36 requests is bounded to approximately the current roster.
+            # Failed API responses retain previous verified recipe snapshots.
+            if armory.credentials_configured():
+                try:
+                    await armory.refresh(
+                        raid.RAID_DB, for_crafting=True, limit=36,
+                    )
+                except (sqlite3.Error, ValueError, aiohttp.ClientError):
+                    LOG.warning("Profession API refresh delayed.")
             await craft_catalog.refresh(raid.RAID_DB)
             record = await asyncio.to_thread(
                 crafting.channel, raid.RAID_DB, GUILD_ID)
