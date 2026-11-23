@@ -78,12 +78,32 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.assertIn("Primary professions", contents)
         self.assertIn("Gathering", contents)
         self.assertIn("New recipes", contents)
-        self.assertIn('Ask Ogre, "Who can do enchant Crusader?"', contents)
+        self.assertIn(
+            'Ask Ogre, "Who can enchant Crusader?", '
+            '"Who can make Arcanite Bar?"', contents
+        )
         self.assertNotIn("Secondary professions", contents)
         self.assertNotIn("Cook", contents)
         self.assertNotIn("featured", contents)
         self.assertNotIn("Private pilot", contents)
         self.assertNotIn("Skill 200+", contents)
+
+    def test_updates_note_heading_displays_uploaded_discord_emoji(self):
+        class TestEmoji:
+            name = "updates_note"
+            def __str__(self):
+                return "<:updates_note:123456>"
+        guild = SimpleNamespace(emojis=[TestEmoji()])
+        view = p.ProfessionsV2({}, guild)
+        blocks = [
+            getattr(component, "content", "")
+            for child in view.children
+            for component in getattr(child, "children", [])
+        ]
+        self.assertTrue(any(
+            "### <:updates_note:123456> New recipes" in block
+            for block in blocks
+        ))
 
     def test_tailoring_icon_alias_and_no_fake_emoji(self):
         self.assertEqual(
