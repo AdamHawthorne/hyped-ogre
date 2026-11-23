@@ -1506,6 +1506,14 @@ def sync_once(db_path, discord_names=None):
         _append_reported_absences(raid_rosters, raids, signups, absences,
                                   discord_names)
         _sync_permanent(session, db_path, discord_names, raid_rosters)
+        # The public-facing website tab follows the same registered-main and
+        # visibility filters as Discord Characters, not raid attendance.
+        # Keep a Sheets presentation error separate from raid completion.
+        try:
+            from hyped_ogre.integrations import website_roster
+            website_roster.sync_once(db_path)
+        except Exception as exc:
+            LOGGER.warning("Website roster Sheet sync delayed: %s", exc)
         try:
             _sync_gear_tab(session, db_path, titles)
         except Exception as exc:

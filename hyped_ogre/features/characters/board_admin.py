@@ -114,6 +114,14 @@ class RosterAdmin(commands.GroupCog, group_name="roster",
         refreshed = await self.refresh_public()
         if not refreshed:
             label += " Saved, but the board could not refresh yet. Ogre will retry automatically."
+        # Hiding a main must also remove it from the website-facing Sheet.
+        # Never make the user wait for the next raid sync to protect privacy.
+        try:
+            from hyped_ogre.integrations import website_roster
+            await asyncio.to_thread(website_roster.sync_once, raid.RAID_DB)
+        except Exception:
+            LOG.exception("Website roster sync failed after board override")
+            label += " Website roster Sheet refresh delayed; check before publishing."
         await interaction.followup.send(
             label, ephemeral=True, allowed_mentions=discord.AllowedMentions.none(),
         )
