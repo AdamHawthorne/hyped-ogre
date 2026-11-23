@@ -279,6 +279,14 @@ def extract_question(content):
             request = text
         else:
             return None
+    # Preserve canonical recipe names, e.g. "Enchant Chest - Major
+    # Health", when supplied in full in a follow-up or sourcing question.
+    if re.match(
+        r"^(?:enchant|transmute) (?:chest|weapon|boots|gloves|"
+        r"bracer|bracers|cloak|shield)\\b",
+        request, flags=re.IGNORECASE
+    ):
+        return request
     # Strip boilerplate without removing meaningful recipe names.
     request = re.sub(
         r"^(?:someone (?:to|who can) |"
@@ -398,9 +406,11 @@ def answer(path, term, *, kind="crafter"):
             f"It requires **{verified['acquisition']}**. "
             f"Source: {verified['source_url']}"
         )
-    return (f"Ogre recognises **{recipe_label}**, but nobody in the "
-            "currently verified guild recipe records is confirmed to know it. "
-            "Recipe acquisition source not verified yet.")
+    return (
+        f"Ogre recognises **{recipe_label}**, but no verified guild crafter "
+        "is currently recorded as knowing it. "
+        "Recipe acquisition source not verified yet."
+    )
 
 
 class ProfessionBoard(commands.GroupCog, group_name="professions",
