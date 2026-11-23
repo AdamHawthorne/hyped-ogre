@@ -87,12 +87,8 @@ def format_crafters(grouped, status=None):
     return embed
 
 def featured_selection(profession, people):
-    """Show three ranked crafters, plus any remaining at 295+ skill."""
-    selected = []
-    for index, person in enumerate(people):
-        if index < 3 or person["skill"] >= 295:
-            selected.append(person)
-    return selected
+    """Display at most three ranked crafters in each profession."""
+    return list(people[:3])
 
 
 def profession_emoji(guild, profession):
@@ -117,9 +113,11 @@ def profession_emoji(guild, profession):
 class ProfessionsV2(discord.ui.LayoutView):
     """One persistent V2 board, edited in place and pinned."""
 
-    def __init__(self, grouped, guild=None, *, new_recipes=()):
+    def __init__(self, grouped, guild=None, *, new_recipes=(),
+                 updated_at=None):
         super().__init__(timeout=None)
         from . import roster
+        updated_at = int(time.time() if updated_at is None else updated_at)
         elements = [
             discord.ui.Section(
                 discord.ui.TextDisplay("## <Hyped> Guild Crafters"),
@@ -187,6 +185,12 @@ class ProfessionsV2(discord.ui.LayoutView):
         elements.append(discord.ui.TextDisplay(
             'Ask Ogre, "Who can enchant Crusader?", '
             '"Who can make Arcanite Bar?"'
+        ))
+        # Discord renders both absolute and relative times in the reader's
+        # timezone. This is the board's last successful render, not a claim
+        # that every Blizzard character profile was refreshed successfully.
+        elements.append(discord.ui.TextDisplay(
+            f"-# Last updated: <t:{updated_at}:f> · <t:{updated_at}:R>"
         ))
         self.add_item(discord.ui.Container(*elements, accent_color=COLOUR))
 
