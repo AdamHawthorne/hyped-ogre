@@ -258,6 +258,12 @@ def extract_question(content):
         "", request, flags=re.IGNORECASE
     ).strip(" ,.!?")
     request = re.sub(
+        r"^(?:(?:someone|somebody) (?:to|who can) |"
+        r"(?:a )?crafter (?:for|to) |"
+        r"(?:make|craft|do|enchant|transmute|forge|smith|brew|sew) )+",
+        "", request, flags=re.IGNORECASE
+    ).strip()
+    request = re.sub(
         r"^(?:a |an |the |some |my |their |our |one |"
         r"recipe (?:for |to )?|enchant (?:for |on |my |the )?)+",
         "", request, flags=re.IGNORECASE
