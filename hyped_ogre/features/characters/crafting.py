@@ -169,7 +169,7 @@ def save_catalog(path, recipes, observed_at=None):
             con.execute(
                 "UPDATE craft_catalog SET output_name=?,skill_required=?,"
                 "acquisition=?,source_url=?,verified=1 "
-                "WHERE LOWER(name)=? AND LOWER(profession)=?",
+                "WHERE LOWER(REPLACE(name,':',''))=? AND LOWER(profession)=?",
                 (product, skill, source, url, recipe_name, prof.casefold()))
 
 
