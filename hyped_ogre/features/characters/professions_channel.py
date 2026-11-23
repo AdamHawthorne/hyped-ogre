@@ -279,6 +279,10 @@ def extract_question(content):
             request = text
         else:
             return None
+    request = re.sub(
+        r"\s+(?:drop|drops|recipe|pattern|plans|schematic)$",
+        "", request, flags=re.IGNORECASE
+    ).strip()
     # Preserve canonical recipe names, e.g. "Enchant Chest - Major
     # Health", when supplied in full in a follow-up or sourcing question.
     if re.match(
@@ -300,10 +304,6 @@ def extract_question(content):
         r"^(?:(?:someone|somebody) (?:to|who can) |"
         r"(?:a )?crafter (?:for|to) |"
         r"(?:make|craft|do|enchant|transmute|forge|smith|brew|sew) )+",
-        "", request, flags=re.IGNORECASE
-    ).strip()
-    request = re.sub(
-        r"\s+(?:drop|drops|recipe|pattern|plans|schematic)$",
         "", request, flags=re.IGNORECASE
     ).strip()
     request = re.sub(
