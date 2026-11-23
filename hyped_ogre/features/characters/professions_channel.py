@@ -1,4 +1,4 @@
-"""Owner-only professions pilot in the existing private Ogre test channel."""
+"""Hyped professions directory in the existing guild professions channel."""
 import asyncio
 import logging
 import os
@@ -423,7 +423,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         self.catalog_at = 0.0
         self.scheduled = {}
         self.previous_signature = None
-        self.public_cleanup_done = False
+        self.public_activation_done = False
 
     async def cog_load(self):
         if int(os.getenv("HYPED_GUILD_ID") or 0) != GUILD_ID:
@@ -437,68 +437,65 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             task.cancel()
 
     async def _channel(self):
-        """Only the existing private Ogre test channel is a valid destination."""
+        """Resolve only a previously configured existing guild text channel."""
         record = await asyncio.to_thread(crafting.channel, raid.RAID_DB, GUILD_ID)
-        if not record or record[0] != raid.TEST_CHANNEL_ID:
+        if not record:
             return None
-        channel = self.bot.get_channel(raid.TEST_CHANNEL_ID)
+        channel = self.bot.get_channel(record[0])
         if channel is None:
-            channel = await self.bot.fetch_channel(raid.TEST_CHANNEL_ID)
+            try:
+                channel = await self.bot.fetch_channel(record[0])
+            except (discord.NotFound, discord.Forbidden):
+                return None
         if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
             return None
         return channel
 
-    async def retract_unapproved_channel(self):
-        """Reverse the accidentally created public channel on first startup.
+    async def activate_existing_public_channel(self):
+        """Release ONLY an existing unambiguous #professions channel.
 
-        Delete *only* our own precisely recognised channel if it contains no
-        human messages. Otherwise hide it from @everyone and preserve history.
-        Never touch a pre-existing channel merely because of its name.
+        Never create/delete a channel or select one in a different guild.
+        Previously hidden channels are made public again by restoring
+        @everyone visibility while leaving other overwrites untouched.
         """
         guild = self.bot.get_guild(GUILD_ID)
         if guild is None:
             return False
-        record = await asyncio.to_thread(crafting.channel, raid.RAID_DB, GUILD_ID)
-        candidates = [
+        channels = [
             channel for channel in guild.text_channels
-            if channel.id != raid.TEST_CHANNEL_ID
-            and channel.name == CHANNEL_NAME
-            and channel.topic == AUTO_CREATED_TOPIC
+            if channel.name == CHANNEL_NAME and channel.id != raid.TEST_CHANNEL_ID
         ]
-        if record and record[0] != raid.TEST_CHANNEL_ID:
-            specific = guild.get_channel(record[0])
-            if specific is not None and specific not in candidates:
-                LOG.warning("Existing configured professions channel needs manual review: %s",
-                            specific.id)
-        for channel in candidates:
-            # Restrict access before inspection or deletion to prevent
-            # continued public exposure while safety checks run.
-            await channel.set_permissions(
-                guild.default_role, view_channel=False,
-                reason="Revert unapproved public professions rollout",
+        if len(channels) != 1:
+            LOG.warning(
+                "Professions release needs exactly one existing #%s channel; found %s. "
+                "No public channel created or changed.",
+                CHANNEL_NAME, len(channels),
             )
-            human_messages = False
-            async for message in channel.history(limit=None):
-                if not message.author.bot:
-                    human_messages = True
-                    break
-            if not human_messages:
-                await channel.delete(
-                    reason="Remove Ogre's unapproved automatically created professions channel")
-                LOG.info("Removed the unapproved bot-only professions channel.")
-            else:
-                LOG.warning(
-                    "Unapproved professions channel contains member messages; "
-                    "hidden from @everyone, retained for administrator review."
+            return False
+        channel = channels[0]
+        existing = await asyncio.to_thread(
+            crafting.channel, raid.RAID_DB, GUILD_ID
+        )
+        if existing and existing[0] == channel.id:
+            return True
+        try:
+            # The earlier private-pilot rollback explicitly hid @everyone.
+            # Restore visibility without replacing other role/user settings.
+            overwrite = channel.overwrites_for(guild.default_role)
+            if overwrite.view_channel is False:
+                overwrite.view_channel = True
+                await channel.set_permissions(
+                    guild.default_role, overwrite=overwrite,
+                    reason="Guild leader approved public professions release",
                 )
-        if record and record[0] != raid.TEST_CHANNEL_ID:
-            # Detach the auto-post destination, even when the old channel
-            # could not be deleted or was not recognisably created by Ogre.
             await asyncio.to_thread(
-                crafting.set_channel, raid.RAID_DB, GUILD_ID,
-                raid.TEST_CHANNEL_ID, 0,
+                crafting.set_channel, raid.RAID_DB, GUILD_ID, channel.id, 0,
             )
-        return True
+            LOG.info("Professions now active in existing public channel %s", channel.id)
+            return True
+        except (discord.Forbidden, discord.HTTPException, sqlite3.Error):
+            LOG.exception("Cannot activate existing public professions channel")
+            return False
 
     async def publish_panel(self, *, bump=False):
         channel = await self._channel()
@@ -508,7 +505,6 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             record = await asyncio.to_thread(
                 crafting.channel, raid.RAID_DB, GUILD_ID)
             grouped = await asyncio.to_thread(crafting.board_rows, raid.RAID_DB)
-            status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
             newest = await asyncio.to_thread(
                 crafting.latest_high_skill_discoveries, raid.RAID_DB, 5)
             learned_tools = await asyncio.to_thread(
@@ -534,7 +530,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                     try:
                         await prior.pin(reason="Hyped crafting reference board")
                     except discord.HTTPException:
-                        LOG.warning("Could not pin private crafter board")
+                        LOG.warning("Could not pin crafter board")
                 return True
             new = await channel.send(
                 view=panel, allowed_mentions=discord.AllowedMentions.none()
@@ -542,7 +538,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             try:
                 await new.pin(reason="Hyped crafting reference board")
             except discord.HTTPException:
-                LOG.warning("Could not pin private crafter board")
+                LOG.warning("Could not pin crafter board")
             await asyncio.to_thread(
                 crafting.set_panel, raid.RAID_DB, GUILD_ID, channel.id, new.id)
         return True
@@ -554,8 +550,8 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         record = await asyncio.to_thread(
             crafting.channel, raid.RAID_DB, GUILD_ID)
-        if (not record or record[0] != raid.TEST_CHANNEL_ID
-                or not record[1] or message.channel.id != raid.TEST_CHANNEL_ID):
+        if (not record or not record[1]
+                or message.channel.id != record[0]):
             return
         term = extract_question(message.content)
         if not term:
@@ -575,7 +571,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             )
             reply_id = reply.id
         except (sqlite3.Error, discord.HTTPException):
-            LOG.exception("Private crafting answer unavailable")
+            LOG.exception("Crafting answer unavailable")
         check = discord.utils.get(message.guild.emojis, name="check")
         if check is not None:
             try:
@@ -594,12 +590,16 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
         if (payload.guild_id != GUILD_ID
-                or payload.channel_id != raid.TEST_CHANNEL_ID
                 or (self.bot.user and payload.user_id == self.bot.user.id)):
             return
         guild = self.bot.get_guild(GUILD_ID)
         check = discord.utils.get(guild.emojis, name="check") if guild else None
         if check is None or payload.emoji.id != check.id:
+            return
+        record = await asyncio.to_thread(
+            crafting.channel, raid.RAID_DB, GUILD_ID
+        )
+        if not record or payload.channel_id != record[0]:
             return
         if not await asyncio.to_thread(
             crafting.request_exists, raid.RAID_DB,
@@ -656,8 +656,8 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
     @tasks.loop(seconds=REFRESH_SECONDS)
     async def maintenance(self):
         try:
-            if not self.public_cleanup_done:
-                self.public_cleanup_done = await self.retract_unapproved_channel()
+            if not self.public_activation_done:
+                self.public_activation_done = await self.activate_existing_public_channel()
             # Refresh profession ownership every 15 minutes, including
             # members whose level/iLvl cache is otherwise still fresh.
             # 36 requests is bounded to approximately the current roster.
@@ -673,7 +673,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             await self.expire_requests()
             record = await asyncio.to_thread(
                 crafting.channel, raid.RAID_DB, GUILD_ID)
-            if record and record[0] == raid.TEST_CHANNEL_ID and record[1]:
+            if record and record[0] != raid.TEST_CHANNEL_ID:
                 await self.publish_panel()
         except (discord.HTTPException, sqlite3.Error, ValueError):
             LOG.exception("Crafting channel maintenance delayed")
@@ -684,17 +684,16 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
 
     @app_commands.command(
         name="preview",
-        description="Owner-only: show the professions pilot inside private Ogre",
+        description="Guild owner: post or update the public professions board",
     )
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.guild_only()
     async def preview(self, interaction: discord.Interaction):
         owner_id = int(os.getenv("OWNER_ID") or 0)
         if (interaction.guild_id != GUILD_ID
-                or interaction.channel_id != raid.TEST_CHANNEL_ID
                 or interaction.user.id not in (owner_id, interaction.guild.owner_id)):
             await interaction.response.send_message(
-                "Ogre's crafting pilot is restricted to the owner in private Ogre.",
+                "Only the guild owner can post the professions board.",
                 ephemeral=True,
             )
             return
@@ -703,15 +702,20 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             refreshed = await armory.refresh(
                 raid.RAID_DB, for_crafting=True, limit=6,
             )
-            await asyncio.to_thread(
-                crafting.set_channel, raid.RAID_DB, GUILD_ID,
-                raid.TEST_CHANNEL_ID,
-            )
+            active = await self.activate_existing_public_channel()
+            if not active:
+                await interaction.followup.send(
+                    "Ogre can't find exactly one existing #professions channel. "
+                    "No channel was created. Restore/create one manually and try again.",
+                    ephemeral=True,
+                )
+                return
+            self.public_activation_done = True
             posted = await self.publish_panel(bump=True)
             status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
             await interaction.followup.send(
-                ("Private Professions V2 posted. " if posted else
-                 "Private preview could not be posted. ")
+                ("Guild professions board posted. " if posted else
+                 "Ogre could not post the guild professions board. ")
                 + f"Refreshed {refreshed} Armory profiles; "
                 + f"{status['blizzard_characters']} with recorded professions; "
                 + f"{status['verified_recipes']} confirmed recipe records. "
@@ -723,33 +727,35 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         except (sqlite3.Error, discord.HTTPException, ValueError):
             LOG.exception("Private crafting preview failed")
             await interaction.followup.send(
-                "Ogre could not post the private crafter preview.", ephemeral=True,
+                "Ogre could not post the guild crafter board.", ephemeral=True,
             )
 
-    @app_commands.command(name="refresh", description="Refresh crafting pilot in private Ogre")
+    @app_commands.command(name="refresh", description="Refresh the existing professions board")
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.guild_only()
     async def refresh(self, interaction: discord.Interaction):
         member = interaction.user
         owner_id = int(os.getenv("OWNER_ID") or 0)
-        if (interaction.channel_id != raid.TEST_CHANNEL_ID
+        if (interaction.guild_id != GUILD_ID
                 or interaction.user.id not in (owner_id, interaction.guild.owner_id)):
 
-            await interaction.response.send_message("Leadership only.", ephemeral=True)
+            await interaction.response.send_message("Guild owner only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         try:
             await armory.refresh(raid.RAID_DB, for_crafting=True, limit=6)
             await craft_catalog.refresh(raid.RAID_DB)
-            await self.publish_panel(bump=True)
+            active = await self.activate_existing_public_channel()
+            posted = await self.publish_panel(bump=True) if active else False
             await interaction.followup.send(
-                "Ogre refreshed the private crafting pilot.", ephemeral=True)
+                "Ogre refreshed the public crafting board." if posted
+                else "No existing #professions destination found.", ephemeral=True)
         except (sqlite3.Error, discord.HTTPException, ValueError) as exc:
             await interaction.followup.send(f"Crafting refresh failed: {exc}", ephemeral=True)
 
 
 class ProfessionPilotCommands(commands.Cog):
-    """Top-level commands matching other established private Ogre V2 pilots."""
+    """Guild-owner management of the existing professions channel."""
 
     def __init__(self, bot, board):
         self.bot = bot
@@ -760,7 +766,6 @@ class ProfessionPilotCommands(commands.Cog):
         owner_id = int(os.getenv("OWNER_ID") or 0)
         return (
             interaction.guild_id == GUILD_ID
-            and interaction.channel_id == raid.TEST_CHANNEL_ID
             and interaction.user.id in (
                 owner_id, getattr(interaction.guild, "owner_id", None)
             )
@@ -768,7 +773,7 @@ class ProfessionPilotCommands(commands.Cog):
 
     @app_commands.command(
         name="postprofessions-v2",
-        description="Owner-only: post the V2 crafter board in private Ogre",
+        description="Guild owner: post the V2 board in existing #professions",
     )
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.guild_only()
@@ -778,19 +783,19 @@ class ProfessionPilotCommands(commands.Cog):
 
     @app_commands.command(
         name="profession-status",
-        description="Owner-only: inspect Blizzard professions API and recipe coverage",
+        description="Guild owner: inspect Blizzard professions API coverage",
     )
     @app_commands.guilds(discord.Object(id=GUILD_ID))
     @app_commands.guild_only()
     async def profession_status(self, interaction: discord.Interaction):
         if not self.authorised(interaction):
             await interaction.response.send_message(
-                "Use this only as guild owner in private Ogre.", ephemeral=True)
+                "Guild owner only.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         stats = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
         await interaction.followup.send(
-            "**Private Ogre professions diagnostics**\n"
+            "**Ogre professions diagnostics**\n"
             f"Blizzard credentials: **{'configured' if stats['credentials'] else 'MISSING'}**\n"
             f"Registered visible characters: **{stats['visible']}**\n"
             f"Characters with Blizzard professions: **{stats['blizzard_characters']}**\n"
