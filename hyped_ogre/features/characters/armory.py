@@ -227,7 +227,9 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
             continue
         fresh = (
             row["character_name"] == name and row["updated_at"] is not None
-            and now - row["updated_at"] < CHECK_INTERVAL
+            and now - row["updated_at"] < (
+                15 * 60 if for_crafting else CHECK_INTERVAL
+            )
         )
         if fresh and (not for_crafting or row["character_id"] in verified):
             continue
