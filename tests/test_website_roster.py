@@ -71,7 +71,7 @@ class WebsiteRosterTests(unittest.TestCase):
 
     def test_role_groups_have_counts_and_six_public_columns(self):
         rows, sections = site.website_rows(site.visible_mains(self.path))
-        self.assertEqual(rows[1][0], "4 main characters")
+        self.assertEqual(rows[1][0], "4 characters")
         self.assertEqual(rows[2], list(site.HEADERS))
         self.assertEqual([rows[i][0] for i in sections], [
             "Tanks (1)", "Healers (1)", "Melee (1)", "Ranged (1)",
@@ -92,7 +92,7 @@ class WebsiteRosterTests(unittest.TestCase):
             con.execute(
                 "INSERT INTO character_board_overrides VALUES (3,'',1)")
         rows, _ = site.website_rows(site.visible_mains(self.path))
-        self.assertEqual(rows[1][0], "3 main characters")
+        self.assertEqual(rows[1][0], "3 characters")
         self.assertFalse(any(row[0] == "Rogue One" for row in rows))
         self.assertIn(["Melee (0)"] + [""] * 5, rows)
 
@@ -118,7 +118,7 @@ class WebsiteRosterTests(unittest.TestCase):
         writes = [x for x in calls if x[0] == "PUT"]
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
-        self.assertEqual(writes[0][2]["json"]["values"][1][0], "4 main characters")
+        self.assertEqual(writes[0][2]["json"]["values"][1][0], "4 characters")
         self.assertIn("Hyped%20Website%20Roster", writes[0][1])
         self.assertIn("A1:F11", writes[0][1])
         self.assertTrue(session.close.called)
