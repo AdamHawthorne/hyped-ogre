@@ -224,6 +224,14 @@ def extract_question(content):
 
     # Specific request wordings, including informal guild chat.
     patterns = (
+        # Acquisition and reagent requests (never invent source/materials).
+        r"^(?:where (?:can|do) (?:i|we) (?:get|learn|find|buy) "
+        r"|where does (?:the )?|how (?:do|can) (?:i|we) "
+        r"(?:get|learn|find) )(?:the )?(?:recipe for )?(.+)$",
+        r"^(?:what (?:mats|materials|reagents|ingredients) "
+        r"(?:are needed for|do i need for|for|to (?:make|craft|enchant)) "
+        r"|(?:mats|materials|reagents|ingredients) "
+        r"(?:for|needed for) )(.+)$",
         # Recognise a member supplying a full canonical enchant name.
         r"^(?:(?:chest|weapon|gloves|boots|bracer|bracers|cloak|shield)"
         r"\s*:\s*)?((?:enchant|transmute|recipe|pattern|schematic|plans)"
@@ -287,13 +295,34 @@ def extract_question(content):
         "", request, flags=re.IGNORECASE
     ).strip()
     request = re.sub(
+        r"\\s+(?:drop|drops|recipe|pattern|plans|schematic)$",
+        "", request, flags=re.IGNORECASE
+    ).strip()
+    request = re.sub(
         r"^(?:a |an |the |some |my |their |our |one |"
         r"recipe (?:for |to )?|enchant (?:for |on |my |the )?)+",
         "", request, flags=re.IGNORECASE
     ).strip()
     return request if len(request) >= 3 else None
 
-def answer(path, term):
+def request_kind(content):
+    """Return the response family without inferring unverified item data."""
+    text = str(content or "").lower().strip()
+    if re.match(
+        r"^(?:where (?:can|do|does)|how (?:do|can) (?:i|we) (?:get|learn|find))",
+        text
+    ):
+        return "source"
+    if re.match(
+        r"^(?:what (?:mats|materials|reagents|ingredients)|"
+        r"(?:mats|materials|reagents|ingredients) (?:for|needed for))",
+        text
+    ):
+        return "materials"
+    return "crafter"
+
+
+def answer(path, term, *, kind="crafter"):
     result = crafting.query(path, term)
     if not result or result["status"] == "unknown":
         options = (result or {}).get("suggestions", [])
@@ -323,6 +352,30 @@ def answer(path, term):
     recipes = result["recipes"]
     people = result["crafters"]
     recipe_label = recipes[0]["name"] if len(recipes) == 1 else term
+    if kind == "materials":
+        return (
+            f"Ogre found **{recipe_label}**, but verified reagent quantities "
+            "aren't in the crafting database yet. Ogre won't guess. "
+            "The guild crafter list can still be checked with "
+            f"'Who can make {recipe_label}?'"
+        )
+    if kind == "source":
+        known = next(
+            (recipe for recipe in recipes if
+             recipe["verified"] and recipe["acquisition"]), None
+        )
+        if known:
+            extra = (
+                f" Source: {known['source_url']}"
+                if known["source_url"] else ""
+            )
+            return (
+                f"**{recipe_label}**: {known['acquisition']}." + extra
+            )
+        return (
+            f"Ogre recognises **{recipe_label}**, but hasn't verified "
+            "where its recipe is learned or obtained."
+        )
     if people:
         # One Discord user may have several capable characters. Show up to 3.
         unique = set()
@@ -490,7 +543,8 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         reply_id = None
         try:
             answer_text = await asyncio.to_thread(
-                answer, raid.RAID_DB, term
+                answer, raid.RAID_DB, term,
+                kind=request_kind(message.content),
             )
             reply = await message.reply(
                 answer_text, mention_author=False,
