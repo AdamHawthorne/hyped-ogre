@@ -76,6 +76,9 @@ def extract_question(content):
     if not match:
         return None
     phrase = match.group(1).strip(" ?.!").strip()
+    # The "who can" branch does not consume the action verb.
+    phrase = re.sub(r"^(?:make|craft|do|enchant|transmute)\\s+", "", phrase,
+                    flags=re.IGNORECASE)
     phrase = re.sub(
         r"^(?:me |an? |the |some |recipe (?:for |to )?|one |any )",
         "", phrase, flags=re.IGNORECASE)
