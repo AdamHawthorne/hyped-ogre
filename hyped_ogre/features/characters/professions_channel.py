@@ -476,8 +476,6 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         existing = await asyncio.to_thread(
             crafting.channel, raid.RAID_DB, GUILD_ID
         )
-        if existing and existing[0] == channel.id:
-            return True
         try:
             # The earlier private-pilot rollback explicitly hid @everyone.
             # Restore visibility without replacing other role/user settings.
@@ -488,9 +486,11 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                     guild.default_role, overwrite=overwrite,
                     reason="Guild leader approved public professions release",
                 )
-            await asyncio.to_thread(
-                crafting.set_channel, raid.RAID_DB, GUILD_ID, channel.id, 0,
-            )
+            # Preserve the existing board ID across routine retries.
+            if not existing or existing[0] != channel.id:
+                await asyncio.to_thread(
+                    crafting.set_channel, raid.RAID_DB, GUILD_ID, channel.id, 0,
+                )
             LOG.info("Professions now active in existing public channel %s", channel.id)
             return True
         except (discord.Forbidden, discord.HTTPException, sqlite3.Error):
