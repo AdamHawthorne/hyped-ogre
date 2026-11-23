@@ -249,9 +249,13 @@ async def fetch_profile(session, token, name):
             allow_redirects=False,
         ) as response:
             if response.status == 200:
+                profession_payload = await response.json()
                 profile["profession_details"] = parse_professions(
-                    await response.json()
+                    profession_payload
                 )
+                # Only explicitly supplied known_recipes are treated as
+                # verified character ownership; missing endpoints don't erase.
+                profile["craft_snapshot"] = profession_payload
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         LOGGER.debug("Optional Blizzard professions unavailable: %s", name)
     return profile
@@ -313,6 +317,17 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH):
                          profile["ilvl"] if profile else None,
                          json.dumps(profile["profession_details"] if profile else [])),
                     )
+                if profile and "craft_snapshot" in profile:
+                    try:
+                        from hyped_ogre.features.characters import crafting
+                        crafting.initialise(path)
+                        crafting.save_profile(
+                            path, char_id, profile["craft_snapshot"], observed_at=now
+                        )
+                    except (sqlite3.Error, ValueError, TypeError):
+                        LOGGER.warning(
+                            "Crafting snapshot not saved for character %s", char_id
+                        )
                 updated += 1
             return updated
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
