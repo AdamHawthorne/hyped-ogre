@@ -197,8 +197,12 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                 except (discord.NotFound, discord.Forbidden):
                     pass
             if not bump and prior:
-                await prior.edit(embed=embed)
-                return True
+                # A restart may have missed chat messages. Restore the panel
+                # to the bottom instead of only editing its old position.
+                if channel.last_message_id in (None, prior.id):
+                    await prior.edit(embed=embed)
+                    return True
+                bump = True
             # After a message or answer, re-post as the latest message.
             # Delete only Ogre's own former panel, never member messages.
             if prior:
