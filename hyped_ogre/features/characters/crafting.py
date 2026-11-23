@@ -20,14 +20,6 @@ SECONDARY_PROFESSIONS = ("Cooking", "Fishing", "First Aid")
 PROFESSIONS = (
     CRAFTING_PROFESSIONS + GATHERING_PROFESSIONS + SECONDARY_PROFESSIONS
 )
-# A deliberately small, audited starter set of valuable Forever crafts.
-# Counts cannot be inferred from skill or from the general catalogue.
-NOTABLE_RECIPE_IDS = {
-    "Alchemy": {17187, 17635, 17637},  # Arcanite, Titans, Supreme Power
-    "Blacksmithing": {16729},           # Lionheart Helm
-    "Enchanting": {20034, 22749},      # Crusader, Spell Power
-    "Tailoring": {18560},               # Mooncloth
-}
 # Filenames, not Discord emoji IDs. Resolve uploaded guild emoji at display.
 PROFESSION_ICON_NAMES = {
     name: "ui_profession_" + name.lower().replace(" ", "")
@@ -303,20 +295,6 @@ def leaderboard(path):
     return grouped
 
 
-def _notable_counts(path):
-    """Per-player audited featured recipe IDs, not every trainer recipe."""
-    with closing(connect(path)) as con:
-        entries = con.execute(
-            "SELECT character_id,profession,recipe_id FROM craft_known"
-        ).fetchall()
-    counts = {}
-    for character_id, profession, recipe_id in entries:
-        if recipe_id in NOTABLE_RECIPE_IDS.get(profession, set()):
-            key = (character_id, profession)
-            counts[key] = counts.get(key, 0) + 1
-    return counts
-
-
 def board_rows(path):
     """Guild crafters 200+: verified API first, WSE skill-only fallback.
 
@@ -368,21 +346,10 @@ def board_rows(path):
                 "recipe_count": -1,
                 "source": "WoWSims",
             })
-    featured = _notable_counts(path)
     for profession, rows in grouped.items():
-        for row in rows:
-            # Only confirmed Blizzard known_recipes count towards featured
-            # recipes; WSE-only and incomplete records are unverified.
-            row["featured_count"] = (
-                featured.get((row["character_id"], profession), 0)
-                if row["recipe_count"] >= 0 else None
-            )
-        rows.sort(key=lambda row: (
-            -(row["featured_count"] if row["featured_count"] is not None else -1),
-            -row["skill"], row["name"].casefold()
-        ))
-        if profession in GATHERING_PROFESSIONS:
-            rows.sort(key=lambda row: (-row["skill"], row["name"].casefold()))
+        # V2 no longer ranks or displays arbitrary featured recipe totals.
+        # Prefer the most skilled crafters, with names breaking ties.
+        rows.sort(key=lambda row: (-row["skill"], row["name"].casefold()))
     return grouped
 
 
@@ -519,6 +486,19 @@ def query(path, question):
         else:
             matches = [r for r in all_recipes if any(
                 term in _search_terms(x) for x in aliases(r) if x)]
+        if not matches:
+            # "enchant Crusader" should match "Enchant Weapon - Crusader"
+            # without requiring the user to know the full spell title.
+            tokens = set(term.split())
+            if "enchant" in tokens:
+                tokens.discard("enchant")
+            if "craft" in tokens:
+                tokens.discard("craft")
+            if tokens:
+                matches = [r for r in all_recipes if any(
+                    tokens.issubset(set(_search_terms(x).split()))
+                    for x in aliases(r) if x
+                )]
         if not matches:
             return {"status": "unknown"}
         # Avoid pretending we identified a recipe when a term matches dozens.
