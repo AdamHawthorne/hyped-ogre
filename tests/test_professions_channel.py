@@ -131,6 +131,10 @@ class CraftingTests(unittest.TestCase):
             "LF a crafter for +100 HP chest": "+100 HP chest",
             "Anyone for Crusader?": "Crusader",
             "Can we get Arcanite Bar?": "Arcanite Bar",
+            "Where can I get the recipe for Crusader?": "Crusader",
+            "Where does Enchant Chest - Major Health drop?": "Enchant Chest - Major Health",
+            "What mats for Arcanite Bar?": "Arcanite Bar",
+            "Materials needed for Enchant Chest - Major Health?": "Enchant Chest - Major Health",
         }
         for message, expected in examples.items():
             with self.subTest(message=message):
@@ -189,6 +193,31 @@ class CraftingTests(unittest.TestCase):
         self.assertEqual(
             crafting.query(self.path, "+100 hp on chest")["crafters"], []
         )
+
+    def test_source_and_material_requests_are_evidence_aware(self):
+        crafting.save_catalog(self.path, [
+            {"id": 17187, "name": "Transmute: Arcanite",
+             "profession": "Alchemy"},
+            {"id": 9000, "name": "Enchant Chest - Major Health",
+             "profession": "Enchanting"},
+        ])
+        self.assertEqual(
+            channel.request_kind("Where can I get recipe for Arcanite Bar?"),
+            "source"
+        )
+        self.assertEqual(
+            channel.request_kind("What mats for +100 HP on chest?"),
+            "materials"
+        )
+        source = channel.answer(self.path, "Arcanite Bar", kind="source")
+        self.assertIn("Pestlezugg", source)
+        mats = channel.answer(self.path, "+100 hp on chest", kind="materials")
+        self.assertIn("verified reagent quantities", mats)
+        self.assertNotIn("Pestlezugg", mats)
+        other = channel.answer(
+            self.path, "+100 hp on chest", kind="source"
+        )
+        self.assertIn("hasn't verified", other)
 
     def test_extract_blizzard_static_nested_categories(self):
         result = craft_catalog.extract_tier(
