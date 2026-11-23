@@ -119,7 +119,7 @@ class WebsiteRosterTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
         self.assertEqual(writes[0][2]["json"]["values"][1][0], "4 characters")
-        self.assertIn("Hyped%20Website%20Roster", writes[0][1])
+        self.assertIn("Full%20Roster", writes[0][1])
         self.assertIn("A1:F11", writes[0][1])
         self.assertTrue(session.close.called)
         formats = [c for c in calls if c[0] == "POST" and "batchUpdate" in c[1]
