@@ -195,7 +195,7 @@ class ProfessionsV2(discord.ui.LayoutView):
                 f"-# [{name}](<{url}>) · {player}"
             )
         if len(fresh) == 1:
-            fresh.append("-# Newly learning 300 recipes will be listed here.")
+            fresh.append("-# Newly learned Artisan recipes will appear here.")
         elements.append(discord.ui.TextDisplay("\n".join(fresh)))
         # Discord renders both absolute and relative times in the reader's
         # timezone. This is the board's last successful render, not a claim

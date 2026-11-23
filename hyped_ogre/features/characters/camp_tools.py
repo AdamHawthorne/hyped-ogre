@@ -10,29 +10,29 @@ import sqlite3
 from contextlib import closing
 from urllib.parse import quote
 
-# Names confirmed against Blizzard's 2026 camping guide/Wowhead Forever.
-# Recipe books and completed camp items are distinct objects. Keep the
-# concrete Spinning Wheel blueprint URL supplied by the guild leader.
-TIER_TWO = {
-    "Alchemy": "Fermenter",
-    "Blacksmithing": "Anvil",
-    "Enchanting": "Arcane Salvager",
-    "Engineering": "Repair Bot",
-    "Leatherworking": "Tanning Rack",
-    "Tailoring": "Spinning Wheel",
-    "Herbalism": "Greenhouse",
-    "Mining": "Rock Garden",
-    "Skinning": "Field Guide",
+# Artisan/advanced campfire blueprints in the 19 Nov 2026 Forever
+# Wowhead professions guide, in its "What is New" sections.
+# These REPLACE the mid-tier stations. Never infer learned ownership from
+# profession skill or possession of an unconsumed blueprint.
+GUIDE_URL = "https://www.wowhead.com/forever/guide/professions/overview"
+ADVANCED_STATIONS = {
+    "Alchemy": "Alchemy Laboratory",
+    "Blacksmithing": "Master Forge",
+    "Enchanting": "Arcane Forge",
+    "Engineering": "Anarchist's Workbench",
+    "Leatherworking": "Sewing Machine",
+    "Tailoring": "Loom",
+    "Herbalism": "Seed Hybridizer",
+    "Mining": "Molten Foundry",
+    "Skinning": "Trapper's Workbench",
 }
-BLUEPRINT_URLS = {
-    "Tailoring": (
-        "https://www.wowhead.com/forever/item=273099/blueprint-spinning-wheel"
-    ),
-}
+# Compatibility alias for external callers; each lookup now means advanced.
+TIER_TWO = ADVANCED_STATIONS
+BLUEPRINT_URLS = {}
 
 
 def link(profession):
-    name = TIER_TWO.get(profession)
+    name = ADVANCED_STATIONS.get(profession)
     if not name:
         return None
     url = BLUEPRINT_URLS.get(profession)
@@ -59,7 +59,7 @@ def _normalise(label):
 
 
 def owners(path):
-    """Get verified learners of one tier-2 campsite tool per profession.
+    """Get verified learners of the advanced campsite blueprint per profession.
 
     Require *known* recipe IDs with matching profession and recipe name,
     exclude hidden/LFG-only characters, and never infer known status merely
@@ -78,12 +78,12 @@ def owners(path):
             WHERE c.roster_visible=1 AND COALESCE(h.hidden,0)=0
               AND k.profession IN (?,?,?,?,?,?,?,?,?)
             ORDER BY LOWER(c.name),k.recipe_id
-        """, tuple(TIER_TWO)).fetchall()
-    result = {profession: [] for profession in TIER_TWO}
+        """, tuple(ADVANCED_STATIONS)).fetchall()
+    result = {profession: [] for profession in ADVANCED_STATIONS}
     seen = {profession: set() for profession in TIER_TWO}
     for row in rows:
         prof = row["profession"]
-        if _normalise(row["recipe_name"]) != _normalise(TIER_TWO[prof]):
+        if _normalise(row["recipe_name"]) != _normalise(ADVANCED_STATIONS[prof]):
             continue
         discord_id = row["discord_id"]
         if type(discord_id) is not int or discord_id <= 0:
@@ -102,7 +102,7 @@ def owners(path):
 
 
 def heading_suffix(profession, ownership, *, max_owners=3):
-    """Render campfire tool on its own line beneath profession heading."""
+    """Render the advanced campfire tool beneath each profession heading."""
     target = link(profession)
     if target is None:
         return ""

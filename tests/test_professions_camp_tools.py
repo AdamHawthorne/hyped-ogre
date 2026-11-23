@@ -1,4 +1,4 @@
-"""Offline guards for verified tier-two Forever campfire tool ownership."""
+"""Offline guards for verified Artisan Forever campfire tool ownership."""
 import sqlite3
 import tempfile
 import unittest
@@ -59,31 +59,31 @@ class CampToolTests(unittest.TestCase):
         ])
         self.add(2, "Blacksmithing", [
             (503, "Sharpening Wheel"),
-            (504, "Master Forge"),
+            (504, "Anvil"),
         ])
-        self.add(3, "Tailoring", [(501, "Spinning Wheel")])
-        self.add(4, "Tailoring", [(501, "Spinning Wheel")])
-        self.add(5, "Tailoring", [(505, "Blueprint: Spinning Wheel")])
+        self.add(3, "Tailoring", [(502, "Loom")])
+        self.add(4, "Tailoring", [(502, "Loom")])
+        self.add(5, "Tailoring", [(505, "Blueprint: Loom")])
         owners = camp_tools.owners(self.path)
         self.assertEqual(
             [member["discord_id"] for member in owners["Tailoring"]],
             [10101],
         )
-        # Owning a skill-300 Blacksmith does not prove the tier-two Anvil.
+        # Owning a skill-300 Blacksmith does not prove Artisan Master Forge.
         self.assertEqual(owners["Blacksmithing"], [])
-        self.assertTrue(all(p in owners for p in camp_tools.TIER_TWO))
+        self.assertTrue(all(p in owners for p in camp_tools.ADVANCED_STATIONS))
 
     def test_qualified_blueprint_name_and_url(self):
         self.assertEqual(
-            camp_tools._normalise("Blueprint: Spinning Wheel"),
-            camp_tools._normalise("Spinning Wheel"),
+            camp_tools._normalise("Blueprint: Loom"),
+            camp_tools._normalise("Loom"),
         )
         self.assertEqual(
             camp_tools.link("Tailoring"),
-            "[Spinning Wheel](<https://www.wowhead.com/forever/"
-            "item=273099/blueprint-spinning-wheel>)",
+            "[Loom](<https://www.wowhead.com/forever/"
+            "search?q=Blueprint%3A%20Loom>)",
         )
-        self.assertIn("search?q=Blueprint%3A%20Anvil",
+        self.assertIn("search?q=Blueprint%3A%20Master%20Forge",
                       camp_tools.link("Blacksmithing"))
 
     def test_v2_heads_same_line_with_member_and_no_fake_owner(self):
@@ -111,21 +111,21 @@ class CampToolTests(unittest.TestCase):
         ]
         grouped_text = "\n".join(strings)
         self.assertIn(
-            "**Tailoring (1)**\n-# [Spinning Wheel]", grouped_text
+            "**Tailoring (1)**\n-# [Loom]", grouped_text
         )
         self.assertIn("<@10101>", grouped_text)
         self.assertIn(
-            "**Blacksmithing (1)**\n-# [Anvil]", grouped_text
+            "**Blacksmithing (1)**\n-# [Master Forge]", grouped_text
         )
         self.assertIn("Ogre not found anyone with this yet", grouped_text)
-        self.assertNotIn("**Blacksmithing (1)** · [Anvil]", "filler")
+        self.assertNotIn("**Blacksmithing (1)** · [Master Forge]", "filler")
 
     def test_three_discord_mentions_max_with_overflow(self):
         people = [{"discord_id": n} for n in (1, 2, 3, 4)]
         result = camp_tools.heading_suffix(
             "Tailoring", {"Tailoring": people}
         )
-        self.assertIn("\n-# [Spinning Wheel]", result)
+        self.assertIn("\n-# [Loom]", result)
         self.assertIn("<@1>, <@2>, <@3> +1 more", result)
         self.assertNotIn("<@4>", result)
 
