@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 
 from cogs import raid_signup as raid
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID
-from . import crafting, craft_catalog, armory
+from . import crafting, craft_catalog, armory, camp_tools
 
 LOG = logging.getLogger(__name__)
 COLOUR = 0xA87535
@@ -114,7 +114,7 @@ class ProfessionsV2(discord.ui.LayoutView):
     """One persistent V2 board, edited in place and pinned."""
 
     def __init__(self, grouped, guild=None, *, new_recipes=(),
-                 updated_at=None):
+                 camp_owners=None, updated_at=None):
         super().__init__(timeout=None)
         from . import roster
         updated_at = int(time.time() if updated_at is None else updated_at)
@@ -144,6 +144,7 @@ class ProfessionsV2(discord.ui.LayoutView):
                 icon = profession_emoji(guild, profession)
                 heading = (
                     f"-# **{icon + ' ' if icon else ''}{profession} ({len(people)})**"
+                    + camp_tools.heading_suffix(profession, camp_owners or {})
                 )
                 lines = [heading]
                 for person in selected:
@@ -510,7 +511,13 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
             newest = await asyncio.to_thread(
                 crafting.latest_high_skill_discoveries, raid.RAID_DB, 5)
-            panel = ProfessionsV2(grouped, channel.guild, new_recipes=newest)
+            learned_tools = await asyncio.to_thread(
+                camp_tools.owners, raid.RAID_DB
+            )
+            panel = ProfessionsV2(
+                grouped, channel.guild, new_recipes=newest,
+                camp_owners=learned_tools,
+            )
             prior = None
             if record and record[1]:
                 try:
@@ -519,7 +526,10 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
                     pass
             if prior:
                 # Never delete/repost the large board in response to chat.
-                await prior.edit(content=None, embed=None, view=panel)
+                await prior.edit(
+                    content=None, embed=None, view=panel,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
                 if not prior.pinned:
                     try:
                         await prior.pin(reason="Hyped crafting reference board")
