@@ -39,16 +39,37 @@ class WebsiteRosterTests(unittest.TestCase):
         con.execute("INSERT INTO character_board_overrides VALUES (4,'Website Alias',0)")
         con.commit()
         con.close()
+        # Keep database visibility live while stubbing the expensive optional
+        # equipment/Armory services used by the actual Discord board.
+        def board_rows(_):
+            with sqlite3.connect(self.path) as con:
+                result = con.execute(
+                    "SELECT c.name,c.class_name,c.spec,c.role,c.is_main,"
+                    "c.roster_visible,COALESCE(b.hidden,0) "
+                    "FROM characters c LEFT JOIN character_board_overrides b "
+                    "ON b.character_id=c.character_id"
+                ).fetchall()
+            return [
+                dict(name=name, class_name=klass, spec=spec, role=role,
+                     is_main=main, board_hidden=hidden,
+                     level=60 if name == "Big Snore" else None,
+                     ilvl="75.5" if name == "Big Snore" else "N/A",
+                     professions="BS: 300 / Min: 300" if name == "Big Snore" else "N/A")
+                for name, klass, spec, role, main, visible, hidden in result if visible
+            ]
+        mock = patch.object(site.character_roster, "rows", side_effect=board_rows)
+        mock.start()
+        self.addCleanup(mock.stop)
 
     def test_visible_mains_exclude_alts_hidden_and_lfg_only(self):
         records = site.visible_mains(self.path)
-        names = [row[0] for row in records]
+        names = [row["name"] for row in records]
         self.assertEqual(set(names), {
             "Big Snore", "Clever Priest", "Rogue One", "Mage One",
         })
         self.assertNotIn("Website Alias", names)
 
-    def test_role_groups_have_counts_and_only_three_public_columns(self):
+    def test_role_groups_have_counts_and_six_public_columns(self):
         rows, sections = site.website_rows(site.visible_mains(self.path))
         self.assertEqual(rows[1][0], "4 main characters")
         self.assertEqual(rows[2], list(site.HEADERS))
@@ -56,7 +77,13 @@ class WebsiteRosterTests(unittest.TestCase):
             "Tanks (1)", "Healers (1)", "Melee (1)", "Ranged (1)",
         ])
         self.assertEqual(len(rows), 11)
-        self.assertTrue(all(len(row) == 3 for row in rows))
+        self.assertTrue(all(len(row) == 6 for row in rows))
+        self.assertEqual(rows[2], list(site.HEADERS))
+        main = next(row for row in rows if row[0] == "Big Snore")
+        self.assertEqual(main, [
+            "Big Snore", "Warrior", "Protection", "60", "75.5",
+            "BS: 300 / Min: 300",
+        ])
         self.assertEqual(sum(row[0] == "Big Snore" for row in rows), 1)
         self.assertFalse(any("100" in str(cell) for row in rows for cell in row))
 
@@ -67,7 +94,7 @@ class WebsiteRosterTests(unittest.TestCase):
         rows, _ = site.website_rows(site.visible_mains(self.path))
         self.assertEqual(rows[1][0], "3 main characters")
         self.assertFalse(any(row[0] == "Rogue One" for row in rows))
-        self.assertIn(["Melee (0)", "", ""], rows)
+        self.assertIn(["Melee (0)"] + [""] * 5, rows)
 
     def test_sync_creates_dedicated_tab_and_writes_raw_values(self):
         calls = []
@@ -93,8 +120,24 @@ class WebsiteRosterTests(unittest.TestCase):
         self.assertEqual(writes[0][2]["params"]["valueInputOption"], "RAW")
         self.assertEqual(writes[0][2]["json"]["values"][1][0], "4 main characters")
         self.assertIn("Hyped%20Website%20Roster", writes[0][1])
-        self.assertIn("A1:C11", writes[0][1])
+        self.assertIn("A1:F11", writes[0][1])
         self.assertTrue(session.close.called)
+        formats = [c for c in calls if c[0] == "POST" and "batchUpdate" in c[1]
+                   and any("repeatCell" in req for req in c[2]["json"]["requests"])]
+        self.assertEqual(len(formats), 1)
+        class_cells = [
+            req["repeatCell"] for req in formats[0][2]["json"]["requests"]
+            if "repeatCell" in req
+            and req["repeatCell"]["range"].get("startColumnIndex") == 1
+        ]
+        self.assertEqual(len(class_cells), 4)
+        warrior = next(req for req in class_cells
+                       if req["range"]["startRowIndex"] == 4)
+        self.assertEqual(warrior["range"]["endColumnIndex"], 2)
+        self.assertEqual(
+            warrior["cell"]["userEnteredFormat"]["backgroundColor"]["red"],
+            int("C7", 16) / 255,
+        )
 
     def test_no_changes_skips_rewrite(self):
         desired, _ = site.website_rows(site.visible_mains(self.path))
@@ -102,9 +145,10 @@ class WebsiteRosterTests(unittest.TestCase):
         def fake_json(session, method, url, **kwargs):
             if "fields" in kwargs.get("params", {}):
                 return {"sheets": [{"properties": {
-                    "sheetId": 123, "title": site.TAB}}]}
+                    "sheetId": 123, "title": site.TAB,
+                    "gridProperties": {"columnCount": 6}}}]}
             if method == "GET":
-                return {"values": [row[:1] if not row[1] and not row[2] else row
+                return {"values": [row[:1] if not any(row[1:]) else row
                                    for row in desired]}
             raise AssertionError("unchanged sheet should not be written")
         with patch.object(site.raid_sheets, "configured", return_value=True), (

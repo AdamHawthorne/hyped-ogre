@@ -6,45 +6,63 @@ the Discord Characters embed. Never exports Discord IDs, alts or hidden mains.
 from urllib.parse import quote
 
 from cogs import raid_sheets
-from cogs.raid_schedule import database, signup_role_group
+from cogs.raid_schedule import signup_role_group
+from hyped_ogre.features.characters import roster as character_roster
 
 TAB = "Hyped Website Roster"
 ROLES = ("Tanks", "Healers", "Melee", "Ranged")
-HEADERS = ("In-game name", "Class", "Spec")
+HEADERS = ("In-game name", "Class", "Spec", "Level", "iLvl", "Professions")
+WIDTH = len(HEADERS)
+CLASS_COLOURS = {
+    "Warrior": "C79C6E", "Paladin": "F58CBA", "Hunter": "ABD473",
+    "Rogue": "FFF569", "Priest": "FFFFFF", "Death Knight": "C41F3B",
+    "Shaman": "0070DD", "Mage": "40C7EB", "Warlock": "8787ED",
+    "Druid": "FF7D0A", "Monk": "00FF96", "Demon Hunter": "A330C9",
+}
 CAPACITY = 500
 
 
 def visible_mains(db_path):
-    """Use canonical in-game character names, not manually edited display aliases."""
-    with database(db_path) as con:
-        records = con.execute(
-            "SELECT c.name,c.class_name,c.spec,c.role FROM characters c "
-            "LEFT JOIN character_board_overrides b ON b.character_id=c.character_id "
-            "WHERE c.is_main=1 AND c.roster_visible=1 AND COALESCE(b.hidden,0)=0 "
-            "ORDER BY LOWER(c.class_name),LOWER(c.name),c.character_id"
-        ).fetchall()
-    return [tuple(record) for record in records]
+    """Share the Discord Characters board's exact visibility and stat sources.
+
+    roster.rows() already joins board-hidden overrides and enriches characters
+    from the verified Blizzard cache and WoWSims exports with fallback values.
+    """
+    return [
+        record for record in character_roster.rows(db_path)
+        if record["is_main"] and not record.get("board_hidden")
+    ]
 
 
 def website_rows(records):
     """Fixed four-role order, including zero-count sections."""
     groups = {role: [] for role in ROLES}
-    for name, klass, spec, role in records:
-        groups[signup_role_group(klass, spec, role)].append((name, klass, spec))
+    for record in records:
+        name = record["name"]  # Canonical in-game name, never board alias.
+        klass, spec, role = (
+            record["class_name"], record["spec"], record["role"]
+        )
+        level = record.get("level")
+        level = str(level) if type(level) is int and 1 <= level <= 60 else "N/A"
+        ilvl = character_roster.display_ilvl(record.get("ilvl"))
+        professions = record.get("professions") or "N/A"
+        groups[signup_role_group(klass, spec, role)].append(
+            (name, klass, spec, level, ilvl, professions)
+        )
     for entries in groups.values():
         entries.sort(key=lambda r: (
             0 if r[0].strip().casefold() == "big snore" else 1,
             r[1].casefold(), r[0].casefold()
         ))
     rows = [
-        ["<Hyped> Guild Roster", "", ""],
-        [f"{sum(map(len, groups.values()))} main characters", "", ""],
+        ["<Hyped> Guild Roster"] + [""] * (WIDTH - 1),
+        [f"{sum(map(len, groups.values()))} main characters"] + [""] * (WIDTH - 1),
         list(HEADERS),
     ]
     sections = []
     for role in ROLES:
         sections.append(len(rows))
-        rows.append([f"{role} ({len(groups[role])})", "", ""])
+        rows.append([f"{role} ({len(groups[role])})"] + [""] * (WIDTH - 1))
         rows.extend(list(entry) for entry in groups[role])
     if len(rows) > CAPACITY:
         raise RuntimeError("Website roster exceeds its 500-row limit.")
@@ -58,25 +76,38 @@ def _range(a1):
 def _read(session):
     return raid_sheets._json(
         session, "GET",
-        f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/{_range('A1:C500')}",
+        f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/{_range('A1:F500')}",
     ).get("values", [])
 
 
 def _sheet_id(session):
     document = raid_sheets._json(
         session, "GET", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}",
-        params={"fields": "sheets(properties(sheetId,title))"},
+        params={"fields": "sheets(properties(sheetId,title,gridProperties(columnCount)))"},
     )
     for sheet in document.get("sheets", []):
         props = sheet.get("properties", {})
         if props.get("title") == TAB:
-            return props["sheetId"]
+            sheet_id = props["sheetId"]
+            # Older website tabs had three columns. Grow in place so
+            # published tab identity and public URLs remain unchanged.
+            columns = props.get("gridProperties", {}).get("columnCount", WIDTH)
+            if columns < WIDTH:
+                raid_sheets._json(
+                    session, "POST",
+                    f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
+                    json={"requests": [{"appendDimension": {
+                        "sheetId": sheet_id, "dimension": "COLUMNS",
+                        "length": WIDTH - columns,
+                    }}]},
+                )
+            return sheet_id
     created = raid_sheets._json(
         session, "POST", f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}:batchUpdate",
         json={"requests": [{"addSheet": {"properties": {
             "title": TAB,
             "gridProperties": {
-                "rowCount": CAPACITY, "columnCount": 3,
+                "rowCount": CAPACITY, "columnCount": WIDTH,
                 "frozenRowCount": 3, "hideGridlines": True,
             },
         }}}]},
@@ -94,7 +125,7 @@ def _format(session, sheet_id, rows, sections):
         return {"repeatCell": {
             "range": {"sheetId": sheet_id, "startRowIndex": start,
                       "endRowIndex": stop, "startColumnIndex": 0,
-                      "endColumnIndex": 3},
+                      "endColumnIndex": WIDTH},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": bg, "textFormat": {
                     "foregroundColor": fg, "fontFamily": "Roboto",
@@ -117,7 +148,31 @@ def _format(session, sheet_id, rows, sections):
     ]
     requests.extend(paint(idx, idx + 1, black, white, bold=True, size=12)
                     for idx in sections)
-    for index, width in enumerate((270, 160, 200)):
+    # Apply WoW class colours to the Class cells only. Preserve the
+    # restrained page theme and readability of the other five columns.
+    for index, row in enumerate(rows):
+        if index < 3 or index in sections:
+            continue
+        hex_colour = CLASS_COLOURS.get(row[1])
+        if not hex_colour:
+            continue
+        rgb = tuple(int(hex_colour[i:i + 2], 16) / 255 for i in (0, 2, 4))
+        background = dict(zip(("red", "green", "blue"), rgb))
+        luminance = sum(c * w for c, w in zip(rgb, (0.299, 0.587, 0.114)))
+        foreground = ink if luminance > 0.52 else white
+        requests.append({"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": index,
+                      "endRowIndex": index + 1, "startColumnIndex": 1,
+                      "endColumnIndex": 2},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": background,
+                "textFormat": {"foregroundColor": foreground, "bold": True},
+            }},
+            "fields": "userEnteredFormat.backgroundColor,"
+                      "userEnteredFormat.textFormat.foregroundColor,"
+                      "userEnteredFormat.textFormat.bold",
+        }})
+    for index, width in enumerate((260, 145, 170, 85, 85, 265)):
         requests.append({"updateDimensionProperties": {
             "range": {"sheetId": sheet_id, "dimension": "COLUMNS",
                       "startIndex": index, "endIndex": index + 1},
@@ -140,14 +195,14 @@ def sync_once(db_path):
         sheet_id = _sheet_id(session)
         existing = _read(session)
         # Google may omit trailing blank cells: compare normalised visible rows.
-        normalised = [(list(row) + [""] * 3)[:3] for row in existing]
+        normalised = [(list(row) + [""] * WIDTH)[:WIDTH] for row in existing]
         if normalised == desired:
             return False
-        target = desired + [["", "", ""]] * max(0, len(existing) - len(desired))
+        target = desired + [[""] * WIDTH] * max(0, len(existing) - len(desired))
         raid_sheets._json(
             session, "PUT",
             f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values/"
-            + _range(f"A1:C{len(target)}"),
+            + _range(f"A1:F{len(target)}"),
             params={"valueInputOption": "RAW"},
             json={"values": target},
         )
