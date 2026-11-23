@@ -155,9 +155,7 @@ def save_profile(path, character_id, payload, observed_at=None):
                     "WHERE character_id=? AND profession=?",
                     (character_id, name)
                 ).fetchone()
-                if existing is None:
-                    continue
-                count = existing[0]
+                count = existing[0] if existing is not None else -1
             else:
                 count = len(recipes)
                 con.execute(
@@ -248,6 +246,94 @@ def leaderboard(path):
     for row in rows:
         grouped.setdefault(row["profession"], []).append(dict(row))
     return grouped
+
+
+def board_rows(path):
+    """Guild crafters 200+: verified API first, WSE skill-only fallback.
+
+    A WoWSims skill value is never proof of a learned recipe. Only
+    explicit Blizzard known_recipes create a verified recipe count.
+    """
+    grouped = leaderboard(path)
+    seen = {
+        (row["character_id"], prof.casefold())
+        for prof, rows in grouped.items() for row in rows
+    }
+    from . import equipment
+    try:
+        exports = equipment.latest_profiles(path)
+    except sqlite3.OperationalError:
+        exports = []
+    with closing(connect(path)) as con:
+        meta = {
+            int(row[0]): (row[1], bool(row[2]))
+            for row in con.execute(
+                "SELECT c.character_id,c.is_main,COALESCE(h.hidden,0) "
+                "FROM characters c LEFT JOIN character_board_overrides h "
+                "ON h.character_id=c.character_id WHERE c.roster_visible=1"
+            )
+        }
+    for export in exports:
+        char_id = export["character_id"]
+        if char_id not in meta or meta[char_id][1]:
+            continue
+        parsed = equipment.parse_export(export["raw_text"])
+        if not parsed:
+            continue
+        for item in parsed.get("profession_details") or []:
+            name = item.get("name")
+            skill = item.get("level")
+            if (not isinstance(name, str) or name not in PROFESSIONS
+                    or type(skill) is not int or skill < MIN_SKILL):
+                continue
+            key = (char_id, name.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            grouped.setdefault(name, []).append({
+                "character_id": char_id,
+                "discord_id": export["discord_id"],
+                "name": export["name"],
+                "profession": name,
+                "skill": skill,
+                "recipe_count": -1,
+                "source": "WoWSims",
+            })
+    for rows in grouped.values():
+        rows.sort(key=lambda row: (
+            -(row["recipe_count"] if row["recipe_count"] >= 0 else -1),
+            -row["skill"], row["name"].casefold()
+        ))
+    return grouped
+
+
+def diagnostics(path):
+    """Safe coverage counters; no developer credentials or member secrets."""
+    from . import armory, equipment
+    with closing(connect(path)) as con:
+        visible = con.execute(
+            "SELECT COUNT(*) FROM characters WHERE roster_visible=1"
+        ).fetchone()[0]
+        counts = con.execute(
+            "SELECT COUNT(DISTINCT character_id), "
+            "SUM(CASE WHEN recipe_count>=0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN recipe_count>=0 AND recipe_count>0 THEN recipe_count ELSE 0 END) "
+            "FROM craft_professions"
+        ).fetchone()
+        index_count = con.execute(
+            "SELECT COUNT(*) FROM craft_catalog"
+        ).fetchone()[0]
+    try:
+        exports = len(equipment.latest_profiles(path))
+    except sqlite3.OperationalError:
+        exports = 0
+    return {
+        "credentials": armory.credentials_configured(),
+        "visible": visible, "blizzard_characters": counts[0] or 0,
+        "verified_professions": counts[1] or 0,
+        "verified_recipes": counts[2] or 0,
+        "catalog": index_count, "wowsims_exports": exports,
+    }
 
 
 def _search_terms(text):
