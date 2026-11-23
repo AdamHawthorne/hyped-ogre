@@ -3590,6 +3590,7 @@ async def load_hyped_extensions():
     await bot.load_extension("hyped_ogre.features.classrooms.extension")
     await bot.load_extension("hyped_ogre.features.raids.notifications")
     await bot.load_extension("hyped_ogre.features.characters.hub")
+    await bot.load_extension("hyped_ogre.features.characters.professions_channel")
     await bot.load_extension("hyped_ogre.features.characters.board_admin")
     await bot.load_extension("hyped_ogre.features.guild_member_sync")
     await bot.load_extension("hyped_ogre.features.polls.extension")
