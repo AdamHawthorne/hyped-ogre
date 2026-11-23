@@ -195,9 +195,12 @@ def coverage(path):
     }
 
 
-def candidates(path, now=None, limit=MAX_REFRESH):
+def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
     """Only visible guild-roster registrations, never LFG-only characters."""
     now = int(now if now is not None else time.time())
+    if for_crafting:
+        from . import crafting
+        crafting.initialise(path)
     try:
         with closing(sqlite3.connect(path, timeout=20)) as con, con:
             con.row_factory = sqlite3.Row
@@ -207,6 +210,14 @@ def candidates(path, now=None, limit=MAX_REFRESH):
                 "ON c.character_id=a.character_id "
                 "WHERE c.roster_visible=1 ORDER BY c.is_main DESC,c.character_id"
             ).fetchall()
+            verified = set()
+            if for_crafting:
+                verified = {
+                    entry[0] for entry in con.execute(
+                        "SELECT DISTINCT character_id FROM craft_professions "
+                        "WHERE recipe_count>=0"
+                    )
+                }
     except sqlite3.OperationalError:
         return []
     result = []
@@ -214,8 +225,11 @@ def candidates(path, now=None, limit=MAX_REFRESH):
         name = row["name"]
         if not slug(name):
             continue
-        if (row["character_name"] == name and row["updated_at"] is not None
-                and now - row["updated_at"] < CHECK_INTERVAL):
+        fresh = (
+            row["character_name"] == name and row["updated_at"] is not None
+            and now - row["updated_at"] < CHECK_INTERVAL
+        )
+        if fresh and (not for_crafting or row["character_id"] in verified):
             continue
         result.append((row["character_id"], name))
         if len(result) >= limit:
@@ -261,7 +275,8 @@ async def fetch_profile(session, token, name):
     return profile
 
 
-async def refresh(path, *, now=None, limit=MAX_REFRESH):
+async def refresh(path, *, now=None, limit=MAX_REFRESH,
+                  for_crafting=False):
     """Bounded profile sync; no network without explicit Battle.net credentials."""
     client_id = os.getenv("BLIZZARD_CLIENT_ID", "").strip()
     client_secret = os.getenv("BLIZZARD_CLIENT_SECRET", "").strip()
@@ -269,7 +284,9 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH):
         LOGGER.info("Forever Armory sync unavailable: Blizzard credentials not configured.")
         return 0
     initialise(path)
-    available = candidates(path, now=now, limit=limit)
+    available = candidates(
+        path, now=now, limit=limit, for_crafting=for_crafting
+    )
     if not available:
         return 0
     now = int(now if now is not None else time.time())
