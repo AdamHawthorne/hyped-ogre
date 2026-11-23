@@ -68,7 +68,7 @@ class ProfessionV2Tests(unittest.TestCase):
                     side_effect=parsed)):
             grouped = crafting.board_rows(self.path)
         self.assertEqual([r["name"] for r in grouped["Alchemy"]],
-                         ["Alchemy Ogre", "Craft Ogre"])
+                         ["Craft Ogre", "Alchemy Ogre"])
         self.assertEqual(grouped["Alchemy"][1]["source"], "WoWSims")
         embed = format_crafters(grouped)
         self.assertIn("WSE", embed.fields[0].value)
