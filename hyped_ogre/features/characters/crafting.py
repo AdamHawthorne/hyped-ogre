@@ -111,13 +111,16 @@ def save_profile(path, character_id, payload, observed_at=None):
     with closing(connect(path)) as con, con:
         for name, skill, recipes in parsed:
             if recipes is None:
-                # Keep old owner knowledge until Blizzard returns it.
+                # If the endpoint omits known_recipes altogether, do not
+                # present a fabricated zero-recipe count as verification.
                 existing = con.execute(
                     "SELECT recipe_count FROM craft_professions "
                     "WHERE character_id=? AND profession=?",
                     (character_id, name)
                 ).fetchone()
-                count = existing[0] if existing else 0
+                if existing is None:
+                    continue
+                count = existing[0]
             else:
                 count = len(recipes)
                 con.execute(
