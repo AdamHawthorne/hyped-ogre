@@ -127,7 +127,7 @@ class CraftingTests(unittest.TestCase):
             "Crusader enchant?": "Crusader enchant",
             "Can anyone do +100 hp on chest?": "+100 hp on chest",
             "Who has 100hp chest?": "100hp chest",
-            "Chest: Enchant Chest - Major Health": "Chest - Major Health",
+            "Chest: Enchant Chest - Major Health": "Enchant Chest - Major Health",
             "LF a crafter for +100 HP chest": "+100 HP chest",
             "Anyone for Crusader?": "Crusader",
             "Can we get Arcanite Bar?": "Arcanite Bar",
