@@ -51,6 +51,29 @@ class CraftRequestTests(unittest.TestCase):
         crafting.forget_request(self.path, 100)
         self.assertFalse(crafting.request_exists(self.path, 100, 10))
 
+    def test_artisan_guide_recipes_fill_missing_api_skill_metadata(self):
+        self._save([{"id": 51000, "name": "Initial"}], now=1000)
+        self._save([
+            {"id": 51000, "name": "Initial"},
+            {"id": 51001, "name": "Alchemy Laboratory"},
+            {"id": 51002, "name": "Low Level Potion"},
+        ], now=2000)
+        # Blizzard occasionally omits required_skill even for documented
+        # Artisan campfire blueprints; the guide whitelist bridges this.
+        crafting.save_catalog(self.path, [
+            {"id": 51001, "name": "Alchemy Laboratory",
+             "profession": "Alchemy"},
+            {"id": 51002, "name": "Low Level Potion",
+             "profession": "Alchemy"},
+        ])
+        recent = crafting.latest_high_skill_discoveries(self.path)
+        self.assertEqual([row["recipe_name"] for row in recent],
+                         ["Alchemy Laboratory"])
+        self.assertTrue(crafting._artisan_from_guide(
+            "Alchemy", "Alchemy Laboratory"))
+        self.assertFalse(crafting._artisan_from_guide(
+            "Alchemy", "Low Level Potion"))
+
     def test_initial_recipe_import_is_not_a_new_discovery(self):
         self._save([{"id": 50001, "name": "First 300 Recipe"}], now=1000)
         self._catalog(50001, "First 300 Recipe", required=300)
