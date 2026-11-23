@@ -152,7 +152,7 @@ class ProfessionsV2Tests(unittest.TestCase):
                 for component in getattr(child, "children", [])
             )
         self.assertIn(
-            "Newly learning 300 recipes will be listed here.", content(empty)
+            "Newly learned Artisan recipes will appear here.", content(empty)
         )
         recipes = [
             {"recipe_name": f"High-level Recipe {i}",
@@ -169,7 +169,7 @@ class ProfessionsV2Tests(unittest.TestCase):
                 full,
             )
         self.assertNotIn("High-level Recipe 6", full)
-        self.assertNotIn("Newly learning 300 recipes", full)
+        self.assertNotIn("Newly learned Artisan recipes", full)
 
     def test_updates_note_heading_displays_uploaded_discord_emoji(self):
         class TestEmoji:
