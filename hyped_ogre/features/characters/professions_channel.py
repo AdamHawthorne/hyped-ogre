@@ -179,7 +179,7 @@ class ProfessionsV2(discord.ui.LayoutView):
         fresh = [
             f"### {note_emoji + ' ' if note_emoji else ''}New recipes"
         ]
-        for recipe in new_recipes[:3]:
+        for recipe in new_recipes[:5]:
             # Blizzard recipe IDs are not guaranteed to be Wowhead spell IDs.
             # A Wowhead Forever *search* link avoids linking the wrong spell.
             from urllib.parse import quote
@@ -194,7 +194,7 @@ class ProfessionsV2(discord.ui.LayoutView):
                 f"-# [{name}](<{url}>) · {player}"
             )
         if len(fresh) == 1:
-            fresh.append("-# No newly verified 300-skill recipes yet.")
+            fresh.append("-# Newly learning 300 recipes will be listed here.")
         elements.append(discord.ui.TextDisplay("\n".join(fresh)))
         # Discord renders both absolute and relative times in the reader's
         # timezone. This is the board's last successful render, not a claim
@@ -420,7 +420,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             grouped = await asyncio.to_thread(crafting.board_rows, raid.RAID_DB)
             status = await asyncio.to_thread(crafting.diagnostics, raid.RAID_DB)
             newest = await asyncio.to_thread(
-                crafting.latest_high_skill_discoveries, raid.RAID_DB)
+                crafting.latest_high_skill_discoveries, raid.RAID_DB, 5)
             panel = ProfessionsV2(grouped, channel.guild, new_recipes=newest)
             prior = None
             if record and record[1]:

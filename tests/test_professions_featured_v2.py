@@ -142,6 +142,35 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.assertNotIn("Private pilot", contents)
         self.assertNotIn("Skill 200+", contents)
 
+    def test_new_recipes_empty_message_and_five_links(self):
+        from urllib.parse import quote
+        empty = p.ProfessionsV2({}, SimpleNamespace(emojis=[]))
+        def content(view):
+            return "\\n".join(
+                getattr(component, "content", "")
+                for child in view.children
+                for component in getattr(child, "children", [])
+            )
+        self.assertIn(
+            "Newly learning 300 recipes will be listed here.", content(empty)
+        )
+        recipes = [
+            {"recipe_name": f"High-level Recipe {i}",
+             "character_name": "Guild Crafter"}
+            for i in range(1, 7)
+        ]
+        full = content(p.ProfessionsV2(
+            {}, SimpleNamespace(emojis=[]), new_recipes=recipes
+        ))
+        for i in range(1, 6):
+            self.assertIn(
+                "https://www.wowhead.com/forever/search?q="
+                + quote(f"High-level Recipe {i}", safe=""),
+                full,
+            )
+        self.assertNotIn("High-level Recipe 6", full)
+        self.assertNotIn("Newly learning 300 recipes", full)
+
     def test_updates_note_heading_displays_uploaded_discord_emoji(self):
         class TestEmoji:
             name = "updates_note"
