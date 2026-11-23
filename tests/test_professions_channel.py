@@ -125,6 +125,12 @@ class CraftingTests(unittest.TestCase):
             "Need someone to make Arcanite Bar": "Arcanite Bar",
             "Looking for a crafter for Arcanite Bar?": "Arcanite Bar",
             "Crusader enchant?": "Crusader enchant",
+            "Can anyone do +100 hp on chest?": "+100 hp on chest",
+            "Who has 100hp chest?": "100hp chest",
+            "Chest: Enchant Chest - Major Health": "Chest - Major Health",
+            "LF a crafter for +100 HP chest": "+100 HP chest",
+            "Anyone for Crusader?": "Crusader",
+            "Can we get Arcanite Bar?": "Arcanite Bar",
         }
         for message, expected in examples.items():
             with self.subTest(message=message):
@@ -138,6 +144,51 @@ class CraftingTests(unittest.TestCase):
         ):
             with self.subTest(ordinary=ordinary):
                 self.assertIsNone(channel.extract_question(ordinary))
+
+    def test_colloquial_chest_health_maps_to_verified_catalog_recipe(self):
+        crafting.save_catalog(self.path, [{
+            "id": 2001, "name": "Enchant Chest - Major Health",
+            "profession": "Enchanting"
+        }])
+        for question in (
+            "+100 hp on chest",
+            "100hp chest",
+            "chest 100 health",
+            "major health chest",
+        ):
+            with self.subTest(question=question):
+                result = crafting.query(self.path, question)
+                self.assertEqual(result["status"], "found")
+                self.assertEqual(
+                    result["recipes"][0]["name"],
+                    "Enchant Chest - Major Health",
+                )
+        no_owner = channel.answer(self.path, "+100 hp on chest")
+        self.assertIn("Enchant Chest - Major Health", no_owner)
+        self.assertIn("nobody", no_owner)
+
+    def test_recipe_ownership_and_uncertain_suggestions_are_not_invented(self):
+        crafting.save_catalog(self.path, [
+            {"id": 2001, "name": "Enchant Chest - Major Health",
+             "profession": "Enchanting"},
+            {"id": 2002, "name": "Enchant Chest - Major Mana",
+             "profession": "Enchanting"},
+        ])
+        unknown = crafting.query(self.path, "enchnt chest major health")
+        self.assertEqual(unknown["status"], "unknown")
+        self.assertIn(
+            "Enchant Chest - Major Health", unknown["suggestions"]
+        )
+        self.assertIn("Did you mean", channel.answer(self.path, "enchnt chest major health"))
+        # A verified known-recipe relationship is still required for ownership.
+        with sqlite3.connect(self.path) as con:
+            con.execute(
+                "UPDATE craft_catalog SET name='Enchant Chest - Major Health' "
+                "WHERE recipe_id=2001"
+            )
+        self.assertEqual(
+            crafting.query(self.path, "+100 hp on chest")["crafters"], []
+        )
 
     def test_extract_blizzard_static_nested_categories(self):
         result = craft_catalog.extract_tier(
