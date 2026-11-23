@@ -50,7 +50,7 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.assertEqual(people[0]["name"], "Second Crafter")
         self.assertNotIn("featured_count", people[0])
 
-    def test_top_three_plus_295(self):
+    def test_exactly_top_three_even_when_other_crafters_have_295_plus(self):
         candidates = [
             {"name": "a", "skill": 220}, {"name": "b", "skill": 240},
             {"name": "c", "skill": 250}, {"name": "d", "skill": 294},
@@ -58,8 +58,29 @@ class ProfessionsV2Tests(unittest.TestCase):
         ]
         self.assertEqual(
             [r["name"] for r in p.featured_selection("Alchemy", candidates)],
-            ["a", "b", "c", "e", "f"],
+            ["a", "b", "c"],
         )
+
+    def test_v2_footer_timestamp_and_exact_top_three(self):
+        guild = SimpleNamespace(emojis=[])
+        grouped = {"Alchemy": [
+            {"name": f"Crafter {number}", "skill": 300}
+            for number in range(1, 7)
+        ]}
+        view = p.ProfessionsV2(grouped, guild, updated_at=1795460000)
+        contents = "\n".join(
+            getattr(component, "content", "")
+            for child in view.children
+            for component in getattr(child, "children", [])
+        )
+        self.assertIn(
+            "Last updated: <t:1795460000:f> · <t:1795460000:R>",
+            contents,
+        )
+        for name in ("Crafter 1", "Crafter 2", "Crafter 3"):
+            self.assertIn(name, contents)
+        for name in ("Crafter 4", "Crafter 5", "Crafter 6"):
+            self.assertNotIn(name, contents)
 
     def test_v2_removes_secondary_and_extra_instructions(self):
         guild = SimpleNamespace(emojis=[])
