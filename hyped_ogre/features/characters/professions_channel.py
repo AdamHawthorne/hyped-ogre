@@ -295,7 +295,7 @@ def extract_question(content):
         "", request, flags=re.IGNORECASE
     ).strip()
     request = re.sub(
-        r"\\s+(?:drop|drops|recipe|pattern|plans|schematic)$",
+        r"\s+(?:drop|drops|recipe|pattern|plans|schematic)$",
         "", request, flags=re.IGNORECASE
     ).strip()
     request = re.sub(
