@@ -111,11 +111,11 @@ class CampToolTests(unittest.TestCase):
         ]
         grouped_text = "\n".join(strings)
         self.assertIn(
-            "**Tailoring (1)** · [Spinning Wheel]", grouped_text
+            "**Tailoring (1)**\n-# [Spinning Wheel]", grouped_text
         )
         self.assertIn("<@10101>", grouped_text)
         self.assertIn(
-            "**Blacksmithing (1)** · [Anvil]", grouped_text
+            "**Blacksmithing (1)**\n-# [Anvil]", grouped_text
         )
         self.assertIn("Ogre not found anyone with this yet", grouped_text)
         self.assertNotIn("**Blacksmithing (1)** · [Anvil]", "filler")
@@ -125,6 +125,7 @@ class CampToolTests(unittest.TestCase):
         result = camp_tools.heading_suffix(
             "Tailoring", {"Tailoring": people}
         )
+        self.assertIn("\n-# [Spinning Wheel]", result)
         self.assertIn("<@1>, <@2>, <@3> +1 more", result)
         self.assertNotIn("<@4>", result)
 

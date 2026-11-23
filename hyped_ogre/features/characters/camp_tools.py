@@ -102,17 +102,17 @@ def owners(path):
 
 
 def heading_suffix(profession, ownership, *, max_owners=3):
-    """Compact markdown on the heading line, without assuming ownership."""
+    """Render campfire tool on its own line beneath profession heading."""
     target = link(profession)
     if target is None:
         return ""
     players = ownership.get(profession, [])
     if not players:
-        return f" · {target} · Ogre not found anyone with this yet"
+        return f"\n-# {target} · Ogre not found anyone with this yet"
     tags = ", ".join(
         f"<@{player['discord_id']}>" for player in players[:max_owners]
     )
     hidden = len(players) - max_owners
     if hidden > 0:
         tags += f" +{hidden} more"
-    return f" · {target} · {tags}"
+    return f"\n-# {target} · {tags}"
