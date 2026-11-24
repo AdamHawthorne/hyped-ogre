@@ -1,5 +1,6 @@
 """Professions V2 preview, cache freshness and ownership safeguards."""
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,7 +17,7 @@ class ProfessionV2Tests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = str(Path(self.temp.name) / "guild.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                     character_id INTEGER PRIMARY KEY, discord_id INTEGER,
@@ -74,7 +75,7 @@ class ProfessionV2Tests(unittest.TestCase):
         self.assertIn("WSE", embed.fields[0].value)
 
     def test_armory_profession_refresh_bypasses_valid_level_cache(self):
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.execute(
                 "INSERT INTO character_armory_cache "
                 "(character_id,character_name,level,updated_at) "
