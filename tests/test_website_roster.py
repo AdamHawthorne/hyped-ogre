@@ -1,5 +1,6 @@
 """Website roster follows the public Characters board's main/hidden policy."""
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,7 +43,7 @@ class WebsiteRosterTests(unittest.TestCase):
         # Keep database visibility live while stubbing the expensive optional
         # equipment/Armory services used by the actual Discord board.
         def board_rows(_):
-            with sqlite3.connect(self.path) as con:
+            with closing(sqlite3.connect(self.path)) as con, con:
                 result = con.execute(
                     "SELECT c.name,c.class_name,c.spec,c.role,c.is_main,"
                     "c.roster_visible,COALESCE(b.hidden,0) "
@@ -88,7 +89,7 @@ class WebsiteRosterTests(unittest.TestCase):
         self.assertFalse(any("100" in str(cell) for row in rows for cell in row))
 
     def test_hide_after_sync_removes_member_from_public_output(self):
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.execute(
                 "INSERT INTO character_board_overrides VALUES (3,'',1)")
         rows, _ = site.website_rows(site.visible_mains(self.path))
