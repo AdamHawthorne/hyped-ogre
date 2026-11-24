@@ -133,7 +133,7 @@ class ProfessionsV2(discord.ui.LayoutView):
         shown = 0
         for group_name, names in (
             ("Primary professions", crafting.CRAFTING_PROFESSIONS),
-            ("Gathering", crafting.GATHERING_PROFESSIONS),
+            ("Secondary professions", ("Cooking", "Fishing")),
         ):
             blocks = []
             for profession in names:
@@ -721,14 +721,31 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             )
             return
         await interaction.response.defer(ephemeral=True)
-        rows = await asyncio.to_thread(
-            priority_recipes.audit, raid.RAID_DB, profession.value
-        )
-        output = priority_recipes.format_audit(rows, profession.value)
-        await interaction.followup.send(
-            output, ephemeral=True,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+        try:
+            rows = await asyncio.to_thread(
+                priority_recipes.audit, raid.RAID_DB, profession.value
+            )
+            output = priority_recipes.format_audit(rows, profession.value)
+            page = ""
+            for line in output.splitlines():
+                if page and len(page) + len(line) + 1 > 1900:
+                    await interaction.followup.send(
+                        page, ephemeral=True,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    page = ""
+                page += ("\n" if page else "") + line
+            if page:
+                await interaction.followup.send(
+                    page, ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+        except Exception:
+            LOG.exception("Priority recipe lookup failed")
+            await interaction.followup.send(
+                "Ogre could not check recipes. Try again after the next sync.",
+                ephemeral=True,
+            )
 
     @app_commands.command(
         name="preview",
