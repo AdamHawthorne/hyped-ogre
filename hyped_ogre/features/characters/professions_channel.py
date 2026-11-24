@@ -13,7 +13,7 @@ from discord.ext import commands, tasks
 
 from cogs import raid_signup as raid
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID
-from . import crafting, craft_catalog, armory, camp_tools
+from . import crafting, craft_catalog, armory, camp_tools, priority_recipes
 
 LOG = logging.getLogger(__name__)
 COLOUR = 0xA87535
@@ -695,6 +695,40 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
     @maintenance.before_loop
     async def before_maintenance(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(
+        name="priorities",
+        description="See important crafting recipes and verified guild crafters",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    @app_commands.describe(
+        profession="Profession whose priority recipes you want to check",
+    )
+    @app_commands.choices(profession=[
+        app_commands.Choice(name=name, value=name)
+        for name in priority_recipes.PRIORITIES
+    ])
+    async def priorities(
+        self, interaction: discord.Interaction,
+        profession: app_commands.Choice[str],
+    ):
+        # Read-only and ephemeral: no unsolicited multi-page list in
+        # the public channel, and no owner permissions needed to check.
+        if interaction.guild_id != GUILD_ID:
+            await interaction.response.send_message(
+                "This list is only available in Hyped.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        rows = await asyncio.to_thread(
+            priority_recipes.audit, raid.RAID_DB, profession.value
+        )
+        output = priority_recipes.format_audit(rows, profession.value)
+        await interaction.followup.send(
+            output, ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     @app_commands.command(
         name="preview",
