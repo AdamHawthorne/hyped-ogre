@@ -1,5 +1,6 @@
 """Regressions for compact pinned professions V2 and 15-minute API refresh."""
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,7 @@ class ProfessionsV2Tests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = str(Path(self.tmp.name) / "guild.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                   character_id INTEGER PRIMARY KEY, discord_id INTEGER,
@@ -197,7 +198,7 @@ class ProfessionsV2Tests(unittest.TestCase):
         )
 
     def test_crafting_refresh_is_stale_after_fifteen_minutes(self):
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.execute(
                 "INSERT INTO character_armory_cache "
                 "(character_id,character_name,level,updated_at) "
