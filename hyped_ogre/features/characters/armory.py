@@ -327,9 +327,14 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                         "ilvl,professions) VALUES (?,?,?,?,?,?,?,?) "
                         "ON CONFLICT(character_id) "
                         "DO UPDATE SET character_name=excluded.character_name,"
-                        "level=excluded.level,race=excluded.race,"
-                        "guild=excluded.guild,updated_at=excluded.updated_at,"
-                        "ilvl=excluded.ilvl,professions=excluded.professions",
+                        "level=CASE WHEN character_armory_cache.character_name=excluded.character_name "
+                        "THEN COALESCE(excluded.level,character_armory_cache.level) ELSE excluded.level END,"
+                        "race=excluded.race,guild=excluded.guild,updated_at=excluded.updated_at,"
+                        "ilvl=CASE WHEN character_armory_cache.character_name=excluded.character_name "
+                        "THEN COALESCE(excluded.ilvl,character_armory_cache.ilvl) ELSE excluded.ilvl END,"
+                        "professions=CASE WHEN character_armory_cache.character_name=excluded.character_name "
+                        "AND excluded.professions='[]' THEN character_armory_cache.professions "
+                        "ELSE excluded.professions END",
                         (char_id, name, profile["level"] if profile else None,
                          profile["race"] if profile else "",
                          profile["guild"] if profile else "", now,
