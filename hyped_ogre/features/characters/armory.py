@@ -25,6 +25,7 @@ NAMESPACE = "profile-forever-eu"
 # The character board itself still redraws from saved data every minute.
 CHECK_INTERVAL = 60 * 60
 MAX_REFRESH = 12
+INCOMPLETE_INTERVAL = 15 * 60
 MAX_LEVEL = 60
 
 
@@ -205,7 +206,8 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
         with closing(sqlite3.connect(path, timeout=20)) as con, con:
             con.row_factory = sqlite3.Row
             records = con.execute(
-                "SELECT c.character_id,c.name,a.character_name,a.updated_at "
+                "SELECT c.character_id,c.name,a.character_name,a.updated_at, "
+                "a.level,a.ilvl,a.professions "
                 "FROM characters c LEFT JOIN character_armory_cache a "
                 "ON c.character_id=a.character_id "
                 "WHERE c.roster_visible=1 ORDER BY c.is_main DESC,c.character_id"
@@ -221,6 +223,8 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
     except sqlite3.OperationalError:
         return []
     result = []
+    # Oldest attempts first, avoiding starvation during repeated failures.
+    records.sort(key=lambda row: row['updated_at'] or 0)
     for row in records:
         name = row["name"]
         if not slug(name):
@@ -228,7 +232,9 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
         fresh = (
             row["character_name"] == name and row["updated_at"] is not None
             and now - row["updated_at"] < (
-                15 * 60 if for_crafting else CHECK_INTERVAL
+                INCOMPLETE_INTERVAL if (for_crafting or not row['level']
+                    or not row['ilvl'] or not row['professions']
+                    or row['professions'] == '[]') else CHECK_INTERVAL
             )
         )
         if fresh and (not for_crafting or row["character_id"] in verified):
@@ -311,7 +317,7 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                     profile = await fetch_profile(session, token, name)
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
                     LOGGER.warning("Forever Armory profile unavailable: %s", type(exc).__name__)
-                    continue
+                    profile = None
                 with closing(sqlite3.connect(path, timeout=20)) as con, con:
                     # A character may have been renamed/deleted while this
                     # HTTPS request was in flight. Match both ID and name.
@@ -352,7 +358,8 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                         LOGGER.warning(
                             "Crafting snapshot not saved for character %s", char_id
                         )
-                updated += 1
+                if profile is not None:
+                    updated += 1
             return updated
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
         LOGGER.warning("Forever Armory credentials/API unavailable: %s", type(exc).__name__)
