@@ -96,16 +96,16 @@ class RosterDataTests(unittest.TestCase):
                             (n,42,self.cid,'Attended'))
         self.assertEqual([r['attendance'] for r in roster.rows(self.path)], ['50%', '50%'])
 
-    def test_complete_item_metadata_is_numeric_and_empty_data_is_na(self):
+    def test_wowsims_item_metadata_does_not_fill_public_stats(self):
         self.assertEqual(roster.rows(self.path)[0]['ilvl'], 'N/A')
         export = {'name':'Snore','class':'warrior','spec':'protection','version':'v3.2.6',
                   'level':60,'gear':{'items':[{'id':5},{'id':6}]}}
         raid.save_wowsims_export(42,self.cid,json.dumps(export),self.path)
         with patch.object(roster.items,'cached_catalog',return_value={'5':{'level':50},'6':{'level':60}}):
-            self.assertEqual(roster.rows(self.path)[0]['ilvl'], '55.0')
-            self.assertEqual(roster.rows(self.path)[0]['level'], 60)
+            self.assertEqual(roster.rows(self.path)[0]['ilvl'], 'N/A')
+            self.assertIsNone(roster.rows(self.path)[0]['level'])
 
-    def test_professions_use_latest_wowsims_export_and_show_reported_skills(self):
+    def test_wowsims_professions_do_not_fill_public_stats(self):
         self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
         original = {
             'name': 'Snore', 'class': 'warrior', 'spec': 'protection',
@@ -116,15 +116,15 @@ class RosterDataTests(unittest.TestCase):
             ],
         }
         raid.save_wowsims_export(42, self.cid, json.dumps(original), self.path)
-        self.assertEqual(roster.rows(self.path)[0]['professions'], 'Min: 65 / BS: 120')
-        self.assertIn('Min: 65 / BS: 120', roster.render(roster.rows(self.path))[0].fields[2].value)
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
+        self.assertIn('N/A', roster.render(roster.rows(self.path))[0].fields[2].value)
 
         updated = {**original, 'professions': [
             {'name': 'Herbalism', 'level': 150},
             {'name': 'Alchemy', 'level': 99},
         ]}
         raid.save_wowsims_export(42, self.cid, json.dumps(updated), self.path)
-        self.assertEqual(roster.rows(self.path)[0]['professions'], 'Herb: 150 / Alch: 99')
+        self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
 
         # Professions are an optional WoWSims field, not a live in-game feed.
         updated['professions'] = []
