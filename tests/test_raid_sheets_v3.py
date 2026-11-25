@@ -40,7 +40,7 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(len(body[0]), len(sheet.COLUMNS))
             self.assertEqual(by_character["Snore Mon"][8], "Signed")
             self.assertEqual(by_character["Snore Mon"][9:14],
-                             ["Selected", "Yes", "No", "No", "No"])
+                             ["Pending", "Yes", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
             self.assertEqual(by_character["Snore Mon"][15],
                              "iLvl ? (no gear) · 0 enchant gaps")
