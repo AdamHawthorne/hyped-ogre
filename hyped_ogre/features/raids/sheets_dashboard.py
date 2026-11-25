@@ -318,7 +318,7 @@ def _rows(db_path, event, names, old_rows=(), legacy=None, attendance_rows=None)
             name, signup["character"], signup["class_name"], signup["spec"],
             signup["role"], "Main" if profile.get("is_main", 1) else "Alt",
             sign_note, signup["submitted_at"], "Absent" if absent else "Signed",
-            choice(9, "selection", "Selected"),
+            choice(9, "selection", "Pending"),
             "No" if absent else choice(10, "show", "Yes" if event.get("default_show_discord", 1) else "No"),
             choice(11, "hyjal", "No"),
             choice(12, "barrows", "No"),
@@ -948,8 +948,9 @@ def _one(session, db_path, event, names, titles, attendance_rows=None):
     if invalid_notes is not None:
         full[3][3] = invalid_notes
     changed = _write(session, title, sid, existing, full)
-    if new or changed or existing_total is None:
-        _refresh_selected_total_formula(session, title)
+    # Always restore J6 as a live formula, including on an unchanged sync.
+    # Older tabs may contain a preserved static number such as "10".
+    _refresh_selected_total_formula(session, title)
     # The live unconfirmed panel uses the same visibility choices as Sheets,
     # independently of the confirmed roster and without exposing assignments.
     _cache_signup_visibility(db_path, number, body)

@@ -69,19 +69,12 @@ def rows(path):
                 + ",".join("?" for _ in window) + ") AND status IN ('Attended','Late','AFK') GROUP BY discord_id",
                 window):
                 credits[row[0]] = row[1]
-    catalog = items.cached_catalog(path)
-    gear = {r["character_id"]: r for r in equipment.latest_profiles(path)}
     armory_levels = armory.cached(path)
     for character in characters:
         character["attendance"] = (f"{100 * credits.get(character['discord_id'], 0) / len(window):.0f}%"
                                    if window else "N/A")
-        export = gear.get(character["character_id"])
-        parsed = equipment.parse_export(export["raw_text"]) if export else None
-        # Blizzard Armory takes precedence for level and average item level.
-        # Old WoWSims exports must not mask valid Blizzard stats. WoWSims
-        # still supplies immediate fallback values when an Armory field is
-        # unavailable, plus the latest submitted professions. Neither
-        # source changes canonical registration or Discord ownership.
+        # The public Characters board uses Blizzard Armory data only.
+        # WoWSims is deliberately reserved for detailed raid gear/enchant views.
         live = armory_levels.get(character["character_id"], {})
         if live.get("name") != character["name"]:
             live = {}
@@ -104,20 +97,6 @@ def rows(path):
             "Blizzard" if character["professions"] != "N/A" else None
         )
 
-        if parsed:
-            wse_level = parsed.get("level")
-            if not valid_live and type(wse_level) is int and 1 <= wse_level <= 60:
-                character["level"] = wse_level
-                character["level_source"] = "WoWSims"
-            wse_profs = profession_text(parsed)
-            if wse_profs != "N/A":
-                character["professions"] = wse_profs
-                character["professions_source"] = "WoWSims"
-            average, known, equipped = equipment.average_item_level(parsed, catalog)
-            if (character["ilvl_source"] is None
-                    and average is not None and equipped > 0 and known == equipped):
-                character["ilvl"] = f"{average:.1f}"
-                character["ilvl_source"] = "WoWSims"
     return characters
 
 
