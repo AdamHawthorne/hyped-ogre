@@ -71,7 +71,8 @@ class RaidTabsTests(unittest.TestCase):
             body = sheet._rows(path, event, {})
             total = sheet._header(event, body, sheet.tab_title(event))
             self.assertEqual(total[5][8], "Selected players")
-            self.assertEqual(total[5][9], "3")
+            self.assertEqual(total[5][9], "0")
+            self.assertTrue(all(r[9] == "Pending" for r in body if r[8] == "Signed"))
             # Manual Sheet edits must recalculate without a bot sync.
             self.assertEqual(
                 sheet.SELECTED_TOTAL_FORMULA,
