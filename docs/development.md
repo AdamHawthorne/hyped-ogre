@@ -74,8 +74,8 @@ git pull --ff-only
 7. Review the diff and wait for the Linux, Windows and security checks to
    pass before merging.
 
-Safety checks run on PRs. The deployment workflow calls the same checks for
-each `main` push, without starting a second standalone safety run. A branch
+Safety checks run on PRs. The deployment workflow does not repeat the full
+PR suite after merge. Only merge a reviewed, green final PR head. A branch
 without a PR can be checked with **Hyped Ogre safety checks > Run workflow**.
 New commits to the same PR cancel its older safety run. The Linux job includes
 Docker and runtime checks; the Windows job checks the development commands.
@@ -83,10 +83,12 @@ Deployment guards are tested offline on both platforms.
 
 ## Release a reviewed change
 
-Push to `main`, or merge a PR into it. **Deploy Hyped Ogre** automatically
-runs the Linux/Windows checks, Docker build and runtime smoke tests, records
-the existing volume, recent backup and rollback image, then updates Fly.
-The bot briefly restarts as part of deployment. A failed check stops the release.
+Merge a reviewed PR into `main` after its Linux/Windows and Docker/runtime
+checks pass. **Deploy Hyped Ogre** records the existing volume, recent backup
+and rollback image, then updates Fly and verifies the existing Machine and
+volume. It does not repeat the PR tests. The bot briefly restarts; a failed
+release guard stops deployment. See [AGENTS.md](../AGENTS.md) and the
+[agent workflow](agent-workflow.md) for the current release checklist.
 
 For a manual retry, open **Actions > Deploy Hyped Ogre > Run workflow** and
 select `main`. There are no SHA, snapshot or confirmation fields to fill in.
