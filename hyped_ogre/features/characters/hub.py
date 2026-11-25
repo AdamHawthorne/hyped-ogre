@@ -135,6 +135,7 @@ class HubView(discord.ui.View):
 class CharacterHub(commands.Cog):
     def __init__(self, bot):
         self.bot, self.lock = bot, asyncio.Lock()
+        self.armory_refresh_lock = asyncio.Lock()
         self.armory_next_check = 0.0
         self.announcement_cleanup_pending = True
         self.v2_member_lookup = {}
@@ -554,6 +555,88 @@ class CharacterHub(commands.Cog):
             + detail,
             ephemeral=True,
         )
+
+    armory_commands = app_commands.Group(
+        name="armory", description="Private Blizzard Armory controls",
+        guild_ids=[GUILD_ID],
+    )
+
+    @armory_commands.command(
+        name="refresh",
+        description="Force refresh Blizzard iLvl and professions for the roster",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def armory_refresh(self, interaction: discord.Interaction):
+        owner_id = int(os.getenv("OWNER_ID") or 0)
+        if not (
+            interaction.guild_id == GUILD_ID
+            and interaction.channel_id == raid.TEST_CHANNEL_ID
+            and (interaction.user.id == owner_id
+                 or interaction.user.id == getattr(interaction.guild, "owner_id", None))
+        ):
+            await interaction.response.send_message(
+                "Armory refresh is restricted to the guild owner in Ogre's "
+                "private channel.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        if self.armory_refresh_lock.locked():
+            await interaction.followup.send(
+                "An Armory refresh is already running. Try again after it finishes.",
+                ephemeral=True,
+            )
+            return
+        try:
+            async with self.armory_refresh_lock:
+                result = await armory.refresh(
+                    raid.RAID_DB, limit=200, force=True,
+                    detailed=True, throttle=0.3,
+                )
+                self.armory_next_check = time.monotonic() + 300
+            coverage = await asyncio.to_thread(armory.coverage, raid.RAID_DB)
+        except (sqlite3.Error, ValueError, OSError) as exc:
+            LOG.warning("Manual Armory refresh failed: %s", type(exc).__name__)
+            await interaction.followup.send(
+                "Armory refresh could not complete; saved character data "
+                "was retained.", ephemeral=True
+            )
+            return
+
+        refreshed, failures = 0, 0
+        async with self.lock:
+            for channel_id, message_id, page in await asyncio.to_thread(self.panels):
+                try:
+                    await self.refresh(channel_id, message_id, page)
+                    refreshed += 1
+                except (ValueError, sqlite3.Error, discord.HTTPException):
+                    failures += 1
+                    LOG.warning("Couldn't update existing character board %s.", channel_id)
+            for channel_id, message_id in await asyncio.to_thread(self.v2_panels):
+                try:
+                    await self.refresh_v2(channel_id, message_id)
+                    refreshed += 1
+                except (ValueError, sqlite3.Error, discord.HTTPException):
+                    failures += 1
+                    LOG.warning("Couldn't update private V2 board %s.", channel_id)
+
+        lines = [
+            "**Blizzard Armory forced refresh (EU)**",
+            f"Profiles attempted: {result['attempted']}/{result['eligible']}",
+            f"Valid profiles: {result['updated']}",
+            f"Cached Blizzard iLvls: {coverage['ilvls']}/{coverage['visible']}",
+            f"New iLvls: {result['new_ilvls']}; changed: "
+            f"{result['changed_ilvls']}; unchanged: {result['unchanged_ilvls']}",
+            f"Profiles with no iLvl: {result['missing_ilvl']}",
+            f"Not found (404): {result['not_found']}; invalid: "
+            f"{result['invalid_profile']}; API errors: {result['api_errors']}",
+            f"Characters without usable full name: {result['skipped_invalid_name']}",
+            f"Existing boards updated: {refreshed}; failed: {failures}",
+        ]
+        if result["auth_error"]:
+            lines.append("Blizzard authentication/API unavailable; cache retained.")
+        if result["rate_limited"]:
+            lines.append("Blizzard rate-limited the refresh. Remaining profiles were not queried.")
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
 
     @app_commands.command(
         name="armory-status",

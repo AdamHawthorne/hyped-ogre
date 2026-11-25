@@ -196,7 +196,8 @@ def coverage(path):
     }
 
 
-def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
+def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False,
+               force=False):
     """Only visible guild-roster registrations, never LFG-only characters."""
     now = int(now if now is not None else time.time())
     if for_crafting:
@@ -237,7 +238,7 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
                     or row['professions'] == '[]') else CHECK_INTERVAL
             )
         )
-        if fresh and (not for_crafting or row["character_id"] in verified):
+        if not force and fresh and (not for_crafting or row["character_id"] in verified):
             continue
         result.append((row["character_id"], name))
         if len(result) >= limit:
@@ -245,7 +246,7 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
     return result
 
 
-async def fetch_profile(session, token, name):
+async def fetch_profile(session, token, name, *, diagnostics=None):
     """Only Blizzard's fixed EU host; never accept arbitrary link/redirect."""
     path = slug(name)
     if path is None:
@@ -256,11 +257,17 @@ async def fetch_profile(session, token, name):
         headers={"Authorization": "Bearer " + token}, allow_redirects=False,
     ) as response:
         if response.status == 404:
+            if diagnostics is not None:
+                diagnostics["outcome"] = "not_found"
             return None
         response.raise_for_status()
         profile = parse_character(await response.json(), name)
     if profile is None:
+        if diagnostics is not None:
+            diagnostics["outcome"] = "invalid_profile"
         return None
+    if diagnostics is not None:
+        diagnostics["outcome"] = "ok"
     # Professions are a separate endpoint. A 404 or temporary failure
     # does not invalidate the character's level or equipped item level.
     try:
@@ -310,19 +317,38 @@ def merge_professions(previous, name, profile):
 
 
 async def refresh(path, *, now=None, limit=MAX_REFRESH,
-                  for_crafting=False):
-    """Bounded profile sync; no network without explicit Battle.net credentials."""
+                  for_crafting=False, force=False, detailed=False,
+                  throttle=0.0):
+    """Read-only Blizzard sync; force bypasses TTL but never drops verified data.
+
+    Return the historical successful-profile count by default. Detailed mode
+    returns actual attempt/outcome counts for the private manual command.
+    """
+    report = {
+        "eligible": 0, "attempted": 0, "updated": 0, "new_ilvls": 0,
+        "changed_ilvls": 0, "unchanged_ilvls": 0, "missing_ilvl": 0,
+        "not_found": 0, "invalid_profile": 0, "api_errors": 0,
+        "skipped_invalid_name": 0, "auth_error": False,
+        "rate_limited": False,
+    }
     client_id = os.getenv("BLIZZARD_CLIENT_ID", "").strip()
     client_secret = os.getenv("BLIZZARD_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
         LOGGER.info("Forever Armory sync unavailable: Blizzard credentials not configured.")
-        return 0
+        report["auth_error"] = True
+        return report if detailed else 0
     initialise(path)
     available = candidates(
-        path, now=now, limit=limit, for_crafting=for_crafting
+        path, now=now, limit=limit, for_crafting=for_crafting, force=force
     )
+    report["eligible"] = len(available)
+    if detailed and force:
+        # A missing or invalid full name cannot be used to address the API.
+        report["skipped_invalid_name"] = max(
+            0, coverage(path)["visible"] - len(available)
+        )
     if not available:
-        return 0
+        return report if detailed else 0
     now = int(now if now is not None else time.time())
     timeout = aiohttp.ClientTimeout(total=15)
     try:
@@ -336,17 +362,46 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                 response.raise_for_status()
                 token = (await response.json()).get("access_token")
             if not isinstance(token, str) or not token:
-                return 0
+                report["auth_error"] = True
+                return report if detailed else 0
             updated = 0
-            for char_id, name in available:
+            for index, (char_id, name) in enumerate(available):
+                # Sequential profiles plus a bounded gap avoid API bursts.
+                if index and throttle > 0:
+                    await asyncio.sleep(min(float(throttle), 2.0))
+                report["attempted"] += 1
+                diagnostics = {} if detailed else None
+                request_failed = False
                 try:
-                    profile = await fetch_profile(session, token, name)
+                    if detailed:
+                        profile = await fetch_profile(
+                            session, token, name, diagnostics=diagnostics
+                        )
+                    else:
+                        profile = await fetch_profile(session, token, name)
+                except aiohttp.ClientResponseError as exc:
+                    if exc.status == 429:
+                        # Stop immediately rather than hammer a rate-limited API.
+                        report["rate_limited"] = True
+                        report["api_errors"] += 1
+                        LOGGER.warning("Forever Armory rate limited; stopping refresh.")
+                        break
+                    LOGGER.warning("Forever Armory profile unavailable: %s", type(exc).__name__)
+                    report["api_errors"] += 1
+                    request_failed = True
+                    profile = None
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
                     LOGGER.warning("Forever Armory profile unavailable: %s", type(exc).__name__)
+                    report["api_errors"] += 1
+                    request_failed = True
                     profile = None
+
+                if detailed and profile is None and not request_failed:
+                    outcome = diagnostics.get("outcome", "invalid_profile")
+                    report[outcome] += 1
+
                 with closing(sqlite3.connect(path, timeout=20)) as con, con:
-                    # A character may have been renamed/deleted while this
-                    # HTTPS request was in flight. Match both ID and name.
+                    # Never transfer a cache record to a renamed/deleted character.
                     present = con.execute(
                         "SELECT 1 FROM characters WHERE character_id=? "
                         "AND name=? AND roster_visible=1", (char_id, name)
@@ -354,10 +409,14 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                     if not present:
                         continue
                     previous = con.execute(
-                        "SELECT character_name, professions FROM character_armory_cache "
-                        "WHERE character_id=?", (char_id,)
+                        "SELECT character_name, professions, ilvl "
+                        "FROM character_armory_cache WHERE character_id=?",
+                        (char_id,),
                     ).fetchone()
                     professions = merge_professions(previous, name, profile)
+                    old_ilvl = (
+                        previous[2] if previous and previous[0] == name else None
+                    )
                     con.execute(
                         "INSERT INTO character_armory_cache "
                         "(character_id,character_name,level,race,guild,updated_at,"
@@ -389,7 +448,19 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                         )
                 if profile is not None:
                     updated += 1
-            return updated
+                    if detailed:
+                        report["updated"] += 1
+                        current = profile.get("ilvl")
+                        if current is None:
+                            report["missing_ilvl"] += 1
+                        elif old_ilvl is None:
+                            report["new_ilvls"] += 1
+                        elif current == old_ilvl:
+                            report["unchanged_ilvls"] += 1
+                        else:
+                            report["changed_ilvls"] += 1
+            return report if detailed else updated
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
         LOGGER.warning("Forever Armory credentials/API unavailable: %s", type(exc).__name__)
-        return 0
+        report["auth_error"] = True
+        return report if detailed else 0
