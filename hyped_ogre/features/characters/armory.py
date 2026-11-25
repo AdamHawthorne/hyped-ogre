@@ -278,9 +278,35 @@ async def fetch_profile(session, token, name):
                 # Only explicitly supplied known_recipes are treated as
                 # verified character ownership; missing endpoints don't erase.
                 profile["craft_snapshot"] = profession_payload
+                entries = (profession_payload.get("primaries",
+                           profession_payload.get("primary_professions"))
+                           if isinstance(profession_payload, dict) else None)
+                profile["professions_verified"] = isinstance(entries, list) and (
+                    not entries or len(profile["profession_details"]) == len(entries))
+
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         LOGGER.debug("Optional Blizzard professions unavailable: %s", name)
     return profile
+
+
+def merge_professions(previous, name, profile):
+    """Keep known skill points on partial responses; honour verified changes."""
+    old = []
+    if previous and previous[0] == name:
+        try:
+            decoded = json.loads(previous[1] or "[]")
+            if isinstance(decoded, list):
+                old = [p for p in decoded if isinstance(p, dict)
+                       and isinstance(p.get("name"), str)]
+        except (TypeError, ValueError):
+            pass
+    if not profile or not profile.get("professions_verified"):
+        return old
+    prior = {p["name"].casefold(): p.get("level") for p in old}
+    return [{"name": p["name"],
+             "level": p["level"] if p.get("level") is not None
+             else prior.get(p["name"].casefold())}
+            for p in profile["profession_details"]]
 
 
 async def refresh(path, *, now=None, limit=MAX_REFRESH,
@@ -327,6 +353,11 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                     ).fetchone()
                     if not present:
                         continue
+                    previous = con.execute(
+                        "SELECT character_name, professions FROM character_armory_cache "
+                        "WHERE character_id=?", (char_id,)
+                    ).fetchone()
+                    professions = merge_professions(previous, name, profile)
                     con.execute(
                         "INSERT INTO character_armory_cache "
                         "(character_id,character_name,level,race,guild,updated_at,"
@@ -338,14 +369,12 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                         "race=excluded.race,guild=excluded.guild,updated_at=excluded.updated_at,"
                         "ilvl=CASE WHEN character_armory_cache.character_name=excluded.character_name "
                         "THEN COALESCE(excluded.ilvl,character_armory_cache.ilvl) ELSE excluded.ilvl END,"
-                        "professions=CASE WHEN character_armory_cache.character_name=excluded.character_name "
-                        "AND excluded.professions='[]' THEN character_armory_cache.professions "
-                        "ELSE excluded.professions END",
+                        "professions=excluded.professions",
                         (char_id, name, profile["level"] if profile else None,
                          profile["race"] if profile else "",
                          profile["guild"] if profile else "", now,
                          profile["ilvl"] if profile else None,
-                         json.dumps(profile["profession_details"] if profile else [])),
+                         json.dumps(professions)),
                     )
                 if profile and "craft_snapshot" in profile:
                     try:
