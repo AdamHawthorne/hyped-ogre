@@ -6,10 +6,11 @@ The boot command remains `python rollogre.py`; the bot briefly restarts per rele
 
 ## Normal update
 
-1. Commit and push a change to `main`, or merge a reviewed PR into `main`.
-2. Open **GitHub > Actions > Deploy Hyped Ogre**.
-3. The workflow runs the shared Linux/Windows tests, builds Docker and checks
-   the actual runtime. Checks run once for this main commit, before deployment.
+1. Verify the exact final PR head has passed Linux/Windows, Docker and runtime
+   checks, then merge the reviewed PR into `main`.
+2. Open **GitHub > Actions > Deploy Hyped Ogre** for the merged commit.
+3. The production workflow does not repeat the full PR test suite. It starts
+   with the release guard; do not bypass pre-merge checks.
 4. It finds the existing Machine and attached `diceman_data` volume, records
    the current image for rollback and selects a completed snapshot no older
    than one hour. Rapid test pushes reuse that recent snapshot. If needed it
@@ -73,8 +74,8 @@ Wait for the requested snapshot to show `created` before relying on it.
 
 ## Failure and rollback
 
-If checks or the backup guard fail, the deployment step is skipped and the
-existing bot stays on its current image. Fix the cause, push/merge the change,
+If PR checks fail, do not merge. If the production backup guard fails, the
+deployment step is skipped and the existing bot stays on its current image. Fix the cause, push/merge the change,
 and the new main commit starts a fresh run automatically. Rerunning an old
 workflow uses its old commit, so prefer the new run for code fixes.
 
