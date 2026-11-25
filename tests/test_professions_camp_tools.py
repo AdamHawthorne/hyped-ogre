@@ -1,4 +1,5 @@
 """Offline guards for verified Artisan Forever campfire tool ownership."""
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ class CampToolTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = str(Path(self.temp.name) / "guild.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                     character_id INTEGER PRIMARY KEY,

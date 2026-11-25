@@ -1,4 +1,5 @@
 """Persistent crafting request cleanup and verified high-skill recipe discoveries."""
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -13,7 +14,7 @@ class CraftRequestTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = str(Path(self.tmp.name) / "craft.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                     character_id INTEGER PRIMARY KEY,
