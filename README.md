@@ -85,11 +85,13 @@ production bot using the same Discord token while Fly.io is serving the guild.**
 
 ## Development and deployment
 
+For all coding assistants and resumed sessions, read [AGENTS.md](AGENTS.md) and the [agent workflow](docs/agent-workflow.md) first.
+
 - `main` is intended to be the stable, reviewed code baseline.
 - Use short-lived `feature/*`, `fix/*` or `refactor/*` branches for changes; features are **folders/modules**, not permanent branches.
 - Run syntax checks, unit tests and Docker build checks before merging.
-- GitHub checks PRs, changes merged to `main`, and manually requested safety runs. The same PR update no longer starts both a branch-push safety run and a PR safety run.
-- Every push or merged PR to `main` runs the shared Linux/Windows checks and Docker smoke tests, then automatically deploys to the existing Fly app. Feature-branch pushes and PR checks do not deploy.
+- GitHub runs Linux/Windows safety checks, Docker and runtime smoke tests on PRs and manually requested safety runs. Review the exact green PR head before merging; new commits cancel superseded PR checks.
+- Every push or merged PR to `main` triggers the existing Fly release guard and deployment, without repeating the full PR suite. Do not push unreviewed code directly to main. Feature-branch pushes and PR checks do not deploy.
 - **Actions > Deploy Hyped Ogre > Run workflow**, using `main`, provides a manual retry with no input fields. The workflow records a recent completed snapshot and the previous image automatically.
 - Don't deploy structural migrations without a verified database backup, health checks and a rollback plan.
 
