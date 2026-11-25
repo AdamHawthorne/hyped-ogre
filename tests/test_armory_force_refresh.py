@@ -61,9 +61,10 @@ class ArmoryForceRefreshTests(unittest.IsolatedAsyncioTestCase):
             armory.candidates(self.path, now=10000),
             [(3, "Three Ogre")],
         )
+        # Oldest unchecked profiles go first, even when TTL is bypassed.
         self.assertEqual(
             armory.candidates(self.path, now=10000, force=True, limit=100),
-            [(1, "One Ogre"), (2, "Two Ogre"), (3, "Three Ogre")],
+            [(3, "Three Ogre"), (1, "One Ogre"), (2, "Two Ogre")],
         )
 
         async def response(_session, _token, name, *, diagnostics=None):
