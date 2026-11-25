@@ -25,6 +25,7 @@ NAMESPACE = "profile-forever-eu"
 # The character board itself still redraws from saved data every minute.
 CHECK_INTERVAL = 60 * 60
 MAX_REFRESH = 12
+INCOMPLETE_INTERVAL = 15 * 60
 MAX_LEVEL = 60
 
 
@@ -205,7 +206,8 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
         with closing(sqlite3.connect(path, timeout=20)) as con, con:
             con.row_factory = sqlite3.Row
             records = con.execute(
-                "SELECT c.character_id,c.name,a.character_name,a.updated_at "
+                "SELECT c.character_id,c.name,a.character_name,a.updated_at, "
+                "a.level,a.ilvl,a.professions "
                 "FROM characters c LEFT JOIN character_armory_cache a "
                 "ON c.character_id=a.character_id "
                 "WHERE c.roster_visible=1 ORDER BY c.is_main DESC,c.character_id"
@@ -221,6 +223,8 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
     except sqlite3.OperationalError:
         return []
     result = []
+    # Oldest attempts first, avoiding starvation during repeated failures.
+    records.sort(key=lambda row: row['updated_at'] or 0)
     for row in records:
         name = row["name"]
         if not slug(name):
@@ -228,7 +232,9 @@ def candidates(path, now=None, limit=MAX_REFRESH, *, for_crafting=False):
         fresh = (
             row["character_name"] == name and row["updated_at"] is not None
             and now - row["updated_at"] < (
-                15 * 60 if for_crafting else CHECK_INTERVAL
+                INCOMPLETE_INTERVAL if (for_crafting or not row['level']
+                    or not row['ilvl'] or not row['professions']
+                    or row['professions'] == '[]') else CHECK_INTERVAL
             )
         )
         if fresh and (not for_crafting or row["character_id"] in verified):
@@ -272,9 +278,35 @@ async def fetch_profile(session, token, name):
                 # Only explicitly supplied known_recipes are treated as
                 # verified character ownership; missing endpoints don't erase.
                 profile["craft_snapshot"] = profession_payload
+                entries = (profession_payload.get("primaries",
+                           profession_payload.get("primary_professions"))
+                           if isinstance(profession_payload, dict) else None)
+                profile["professions_verified"] = isinstance(entries, list) and (
+                    not entries or len(profile["profession_details"]) == len(entries))
+
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
         LOGGER.debug("Optional Blizzard professions unavailable: %s", name)
     return profile
+
+
+def merge_professions(previous, name, profile):
+    """Keep known skill points on partial responses; honour verified changes."""
+    old = []
+    if previous and previous[0] == name:
+        try:
+            decoded = json.loads(previous[1] or "[]")
+            if isinstance(decoded, list):
+                old = [p for p in decoded if isinstance(p, dict)
+                       and isinstance(p.get("name"), str)]
+        except (TypeError, ValueError):
+            pass
+    if not profile or not profile.get("professions_verified"):
+        return old
+    prior = {p["name"].casefold(): p.get("level") for p in old}
+    return [{"name": p["name"],
+             "level": p["level"] if p.get("level") is not None
+             else prior.get(p["name"].casefold())}
+            for p in profile["profession_details"]]
 
 
 async def refresh(path, *, now=None, limit=MAX_REFRESH,
@@ -311,7 +343,7 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                     profile = await fetch_profile(session, token, name)
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
                     LOGGER.warning("Forever Armory profile unavailable: %s", type(exc).__name__)
-                    continue
+                    profile = None
                 with closing(sqlite3.connect(path, timeout=20)) as con, con:
                     # A character may have been renamed/deleted while this
                     # HTTPS request was in flight. Match both ID and name.
@@ -321,20 +353,28 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                     ).fetchone()
                     if not present:
                         continue
+                    previous = con.execute(
+                        "SELECT character_name, professions FROM character_armory_cache "
+                        "WHERE character_id=?", (char_id,)
+                    ).fetchone()
+                    professions = merge_professions(previous, name, profile)
                     con.execute(
                         "INSERT INTO character_armory_cache "
                         "(character_id,character_name,level,race,guild,updated_at,"
                         "ilvl,professions) VALUES (?,?,?,?,?,?,?,?) "
                         "ON CONFLICT(character_id) "
                         "DO UPDATE SET character_name=excluded.character_name,"
-                        "level=excluded.level,race=excluded.race,"
-                        "guild=excluded.guild,updated_at=excluded.updated_at,"
-                        "ilvl=excluded.ilvl,professions=excluded.professions",
+                        "level=CASE WHEN character_armory_cache.character_name=excluded.character_name "
+                        "THEN COALESCE(excluded.level,character_armory_cache.level) ELSE excluded.level END,"
+                        "race=excluded.race,guild=excluded.guild,updated_at=excluded.updated_at,"
+                        "ilvl=CASE WHEN character_armory_cache.character_name=excluded.character_name "
+                        "THEN COALESCE(excluded.ilvl,character_armory_cache.ilvl) ELSE excluded.ilvl END,"
+                        "professions=excluded.professions",
                         (char_id, name, profile["level"] if profile else None,
                          profile["race"] if profile else "",
                          profile["guild"] if profile else "", now,
                          profile["ilvl"] if profile else None,
-                         json.dumps(profile["profession_details"] if profile else [])),
+                         json.dumps(professions)),
                     )
                 if profile and "craft_snapshot" in profile:
                     try:
@@ -347,7 +387,8 @@ async def refresh(path, *, now=None, limit=MAX_REFRESH,
                         LOGGER.warning(
                             "Crafting snapshot not saved for character %s", char_id
                         )
-                updated += 1
+                if profile is not None:
+                    updated += 1
             return updated
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
         LOGGER.warning("Forever Armory credentials/API unavailable: %s", type(exc).__name__)

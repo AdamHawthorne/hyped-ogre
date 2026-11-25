@@ -228,7 +228,7 @@ class CharacterV2Tests(unittest.TestCase):
                     "WHERE character_id=?", (main_id,)
                 ).fetchone()[0], 1)
 
-    def test_blizzard_level_ilvl_override_older_wowsims_and_wse_updates_profs(self):
+    def test_blizzard_fields_override_wowsims_including_professions(self):
         import json
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "raid.db")
@@ -270,26 +270,25 @@ class CharacterV2Tests(unittest.TestCase):
                 # valid Armory data has precedence for level and average iLvl.
                 self.assertEqual(after["level"], 58)
                 self.assertEqual(after["ilvl"], "47")
-                self.assertEqual(after["professions"], "Min: 250 / BS: 245")
+                self.assertEqual(after["professions"], "Min: 190 / BS: 180")
                 self.assertEqual(after["level_source"], "Blizzard")
                 self.assertEqual(after["ilvl_source"], "Blizzard")
-                self.assertEqual(after["professions_source"], "WoWSims")
-                # When Blizzard lacks either field, a complete WoWSims
-                # snapshot supplies that field without inventing others.
+                self.assertEqual(after["professions_source"], "Blizzard")
+                # WoWSims cannot supply missing public character stats.
                 armory_data[cid]["level"] = None
                 armory_data[cid]["ilvl"] = None
                 with patch.object(roster.items, "cached_catalog",
                                   return_value={"5": {"level": 55},
                                                 "6": {"level": 57}}):
                     fallback = roster.rows(path)[0]
-                self.assertEqual(fallback["level"], 60)
-                self.assertEqual(fallback["ilvl"], "56.0")
-                self.assertEqual(fallback["level_source"], "WoWSims")
-                self.assertEqual(fallback["ilvl_source"], "WoWSims")
+                self.assertIsNone(fallback["level"])
+                self.assertEqual(fallback["ilvl"], "N/A")
+                self.assertIsNone(fallback["level_source"])
+                self.assertIsNone(fallback["ilvl_source"])
                 # An incomplete item catalog cannot produce a false WSE iLvl.
                 with patch.object(roster.items, "cached_catalog", return_value={}):
                     missing = roster.rows(path)[0]
-                self.assertEqual(missing["level"], 60)
+                self.assertIsNone(missing["level"])
                 self.assertEqual(missing["ilvl"], "N/A")
                 self.assertIsNone(missing["ilvl_source"])
 

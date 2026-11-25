@@ -72,6 +72,7 @@ class RaidRosterDisplayTests(unittest.IsolatedAsyncioTestCase):
         body = sheets._rows(self.path, self.event, {})
         for row in body:
             if row[16]:
+                row[9] = "Selected"
                 row[11] = "Yes"
                 row[12] = "🔹" if row[16] == "43" else "🔸"
                 row[14] = "Keep leadership note"

@@ -40,7 +40,7 @@ class RaidTabsTests(unittest.TestCase):
             self.assertEqual(len(body[0]), len(sheet.COLUMNS))
             self.assertEqual(by_character["Snore Mon"][8], "Signed")
             self.assertEqual(by_character["Snore Mon"][9:14],
-                             ["Selected", "Yes", "No", "No", "No"])
+                             ["Pending", "Yes", "No", "No", "No"])
             self.assertEqual(by_character["Snore Mon"][6], "Main tank")
             self.assertEqual(by_character["Snore Mon"][15],
                              "iLvl ? (no gear) · 0 enchant gaps")
@@ -206,7 +206,7 @@ class RaidTabsTests(unittest.TestCase):
             ))
             row = next(row for row in restored if row[16] == "42")
             self.assertEqual(row[8], "Signed")
-            self.assertEqual(row[9:14], ["Selected", "Yes", "No", "No", "No"])
+            self.assertEqual(row[9:14], ["Pending", "Yes", "No", "No", "No"])
 
     def test_legacy_selections_are_migrated_once(self):
         with tempfile.TemporaryDirectory() as tmp:

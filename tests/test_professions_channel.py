@@ -1,4 +1,5 @@
 """Offline safety tests for verified Forever recipe ownership and guild board."""
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ class CraftingTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = str(Path(self.tmp.name) / "test.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                     character_id INTEGER PRIMARY KEY, discord_id INTEGER,
@@ -185,7 +186,7 @@ class CraftingTests(unittest.TestCase):
         )
         self.assertIn("Did you mean", channel.answer(self.path, "enchnt chest major health"))
         # A verified known-recipe relationship is still required for ownership.
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.execute(
                 "UPDATE craft_catalog SET name='Enchant Chest - Major Health' "
                 "WHERE recipe_id=2001"

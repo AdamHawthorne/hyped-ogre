@@ -1,4 +1,5 @@
 """Priority recipe list and proof of ownership from Blizzard known recipes."""
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ class PriorityRecipesTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = str(Path(self.tmp.name) / "guild.db")
-        with sqlite3.connect(self.path) as con:
+        with closing(sqlite3.connect(self.path)) as con, con:
             con.executescript("""
                 CREATE TABLE characters (
                     character_id INTEGER PRIMARY KEY,

@@ -42,6 +42,7 @@ class UBRSRaidTests(unittest.TestCase):
         self.assertEqual(len(selected), 21)
         self.assertEqual(selected[20], "No")
         self.assertEqual(sheet._approved(rows, self.event), [])
+        selected[9] = "Selected"
         selected[20] = "Yes"
         self.assertEqual(
             sheet._approved(rows, self.event),
@@ -74,6 +75,7 @@ class UBRSRaidTests(unittest.TestCase):
             event, sheet._rows(self.path, event, {}), sheet.tab_title(event),
         )
         player = next(row for row in rows if row[16] == "42")
+        player[9] = "Selected"
         player[11], player[12], player[20] = "Yes", "🔸", "Yes"
         self.assertEqual(sheet._approved(rows, event), [
             ("42", "Big Snore", "Hyjal, Barrows 🔸, UBRS")

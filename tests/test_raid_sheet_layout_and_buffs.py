@@ -91,6 +91,8 @@ class LayoutAndBuffTests(unittest.TestCase):
     def test_buff_dashboard_g2_h5_and_absence_of_coverage(self):
         body = sheets._rows(self.path, self.event, {})
         for row in body:
+            if row[8] == "Signed":
+                row[9] = "Selected"
             if row[16] == "42":
                 row[11] = "Yes"
                 row[12] = "🔸"
@@ -198,6 +200,7 @@ class LayoutAndBuffTests(unittest.TestCase):
         members = [r for r in body if r[16]]
         mage = next(r for r in members if r[2] == "Mage")
         warrior = next(r for r in members if r[2] == "Warrior")
+        warrior[9] = "Selected"
         warrior[12] = "🔸"
         mage[12] = "🔸"
         mage[9] = "Bench"
