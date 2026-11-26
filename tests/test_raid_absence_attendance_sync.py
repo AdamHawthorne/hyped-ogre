@@ -88,9 +88,63 @@ class AbsenceAttendanceTests(unittest.TestCase):
              patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \
              patch.object(sheets, "_permanent_read",
                           return_value=[[""] * 15]), \
-             patch.object(sheets, "attendance_set") as set_attendance:
+             patch.object(sheets.raid_sheets, "_json") as api:
             sheets.attendance_complete(self.path, 1)
-        set_attendance.assert_not_called()
+        api.assert_not_called()
+
+    def test_completion_batches_updates_and_preserves_leadership_outcomes(self):
+        first = self.player_row(absent=False)
+        second = self.player_row(absent=False)
+        second[16], second[0], second[1] = "43", "Other", "Other Hero"
+        third = self.player_row(absent=False)
+        third[16], third[0], third[1] = "44", "Excused", "Excused Hero"
+        recorded = [""] * 15
+        recorded[0], recorded[2], recorded[9] = "1", "42", "Pending"
+        recorded[11], recorded[13] = "Keep note", "Leader comment"
+        excused = [""] * 15
+        excused[0], excused[2], excused[9] = "1", "44", "Excused"
+        session = MagicMock()
+
+        with patch.object(sheets, "attendance_candidates",
+                          return_value=[first, second, third]), \
+             patch.object(sheets.raid_sheets, "_session", return_value=session), \
+             patch.object(sheets, "_permanent_read",
+                          return_value=[[""] * 15, recorded, excused]), \
+             patch.object(sheets.raid_sheets, "_json") as api, \
+             patch("hyped_ogre.features.raids.attendance.mirror_rows") as mirror:
+            self.assertEqual(sheets.attendance_complete(self.path, 1), 3)
+
+        api.assert_called_once()
+        method, url = api.call_args.args[1:]
+        self.assertEqual(method, "POST")
+        self.assertTrue(url.endswith("/values:batchUpdate"))
+        written = api.call_args.kwargs["json"]["data"]
+        self.assertEqual(len(written), 2)
+        self.assertEqual(written[0]["range"], "'Forever Attendance'!A6:O6")
+        self.assertEqual(written[1]["range"], "'Forever Attendance'!A8:O8")
+        self.assertEqual([entry["values"][0][9] for entry in written],
+                         ["Attended", "Attended"])
+        self.assertEqual(written[0]["values"][0][11], "Keep note")
+        self.assertEqual(written[0]["values"][0][13], "Leader comment")
+        self.assertTrue(all(row["values"][0][2] != "44" for row in written))
+        self.assertEqual(len(mirror.call_args.args[1]), 2)
+        session.close.assert_called_once()
+
+    def test_completion_quota_error_does_not_mirror_unconfirmed_attendance(self):
+        selected = self.player_row(absent=False)
+        session = MagicMock()
+        with patch.object(sheets, "attendance_candidates",
+                          return_value=[selected]), \
+             patch.object(sheets.raid_sheets, "_session", return_value=session), \
+             patch.object(sheets, "_permanent_read",
+                          return_value=[[""] * 15]), \
+             patch.object(sheets.raid_sheets, "_json",
+                          side_effect=RuntimeError("Google Sheets returned HTTP 429.")), \
+             patch("hyped_ogre.features.raids.attendance.mirror_rows") as mirror:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+                sheets.attendance_complete(self.path, 1)
+            mirror.assert_not_called()
+        session.close.assert_called_once()
 
     def test_existing_completed_raid_pending_is_backfilled_from_absence(self):
         signup = {
