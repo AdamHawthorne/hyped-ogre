@@ -1,5 +1,6 @@
 """Offline guards for attendance defaults and completed raid announcement cleanup."""
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -279,6 +280,7 @@ class CompletionWorkflowTests(unittest.IsolatedAsyncioTestCase):
         calls = []
         cog = SimpleNamespace(
             allowed=lambda _interaction: True,
+            _sync_lock=asyncio.Lock(),
             sync_raid_sheets=AsyncMock(side_effect=lambda: calls.append("sync")),
             cleanup_completed_announcement=AsyncMock(
                 side_effect=lambda _raid_id: calls.append("ack")),

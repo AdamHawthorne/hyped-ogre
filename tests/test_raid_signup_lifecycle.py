@@ -1,4 +1,5 @@
 """Keep public Attend open through roster confirmation until raid completion."""
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -89,6 +90,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
+            _sync_lock=asyncio.Lock(),
                 raid_db_path=lambda: path,
                 sync_raid_sheets=AsyncMock(),
                 refresh_saved_panel=AsyncMock(),
@@ -135,6 +137,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_completion_429_before_archive_does_not_claim_raid_closed(self):
         cog = SimpleNamespace(
             allowed=lambda _: True,
+            _sync_lock=asyncio.Lock(),
             sync_raid_sheets=AsyncMock(),
             cleanup_completed_announcement=AsyncMock(),
             refresh_saved_panel=AsyncMock(),
@@ -168,6 +171,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
+            _sync_lock=asyncio.Lock(),
                 sync_raid_sheets=AsyncMock(side_effect=RuntimeError("Sheets offline")),
                 refresh_saved_panel=AsyncMock(),
                 cleanup_completed_announcement=AsyncMock()

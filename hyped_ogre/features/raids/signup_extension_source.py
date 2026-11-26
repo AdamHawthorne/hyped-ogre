@@ -1569,10 +1569,13 @@ class RaidCompletionConfirm(discord.ui.View):
             except Exception as exc:
                 LOGGER.warning("Raid #%s pre-completion absence sync delayed: %s",
                                self.raid_id, exc)
-            count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
-                                            RAID_DB, self.raid_id)
-            raid_status(RAID_DB, self.raid_id, "archive",
-                        notes=self.notes, wcl_url=self.url)
+            # Prevent the minute-by-minute Sheets worker from racing
+            # attendance completion or the archive transition.
+            async with self.cog._sync_lock:
+                count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
+                                                RAID_DB, self.raid_id)
+                raid_status(RAID_DB, self.raid_id, "archive",
+                            notes=self.notes, wcl_url=self.url)
         except Exception as exc:
             # Attendance was not fully confirmed or archive did not succeed.
             # The operator may retry after Sheets quota resets; individual
