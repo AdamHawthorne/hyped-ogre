@@ -11,6 +11,8 @@ not a credential that the Fly.io bot can use.
 import base64
 import json
 import os
+import random
+import time
 import sqlite3
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -59,13 +61,25 @@ def _session():
 
 
 def _json(session, method, endpoint, **kwargs):
-    response = session.request(method, endpoint, timeout=20, **kwargs)
-    try:
-        response.raise_for_status()
-    except Exception as exc:
-        # Avoid echoing authentication errors or spreadsheet contents in logs.
-        raise RuntimeError(f"Google Sheets returned HTTP {response.status_code}.") from exc
-    return response.json()
+    """Retry explicit Sheets quota errors, not ambiguous network failures.
+
+    Retry-After is honoured when supplied. A bounded exponential backoff
+    handles per-minute quotas without leaking spreadsheet or account details.
+    """
+    for attempt in range(6):
+        response = session.request(method, endpoint, timeout=20, **kwargs)
+        if response.status_code == 429 and attempt < 5:
+            raw = str(response.headers.get("Retry-After", "")).strip()
+            delay = (min(int(raw), 60) if raw.isdecimal()
+                     else min(32, 2 ** (attempt + 1)) + random.uniform(0, 1))
+            time.sleep(delay)
+            continue
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            # Avoid echoing authentication errors or spreadsheet contents in logs.
+            raise RuntimeError(f"Google Sheets returned HTTP {response.status_code}.") from exc
+        return response.json()
 
 
 def _read_tabs(session):

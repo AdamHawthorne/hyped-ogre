@@ -1584,11 +1584,12 @@ def attendance_set(db_path, raid_id, member_id, outcome, minutes=0):
 
 
 def attendance_complete(db_path, raid_id):
-    """Fill Pending/empty selected records, never a reported absent member."""
+    """Batch pending selected attendance into one Sheets request.
+
+    Preserve leadership outcomes, reported absences and existing notes.
+    No local result is mirrored until Google confirms the entire write.
+    """
     candidates = attendance_candidates(db_path, raid_id)
-    # Check the authoritative saved absence state as well as Sheets. Even if
-    # the raid tab has not refreshed yet, do not silently mark Absent as
-    # Attended during completion.
     with database(db_path) as con:
         unavailable = {str(row[0]) for row in con.execute(
             "SELECT discord_id FROM raid_absences WHERE raid_id=? "
@@ -1599,18 +1600,54 @@ def attendance_complete(db_path, raid_id):
     session = raid_sheets._session()
     try:
         existing = _permanent_read(session, "Forever Attendance")
-        keyed = {(r[0], r[2]): r for r in existing[1:]
-                 if len(r) > 2}
+        keyed = {(str(row[0]), str(row[2])): (i + 6, row)
+                 for i, row in enumerate(existing[1:])
+                 if len(row) > 2}
+        event = read_raid(db_path, raid_id)
+        date = datetime.fromisoformat(event["raid_at"]).astimezone(UK).strftime("%Y-%m-%d")
+        recorded_at = datetime.now(UK).isoformat(timespec="seconds")
+        next_row = len(existing) + 5
+        updates, mirrored, processed = [], [], set()
+        for member in candidates:
+            member_id = str(member[16])
+            if member_id in unavailable or member_id in processed:
+                continue
+            processed.add(member_id)
+            prior = keyed.get((str(raid_id), member_id))
+            old = prior[1] if prior else []
+            if len(old) > 9 and old[9] not in ("", "Pending"):
+                continue
+            if prior:
+                row_number = prior[0]
+            else:
+                row_number = next_row
+                next_row += 1
+            values = [
+                str(raid_id), date, member_id, member[0], member[17],
+                member[1], member[2], member[4], member[9], "Attended",
+                old[10] if len(old) > 10 else "",
+                old[11] if len(old) > 11 else "",
+                "No",
+                old[13] if len(old) > 13 else "",
+                recorded_at,
+            ]
+            updates.append({
+                "range": f"'Forever Attendance'!A{row_number}:O{row_number}",
+                "values": [values],
+            })
+            mirrored.append(values)
+        if updates:
+            # One values:batchUpdate avoids three API calls per raider.
+            raid_sheets._json(
+                session, "POST",
+                f"{raid_sheets.API}/{raid_sheets.SPREADSHEET_ID}/values:batchUpdate",
+                json={"valueInputOption": "RAW", "data": updates},
+            )
+            from hyped_ogre.features.raids.attendance import mirror_rows
+            mirror_rows(db_path, mirrored)
+        return len(candidates)
     finally:
         session.close()
-    for member in candidates:
-        if str(member[16]) in unavailable:
-            continue
-        old = keyed.get((str(raid_id), member[16]), [])
-        if len(old) <= 9 or old[9] in ("", "Pending"):
-            attendance_set(db_path, raid_id, member[16], "Attended")
-    return len(candidates)
-
 
 def _save_public_for_one(db_path, raid_id, selected):
     """Retain class, role and spec for Discord emoji rendering."""
