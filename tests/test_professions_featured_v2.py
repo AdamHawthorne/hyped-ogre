@@ -1,6 +1,7 @@
 """Regressions for compact pinned professions V2 and 15-minute API refresh."""
 from contextlib import closing
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,10 +119,11 @@ class ProfessionsV2Tests(unittest.TestCase):
         for name in ("Crafter 4", "Crafter 5", "Crafter 6"):
             self.assertNotIn(name, contents)
 
-    def test_v2_removes_secondary_and_extra_instructions(self):
+    def test_v2_shows_cooking_fishing_not_gathering(self):
         guild = SimpleNamespace(emojis=[])
         grouped = {
             "Cooking": [{"name": "Cook", "skill": 300}],
+            "Fishing": [{"name": "Fisher", "skill": 300}],
             "Mining": [{"name": "Miner", "skill": 300}],
             "Alchemy": [{"name": "Alchemist", "skill": 300}],
         }
@@ -133,12 +135,14 @@ class ProfessionsV2Tests(unittest.TestCase):
             for component in getattr(child, "children", [])
         )
         self.assertIn("Primary professions", contents)
-        self.assertIn("Gathering", contents)
+        self.assertNotIn("Gathering", contents)
+        self.assertNotIn("Miner", contents)
         self.assertIn("New recipes", contents)
         # The example moved into the header Section.
         self.assertNotIn("Ask Ogre", contents)
-        self.assertNotIn("Secondary professions", contents)
-        self.assertNotIn("Cook", contents)
+        self.assertIn("Secondary professions", contents)
+        self.assertIn("Cook", contents)
+        self.assertIn("Fisher", contents)
         self.assertNotIn("featured", contents)
         self.assertNotIn("Private pilot", contents)
         self.assertNotIn("Skill 200+", contents)

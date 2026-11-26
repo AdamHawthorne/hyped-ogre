@@ -1,6 +1,7 @@
 """Priority recipe list and proof of ownership from Blizzard known recipes."""
 from contextlib import closing
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,8 +36,8 @@ class PriorityRecipesTests(unittest.TestCase):
             )
         crafting.initialise(self.path)
 
-    def test_priority_lists_cover_every_profession(self):
-        self.assertEqual(len(priority_recipes.PRIORITIES), 12)
+    def test_priority_lists_cover_crafting_and_secondary_professions(self):
+        self.assertEqual(set(priority_recipes.PRIORITIES), set(crafting.CRAFTING_PROFESSIONS + crafting.SECONDARY_PROFESSIONS))
         for name in (
             "Alchemy", "Blacksmithing", "Enchanting",
             "Engineering", "Leatherworking", "Tailoring",

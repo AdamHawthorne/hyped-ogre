@@ -1,6 +1,7 @@
 """Website roster follows the public Characters board's main/hidden policy."""
 from contextlib import closing
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path

@@ -57,16 +57,6 @@ PRIORITIES = {
         "Bottomless Reagent Bag", "Robes of Fiery Devastation",
         "Felblood Soul Bag", "Loom",
     ),
-    "Herbalism": (
-        "Incense Candle", "Greenhouse", "Seed Hybridizer",
-    ),
-    "Mining": (
-        "Smelt Azerothium", "Smelt Heavy Thorium", "Rock Garden",
-        "Molten Foundry", "Lodestone",
-    ),
-    "Skinning": (
-        "Camp Chair", "Field Guide", "Trapper's Workbench",
-    ),
     "Cooking": (
         "Swiftstrike Steak", "Iron Oven", "Sage's Tea",
         "Plated Armorfish", "Raptor Rouladen", "Savory Stag Sliders",

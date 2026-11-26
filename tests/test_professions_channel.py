@@ -1,6 +1,7 @@
 """Offline safety tests for verified Forever recipe ownership and guild board."""
 from contextlib import closing
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path

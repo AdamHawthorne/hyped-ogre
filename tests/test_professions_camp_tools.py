@@ -1,6 +1,7 @@
 """Offline guards for verified Artisan Forever campfire tool ownership."""
 from contextlib import closing
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
