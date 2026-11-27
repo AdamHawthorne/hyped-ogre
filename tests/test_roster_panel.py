@@ -96,14 +96,30 @@ class RosterDataTests(unittest.TestCase):
                             (n,42,self.cid,'Attended'))
         self.assertEqual([r['attendance'] for r in roster.rows(self.path)], ['50%', '50%'])
 
-    def test_wowsims_item_metadata_does_not_fill_public_stats(self):
+    def test_wowsims_only_fills_missing_ilvl_when_complete(self):
         self.assertEqual(roster.rows(self.path)[0]['ilvl'], 'N/A')
         export = {'name':'Snore','class':'warrior','spec':'protection','version':'v3.2.6',
                   'level':60,'gear':{'items':[{'id':5},{'id':6}]}}
         raid.save_wowsims_export(42,self.cid,json.dumps(export),self.path)
         with patch.object(roster.items,'cached_catalog',return_value={'5':{'level':50},'6':{'level':60}}):
-            self.assertEqual(roster.rows(self.path)[0]['ilvl'], 'N/A')
-            self.assertIsNone(roster.rows(self.path)[0]['level'])
+            result = roster.rows(self.path)[0]
+            self.assertEqual(result['ilvl'], '55')
+            self.assertEqual(result['ilvl_source'], 'WoWSims')
+            self.assertIsNone(result['level'])
+        with patch.object(roster.items,'cached_catalog',return_value={'5':{'level':50}}):
+            result = roster.rows(self.path)[0]
+            self.assertEqual(result['ilvl'], 'N/A')
+            self.assertIsNone(result['ilvl_source'])
+
+    def test_public_board_omits_all_unknown_labels_without_breaking_columns(self):
+        record = roster.rows(self.path)[0]
+        embed = roster.render([record])[0]
+        tank_name, tank_level, tank_prof = embed.fields[:3]
+        self.assertEqual(len(tank_name.value.splitlines()), 1)
+        self.assertEqual(tank_level.value, roster.EMPTY_ROW_CELL)
+        self.assertEqual(tank_prof.value, roster.EMPTY_ROW_CELL)
+        self.assertNotIn("(N/A)", str(embed.to_dict()))
+        self.assertNotIn("N/A", str(embed.to_dict()))
 
     def test_wowsims_professions_do_not_fill_public_stats(self):
         self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
@@ -117,7 +133,7 @@ class RosterDataTests(unittest.TestCase):
         }
         raid.save_wowsims_export(42, self.cid, json.dumps(original), self.path)
         self.assertEqual(roster.rows(self.path)[0]['professions'], 'N/A')
-        self.assertIn('N/A', roster.render(roster.rows(self.path))[0].fields[2].value)
+        self.assertNotIn('N/A', roster.render(roster.rows(self.path))[0].fields[2].value)
 
         updated = {**original, 'professions': [
             {'name': 'Herbalism', 'level': 150},
@@ -223,8 +239,8 @@ class LayoutTests(unittest.TestCase):
             fields = embeds[0].fields[i:i+3]
             self.assertEqual([f.name for f in fields[1:]], ['Level (iLvl)', 'Professions'])
             self.assertEqual(len(set(len(f.value.splitlines()) for f in fields)), 1)
-            self.assertTrue(all(v == 'N/A (67.5)' for v in fields[1].value.splitlines()))
-            self.assertTrue(all(v == 'N/A' for v in fields[2].value.splitlines()))
+            self.assertTrue(all(v == '(67.5)' for v in fields[1].value.splitlines()))
+            self.assertTrue(all(v == roster.EMPTY_ROW_CELL for v in fields[2].value.splitlines()))
         self.assertNotIn('Character', [f.name for f in embeds[0].fields])
 
     def test_gold_accent_and_clean_roster_without_footer_or_banner(self):

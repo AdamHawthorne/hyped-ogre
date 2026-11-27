@@ -274,7 +274,7 @@ class CharacterV2Tests(unittest.TestCase):
                 self.assertEqual(after["level_source"], "Blizzard")
                 self.assertEqual(after["ilvl_source"], "Blizzard")
                 self.assertEqual(after["professions_source"], "Blizzard")
-                # WoWSims cannot supply missing public character stats.
+                # WoWSims may fill missing iLvl from complete verified gear.
                 armory_data[cid]["level"] = None
                 armory_data[cid]["ilvl"] = None
                 with patch.object(roster.items, "cached_catalog",
@@ -282,9 +282,9 @@ class CharacterV2Tests(unittest.TestCase):
                                                 "6": {"level": 57}}):
                     fallback = roster.rows(path)[0]
                 self.assertIsNone(fallback["level"])
-                self.assertEqual(fallback["ilvl"], "N/A")
+                self.assertEqual(fallback["ilvl"], "56")
                 self.assertIsNone(fallback["level_source"])
-                self.assertIsNone(fallback["ilvl_source"])
+                self.assertEqual(fallback["ilvl_source"], "WoWSims")
                 # An incomplete item catalog cannot produce a false WSE iLvl.
                 with patch.object(roster.items, "cached_catalog", return_value={}):
                     missing = roster.rows(path)[0]

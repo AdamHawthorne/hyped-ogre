@@ -169,7 +169,7 @@ class DataFixture(unittest.TestCase):
         self.assertNotIn("Warcraft Logs", str(embed.to_dict()))
         self.assertNotIn("100%", str(embed.to_dict()))
         self.assertEqual([field.name for field in embed.fields[1:3]], ["Level (iLvl)", "Professions"])
-        self.assertIn("N/A", embed.fields[2].value)
+        self.assertNotIn("N/A", embed.fields[2].value)
 
     def test_hub_shows_all_registered_characters_without_pagination(self):
         base = hub.rows(self.path)[0]
