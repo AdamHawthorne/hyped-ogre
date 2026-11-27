@@ -70,11 +70,16 @@ def rows(path):
                 window):
                 credits[row[0]] = row[1]
     armory_levels = armory.cached(path)
+    # When Blizzard omits iLvl, use only a member's own latest WoWSims
+    # export if every equipped item has verified cached level metadata.
+    exports = {entry["character_id"]: entry
+               for entry in equipment.latest_profiles(path)}
+    catalog = items.cached_catalog(path) if exports else {}
     for character in characters:
         character["attendance"] = (f"{100 * credits.get(character['discord_id'], 0) / len(window):.0f}%"
                                    if window else "N/A")
-        # The public Characters board uses Blizzard Armory data only.
-        # WoWSims is deliberately reserved for detailed raid gear/enchant views.
+        # Blizzard takes precedence for all public stats. A complete,
+        # member-submitted WoWSims equipment snapshot may fill only iLvl.
         live = armory_levels.get(character["character_id"], {})
         if live.get("name") != character["name"]:
             live = {}
@@ -92,6 +97,15 @@ def rows(path):
         else:
             character["ilvl"] = "N/A"
         character["ilvl_source"] = "Blizzard" if character["ilvl"] != "N/A" else None
+        if character["ilvl_source"] is None and character["character_id"] in exports:
+            parsed = equipment.parse_export(
+                exports[character["character_id"]]["raw_text"]
+            )
+            average, known, equipped = equipment.average_item_level(parsed, catalog)
+            if (average is not None and equipped > 0 and known == equipped
+                    and 1 <= average <= 250):
+                character["ilvl"] = display_ilvl(average)
+                character["ilvl_source"] = "WoWSims"
         character["professions"] = profession_text(live)
         character["professions_source"] = (
             "Blizzard" if character["professions"] != "N/A" else None
@@ -155,6 +169,9 @@ def v1_class_ilvl_sort_key(record):
     )
 
 
+# Keep all three Discord columns aligned without visibly printing N/A.
+EMPTY_ROW_CELL = "\u2800"
+
 def render(characters):
     """Compact main-only V1 board with consistent links across every role.
 
@@ -195,12 +212,19 @@ def render(characters):
                     f"(https://discord.com/users/{int(row['discord_id'])})"
                 )
             level = row.get("level")
-            level_text = str(level) if type(level) is int and 1 <= level <= 60 else "N/A"
+            level_text = str(level) if type(level) is int and 1 <= level <= 60 else ""
             ilvl_text = display_ilvl(row.get("ilvl"))
+            if ilvl_text == "N/A":
+                level_and_ilvl = level_text
+            else:
+                level_and_ilvl = f"{level_text} ({ilvl_text})" if level_text else f"({ilvl_text})"
+            professions = row.get("professions")
+            if not professions or professions == "N/A":
+                professions = EMPTY_ROW_CELL
             result.append((
                 f"{markup(row['class_name'])} {name}",
-                f"{level_text} ({ilvl_text})",
-                row.get("professions") or "N/A",
+                level_and_ilvl or EMPTY_ROW_CELL,
+                professions,
             ))
         return result
 
@@ -236,7 +260,7 @@ def render(characters):
         if block:
             blocks.append(block)
         if not blocks:
-            blocks = [[("No mains registered", "N/A", "N/A")]]
+            blocks = [[("No mains registered", EMPTY_ROW_CELL, EMPTY_ROW_CELL)]]
         for index, block in enumerate(blocks):
             heading = f"{label} ({len(members)})" + (" · continued" if index else "")
             values = ["\n".join(row[col] for row in block) for col in range(3)]
