@@ -393,8 +393,8 @@ class LayoutTests(unittest.TestCase):
             self.assertIn(f'[{name}](https://discord.com/users/',
                           character_lines[index])
         self.assertEqual(fields[1].value.splitlines(), [
-            '40 (75)', '60 (40)', '30 (80)', '60 (N/A)',
-            '50 (70.5)', '45 (62)', '60 (62)', '60 (59)', '60 (N/A)',
+            '40 (75)', '60 (40)', '30 (80)', '60',
+            '50 (70.5)', '45 (62)', '60 (62)', '60 (59)', '60',
         ])
         self.assertEqual(fields[2].value.splitlines(), [
             f'Min: {input_by_name[name]["character_id"]}' for name in expected
@@ -452,7 +452,7 @@ class LayoutTests(unittest.TestCase):
     def test_level_and_average_ilvl_share_one_column_without_invented_values(self):
         main = self.row(1, 'Tank', 'Warrior', 'Protection')
         fields = roster.render([main])[0].fields
-        self.assertEqual(fields[1].value, 'N/A (67.5)')
+        self.assertEqual(fields[1].value, '(67.5)')
         main['level'] = 60
         main['ilvl'] = '43'
         self.assertEqual(roster.render([main])[0].fields[1].value, '60 (43)')
