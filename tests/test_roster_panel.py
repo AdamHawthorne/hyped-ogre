@@ -460,11 +460,11 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(roster.render([main])[0].fields[1].value, '60 (55.4)')
         for invalid in (999, None, True, 0, -1, '', 'N/A', 'nan', 'infinity'):
             main['ilvl'] = invalid
-            self.assertEqual(roster.render([main])[0].fields[1].value, '60 (N/A)')
+            self.assertEqual(roster.render([main])[0].fields[1].value, '60')
         main['ilvl'] = 67
         for invalid in (999, None, True, 0, -1, '', '60'):
             main['level'] = invalid
-            self.assertEqual(roster.render([main])[0].fields[1].value, 'N/A (67)')
+            self.assertEqual(roster.render([main])[0].fields[1].value, '(67)')
 
     def test_thirty_distinct_guild_players_fit_one_embed(self):
         specs = (('Tank', 'Warrior', 'Protection'),
