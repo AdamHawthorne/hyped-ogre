@@ -144,17 +144,19 @@ class DataFixture(unittest.TestCase):
         with patch.object(sheets, "attendance_candidates", return_value=[member]), \
              patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \
              patch.object(sheets, "_permanent_read", return_value=existing), \
-             patch.object(sheets, "_permanent_write") as write:
+             patch.object(sheets.raid_sheets, "_json") as batch:
             self.assertEqual(sheets.attendance_complete(self.path, 1), 1)
-            self.assertEqual(write.call_args.args[3][9], "Attended")
+            batch.assert_called_once()
+            self.assertEqual(batch.call_args.kwargs["json"]["data"][0]
+                             ["values"][0][9], "Attended")
         with raid.database(self.path) as con:
             self.assertEqual(con.execute("SELECT status FROM attendance").fetchone()[0], "Attended")
         with patch.object(sheets, "attendance_candidates", return_value=[member]), \
              patch.object(sheets.raid_sheets, "_session", return_value=MagicMock()), \
              patch.object(sheets, "_permanent_read", return_value=[[], self.attendance_row("Excused")]), \
-             patch.object(sheets, "attendance_set") as set_result:
+             patch.object(sheets.raid_sheets, "_json") as batch:
             sheets.attendance_complete(self.path, 1)
-            set_result.assert_not_called()
+            batch.assert_not_called()
 
     def test_character_board_preserves_internal_attendance_but_shows_professions(self):
         attendance.mirror_rows(self.path, [self.attendance_row(selection="Bench")])

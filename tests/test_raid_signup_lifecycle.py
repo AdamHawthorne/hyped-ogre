@@ -1,4 +1,5 @@
 """Keep public Attend open through roster confirmation until raid completion."""
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -89,6 +90,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
+            _sync_lock=asyncio.Lock(),
                 raid_db_path=lambda: path,
                 sync_raid_sheets=AsyncMock(),
                 refresh_saved_panel=AsyncMock(),
@@ -132,6 +134,33 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(ValueError, "aren't open"):
                 signup_with_export(1, 43, char_id, path)
 
+    async def test_completion_429_before_archive_does_not_claim_raid_closed(self):
+        cog = SimpleNamespace(
+            allowed=lambda _: True,
+            _sync_lock=asyncio.Lock(),
+            sync_raid_sheets=AsyncMock(),
+            cleanup_completed_announcement=AsyncMock(),
+            refresh_saved_panel=AsyncMock(),
+        )
+        interaction = SimpleNamespace(
+            response=SimpleNamespace(defer=AsyncMock()),
+            followup=SimpleNamespace(send=AsyncMock()),
+            edit_original_response=AsyncMock(),
+        )
+        view = raid.RaidCompletionConfirm(cog, 1, "", "")
+        button = next(b for b in view.children
+                      if isinstance(b, discord.ui.Button)
+                      and b.label == "Confirm completion")
+        with patch.object(raid_sheets_v3, "attendance_complete",
+                          side_effect=RuntimeError("Google Sheets returned HTTP 429.")), \
+             patch.object(raid, "raid_status") as archive:
+            await button.callback(interaction)
+        archive.assert_not_called()
+        cog.cleanup_completed_announcement.assert_not_awaited()
+        self.assertIn("Completion not confirmed",
+                      interaction.followup.send.await_args.args[0])
+        self.assertIn("HTTP 429", interaction.followup.send.await_args.args[0])
+
     async def test_sheets_failure_during_completion_still_refreshes_closed_panel(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / "raid.db")
@@ -142,6 +171,7 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
             cog = SimpleNamespace(
                 allowed=lambda _interaction: True,
+            _sync_lock=asyncio.Lock(),
                 sync_raid_sheets=AsyncMock(side_effect=RuntimeError("Sheets offline")),
                 refresh_saved_panel=AsyncMock(),
                 cleanup_completed_announcement=AsyncMock()
@@ -164,7 +194,12 @@ class RaidSignupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.attend_disabled(schedule.read_raid(path, 1)))
             self.assertTrue(self.wowsims_disabled(schedule.read_raid(path, 1)))
             cog.refresh_saved_panel.assert_awaited_once_with(1)
-            self.assertIn("Sheets offline", interaction.followup.send.await_args.args[0])
+            self.assertIn("completed and archived",
+                          interaction.followup.send.await_args.args[0])
+            self.assertIn("Google Sheets sync",
+                          interaction.followup.send.await_args.args[0])
+            self.assertNotIn("Completion failed",
+                             interaction.followup.send.await_args.args[0])
 
 
 # Import after the class body so the tests use the real Sheets module.

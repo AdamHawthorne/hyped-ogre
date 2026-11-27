@@ -1563,40 +1563,69 @@ class RaidCompletionConfirm(discord.ui.View):
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            # Capture newly declared absences before completing and hiding
-            # the raid tab, including members omitted from confirmed teams.
+            # Import declared absences first; failed sync remains retryable.
             try:
                 await self.cog.sync_raid_sheets()
             except Exception as exc:
-                # Preserve the established completion behaviour during a
-                # temporary Sheets sync outage. Attendance completion itself
-                # still validates the Sheet before archiving.
                 LOGGER.warning("Raid #%s pre-completion absence sync delayed: %s",
                                self.raid_id, exc)
-            count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
-                                            RAID_DB, self.raid_id)
-            raid_status(RAID_DB, self.raid_id, "archive",
-                        notes=self.notes, wcl_url=self.url)
-            await self.cog.cleanup_completed_announcement(self.raid_id)
-            # The stored raid is closed regardless of Sheets availability.
-            # Always edit the public panel so Attend greys out on completion.
-            try:
-                await self.cog.sync_raid_sheets()
-            finally:
-                await self.cog.refresh_saved_panel(self.raid_id)
+            # Prevent the minute-by-minute Sheets worker from racing
+            # attendance completion or the archive transition.
+            async with self.cog._sync_lock:
+                count = await asyncio.to_thread(raid_sheets_v3.attendance_complete,
+                                                RAID_DB, self.raid_id)
+                raid_status(RAID_DB, self.raid_id, "archive",
+                            notes=self.notes, wcl_url=self.url)
         except Exception as exc:
-            await interaction.followup.send(f"Completion failed: {exc}", ephemeral=True)
+            # Attendance was not fully confirmed or archive did not succeed.
+            # The operator may retry after Sheets quota resets; individual
+            # existing Attended and leadership outcomes will be preserved.
+            await interaction.followup.send(
+                f"Completion not confirmed: {exc}. Check whether the raid "
+                "was archived before trying again; existing attendance is preserved.",
+                ephemeral=True,
+            )
             return
-        await refresh_management_poster(
-            self.cog, self.poster_owner_id, self.poster_message,
-            self.poster_draft,
-        )
+
+        # The raid is now archived locally, regardless of downstream Sheets,
+        # Discord acknowledgement or public-panel update failures.
+        post_errors = []
+        try:
+            await self.cog.cleanup_completed_announcement(self.raid_id)
+        except Exception as exc:
+            LOGGER.warning("Raid #%s acknowledgement cleanup delayed: %s",
+                           self.raid_id, type(exc).__name__)
+            post_errors.append("acknowledgement cleanup")
+        try:
+            await self.cog.sync_raid_sheets()
+        except Exception as exc:
+            LOGGER.warning("Raid #%s post-completion Sheets sync delayed: %s",
+                           self.raid_id, exc)
+            post_errors.append("Google Sheets sync")
+        try:
+            await self.cog.refresh_saved_panel(self.raid_id)
+        except Exception as exc:
+            LOGGER.warning("Raid #%s closed panel refresh delayed: %s",
+                           self.raid_id, type(exc).__name__)
+            post_errors.append("Discord panel")
+        try:
+            await refresh_management_poster(
+                self.cog, self.poster_owner_id, self.poster_message,
+                self.poster_draft,
+            )
+        except Exception as exc:
+            LOGGER.warning("Raid #%s management poster refresh delayed: %s",
+                           self.raid_id, type(exc).__name__)
+            post_errors.append("management poster")
         for item in self.children:
             item.disabled = True
         await interaction.edit_original_response(view=self)
+        detail = (" Follow-up updates delayed (" + ", ".join(post_errors)
+                  + "); Ogre will retry regular Sheets sync."
+                  if post_errors else " Attendance and WCL saved.")
         await interaction.followup.send(
-            f"Raid #{self.raid_id} completed. {count} selected/bench players recorded. "
-            "Attendance and WCL saved.", ephemeral=True)
+            f"Raid #{self.raid_id} completed and archived. "
+            f"{count} selected/bench players recorded." + detail, ephemeral=True)
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(self, interaction, button):
