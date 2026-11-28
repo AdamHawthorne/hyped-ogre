@@ -325,6 +325,7 @@ def guild_roster(path, members, *, observed_at=None):
         return 0
     stamp = int(time.time() if observed_at is None else observed_at)
     with closing(connect(path)) as con, con:
+        con.execute("UPDATE craft_guild_members SET active=0")
         for ident, slug, name, level, rank in valid:
             prior = con.execute(
                 "SELECT name FROM craft_guild_members WHERE blizzard_id=?",
@@ -344,11 +345,6 @@ def guild_roster(path, members, *, observed_at=None):
                 "THEN craft_guild_members.checked_at ELSE 0 END",
                 (ident, slug, name, level, rank, stamp),
             )
-        # Only a successfully validated roster can deactivate old members.
-        con.execute(
-            "UPDATE craft_guild_members SET active=0 WHERE seen_at<>?",
-            (stamp,),
-        )
         con.execute(
             "INSERT INTO craft_state VALUES ('guild_roster_checked',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -445,6 +441,9 @@ def leaderboard(path):
             "FROM craft_professions p JOIN craft_guild_members m "
             "ON p.character_id=-m.blizzard_id "
             "WHERE m.active=1 AND p.skill>=? "
+            "AND NOT EXISTS (SELECT 1 FROM characters c "
+            "JOIN character_board_overrides h ON h.character_id=c.character_id "
+            "WHERE LOWER(c.name)=LOWER(m.name) AND h.hidden=1) "
             "ORDER BY LOWER(p.profession),p.recipe_count DESC,p.skill DESC,"
             "LOWER(m.name)",
             (MIN_SKILL,),
@@ -802,6 +801,9 @@ def query(path, question):
             "AND p.profession=k.profession "
             "WHERE k.recipe_id IN (" + ",".join("?" for _ in match_ids) + ") "
             "AND m.active=1 "
+            "AND NOT EXISTS (SELECT 1 FROM characters c "
+            "JOIN character_board_overrides h ON h.character_id=c.character_id "
+            "WHERE LOWER(c.name)=LOWER(m.name) AND h.hidden=1) "
             "ORDER BY skill DESC,name LIMIT 30",
             [*match_ids, *match_ids]).fetchall()
         crafters = []

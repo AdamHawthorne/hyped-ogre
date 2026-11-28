@@ -51,7 +51,9 @@ def parse_members(payload):
             "id": ident, "name": fullname, "slug": slug,
             "level": char.get("level"), "rank": entry.get("rank"),
         })
-    return result or None
+    if not result or len(result) * 10 < len(payload["members"]) * 8:
+        return None
+    return result
 
 
 async def refresh(path, *, now=None, max_profiles=PROFILES_PER_CYCLE,
