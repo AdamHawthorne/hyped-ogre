@@ -132,7 +132,7 @@ class CraftRequestTests(unittest.TestCase):
             "id": 20034, "name": "Enchant Weapon - Crusader",
             "profession": "Enchanting",
         }])
-        self.assertIn("no verified guild crafter",
+        self.assertIn("wanted pile",
                       board.answer(self.path, "enchant Crusader"))
 
 

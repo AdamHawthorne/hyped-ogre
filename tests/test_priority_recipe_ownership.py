@@ -80,7 +80,7 @@ class PriorityRecipesTests(unittest.TestCase):
         self.assertNotIn("<@101>", text)
         self.assertNotIn("<@102>", text)
         self.assertIn("Still hunting for a guild crafter", text)
-        self.assertIn("Not indexed by Ogre yet", text)
+        self.assertIn("Ogre hasn't found this in the recipe book yet", text)
         self.assertLess(len(text), 2000)
 
     def test_exact_match_does_not_count_similar_recipe(self):

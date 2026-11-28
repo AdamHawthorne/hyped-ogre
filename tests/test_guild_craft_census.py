@@ -111,7 +111,7 @@ class GuildCraftTests(unittest.TestCase):
         message = craft_wanted.format_wanted(top)
         self.assertIn("2 guildie(s) asking", message)
         self.assertIn("no live auctionator", message.lower())
-        self.assertIn("not proof", message.lower())
+        self.assertIn("isn't proof", message.lower())
         # Archive/expiry of the original Discord request must not erase demand.
         crafting.store_request(
             self.path, request_id=11, guild_id=1, channel_id=1
