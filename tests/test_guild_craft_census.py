@@ -110,7 +110,7 @@ class GuildCraftTests(unittest.TestCase):
         self.assertNotIn("Lionheart Helm", names)
         message = craft_wanted.format_wanted(top)
         self.assertIn("2 guildie(s) asking", message)
-        self.assertIn("no live Auctionator", message.lower())
+        self.assertIn("no live auctionator", message.lower())
         self.assertIn("not proof", message.lower())
         # Archive/expiry of the original Discord request must not erase demand.
         crafting.store_request(
@@ -175,6 +175,14 @@ class GuildApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_official_roster_then_professions_only(self):
         with tempfile.TemporaryDirectory() as temp:
             path = str(Path(temp) / "guild.db")
+            with closing(sqlite3.connect(path)) as con, con:
+                con.executescript("""
+                    CREATE TABLE characters (
+                        character_id INTEGER PRIMARY KEY, discord_id INTEGER,
+                        name TEXT, roster_visible INTEGER);
+                    CREATE TABLE character_board_overrides (
+                        character_id INTEGER PRIMARY KEY, hidden INTEGER);
+                """)
             crafting.initialise(path)
             payload = {"primaries": [{
                 "profession": {"name": "Alchemy"},
