@@ -122,7 +122,7 @@ def audit(path, profession):
                 continue
             placeholders = ",".join("?" for _ in ids)
             rows = con.execute(
-                "SELECT DISTINCT c.discord_id,c.name AS character_name "
+                "SELECT c.discord_id,c.name AS character_name "
                 "FROM craft_known k "
                 "JOIN characters c ON c.character_id=k.character_id "
                 "LEFT JOIN character_board_overrides h "
@@ -130,20 +130,26 @@ def audit(path, profession):
                 "WHERE k.profession=? AND k.recipe_id IN ("
                 + placeholders + ") "
                 "AND c.roster_visible=1 AND COALESCE(h.hidden,0)=0 "
-                "ORDER BY LOWER(c.name) LIMIT 8",
-                [profession, *ids],
+                "UNION ALL "
+                "SELECT NULL AS discord_id,m.name AS character_name "
+                "FROM craft_known k "
+                "JOIN craft_guild_members m ON k.character_id=-m.blizzard_id "
+                "WHERE k.profession=? AND k.recipe_id IN ("
+                + placeholders + ") AND m.active=1 "
+                "ORDER BY character_name LIMIT 30",
+                [profession, *ids, profession, *ids],
             ).fetchall()
             members = []
             seen = set()
             for row in rows:
                 user_id = row["discord_id"]
-                if (type(user_id) is not int or user_id <= 0
-                        or user_id in seen):
+                name = row["character_name"]
+                if name.casefold() in seen:
                     continue
-                seen.add(user_id)
+                seen.add(name.casefold())
                 members.append({
-                    "discord_id": user_id,
-                    "character_name": row["character_name"],
+                    "discord_id": user_id if type(user_id) is int and user_id > 0 else None,
+                    "character_name": name,
                 })
             result.append({
                 "name": recipe_name,
@@ -155,20 +161,21 @@ def audit(path, profession):
 
 def format_audit(rows, profession, *, max_members=3):
     """Safe Discord text below the message size limit."""
-    lines = [f"**{profession}: priority recipes**"]
-    lines.append("-# Confirmed = Blizzard learned recipe. No record ≠ nobody knows it.")
+    lines = [f"**Ogre's {profession} recipe hunt**"]
+    lines.append("-# Blizzard-confirmed recipes only. No match doesn't mean nobody knows it.")
     for number, row in enumerate(rows, 1):
         query = quote(row["name"], safe="")
         link = f"[{row['name']}](<https://www.wowhead.com/forever/search?q={query}>)"
         if row["status"] == "confirmed":
             users = ", ".join(
-                f"<@{m['discord_id']}>" for m in row["members"][:max_members]
+                (f"<@{m['discord_id']}>" if m["discord_id"]
+                 else m["character_name"]) for m in row["members"][:max_members]
             )
             more = len(row["members"]) - max_members
             owner = users + (f" (+{more} more)" if more > 0 else "")
         elif row["status"] == "not_indexed":
-            owner = "Not indexed by Ogre yet"
+            owner = "Ogre hasn't found this in the recipe book yet"
         else:
-            owner = "No verified guild crafter recorded"
+            owner = "Still hunting for a guild crafter"
         lines.append(f"{number}. {link} · {owner}")
     return "\n".join(lines)
