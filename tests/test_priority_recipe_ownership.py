@@ -79,7 +79,7 @@ class PriorityRecipesTests(unittest.TestCase):
         self.assertIn("<@100>", text)
         self.assertNotIn("<@101>", text)
         self.assertNotIn("<@102>", text)
-        self.assertIn("No verified guild crafter recorded", text)
+        self.assertIn("Still hunting for a guild crafter", text)
         self.assertIn("Not indexed by Ogre yet", text)
         self.assertLess(len(text), 2000)
 
