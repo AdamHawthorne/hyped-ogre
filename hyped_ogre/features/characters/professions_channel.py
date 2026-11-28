@@ -388,7 +388,8 @@ def answer(path, term, *, kind="crafter", result=None):
                 display.append(f"**{name}** (guild roster)")
             if len(display) >= 3:
                 break
-        return f"Ogre's found **{recipe_label}**! " + ", ".join(display) + " know the recipe."
+        return (f"Ogre's found **{recipe_label}**! Try " +
+                ", ".join(display) + ". Their recipe lists checked out.")
     known = next(
         (r for r in recipes if r["verified"] and r["acquisition"]), None
     )
@@ -739,10 +740,14 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         async with self.guild_scan_lock:
             status = await guild_craft_sync.refresh(
-                raid.RAID_DB, force_roster=True, max_profiles=36,
+                raid.RAID_DB, force_roster=True,
+                force_profiles=True, max_profiles=36,
             )
         stats = await asyncio.to_thread(crafting.guild_statistics, raid.RAID_DB)
-        await self.publish_panel()
+        try:
+            await self.publish_panel()
+        except discord.HTTPException:
+            LOG.warning("Guild scan succeeded but Discord board refresh failed.")
         await interaction.followup.send(
             f"**Ogre's guild recipe census**\n"
             f"Guild members found: {stats['members']}\n"
@@ -852,7 +857,8 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         try:
             async with self.guild_scan_lock:
                 await guild_craft_sync.refresh(
-                    raid.RAID_DB, force_roster=True, max_profiles=18,
+                    raid.RAID_DB, force_roster=True,
+                    force_profiles=True, max_profiles=18,
                 )
             await craft_catalog.refresh(raid.RAID_DB)
             active = await self.activate_existing_public_channel()

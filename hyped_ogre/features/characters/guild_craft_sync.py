@@ -57,7 +57,7 @@ def parse_members(payload):
 
 
 async def refresh(path, *, now=None, max_profiles=PROFILES_PER_CYCLE,
-                  force_roster=False):
+                  force_roster=False, force_profiles=False):
     """Sync guild roster hourly and fetch up to 18 profession snapshots/cycle."""
     result = {"members": 0, "attempted": 0, "verified": 0,
               "not_found": 0, "errors": 0, "rate_limited": False,
@@ -97,7 +97,11 @@ async def refresh(path, *, now=None, max_profiles=PROFILES_PER_CYCLE,
                     detail = await response.json()
                 if (not isinstance(detail, dict)
                         or str(detail.get("name") or "").casefold() != "hyped"
-                        or str(detail.get("slug") or guild_slug) != guild_slug):
+                        or str(detail.get("slug") or guild_slug) != guild_slug
+                        or (isinstance(detail.get("faction"), dict)
+                            and detail["faction"].get("type") not in (None, "HORDE"))
+                        or (isinstance(detail.get("ruleset"), dict)
+                            and detail["ruleset"].get("id") not in (None, 1))):
                     LOG.warning("Blizzard guild details failed the Hyped identity check.")
                     return result
                 async with session.get(
@@ -120,7 +124,7 @@ async def refresh(path, *, now=None, max_profiles=PROFILES_PER_CYCLE,
 
             eligible = await asyncio.to_thread(
                 crafting.guild_candidates, path, now=stamp,
-                limit=max_profiles, interval=PROFESSION_REFRESH,
+                limit=max_profiles, interval=0 if force_profiles else PROFESSION_REFRESH,
             )
             for index, member in enumerate(eligible):
                 if index:

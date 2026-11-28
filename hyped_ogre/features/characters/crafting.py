@@ -471,6 +471,10 @@ def board_rows(path):
         (row["character_id"], prof.casefold())
         for prof, rows in grouped.items() for row in rows
     }
+    names_seen = {
+        (prof.casefold(), row["name"].casefold())
+        for prof, rows in grouped.items() for row in rows
+    }
     from . import equipment
     try:
         exports = equipment.latest_profiles(path)
@@ -499,9 +503,11 @@ def board_rows(path):
                     or type(skill) is not int or skill < MIN_SKILL):
                 continue
             key = (char_id, name.casefold())
-            if key in seen:
+            name_key = (name.casefold(), export["name"].casefold())
+            if key in seen or name_key in names_seen:
                 continue
             seen.add(key)
+            names_seen.add(name_key)
             grouped.setdefault(name, []).append({
                 "character_id": char_id,
                 "discord_id": export["discord_id"],

@@ -90,6 +90,10 @@ class GuildCraftTests(unittest.TestCase):
         crafting.save_profile(self.path, -900, self.smith)
         self.assertEqual(crafting.query(self.path, "Lionheart")["crafters"], [])
         self.assertNotIn("Blacksmithing", crafting.leaderboard(self.path))
+        self.assertNotEqual(
+            priority_recipes.audit(self.path, "Blacksmithing")[0]["status"],
+            "confirmed",
+        )
 
     def test_desires_are_durable_idempotent_and_prioritised_without_claiming_missing(self):
         crafting.guild_roster(self.path, self.members, observed_at=1795800000)

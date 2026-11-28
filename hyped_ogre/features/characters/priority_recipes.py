@@ -136,6 +136,9 @@ def audit(path, profession):
                 "JOIN craft_guild_members m ON k.character_id=-m.blizzard_id "
                 "WHERE k.profession=? AND k.recipe_id IN ("
                 + placeholders + ") AND m.active=1 "
+                "AND NOT EXISTS (SELECT 1 FROM characters c "
+                "JOIN character_board_overrides h ON h.character_id=c.character_id "
+                "WHERE LOWER(c.name)=LOWER(m.name) AND h.hidden=1) "
                 "ORDER BY character_name LIMIT 30",
                 [profession, *ids, profession, *ids],
             ).fetchall()
