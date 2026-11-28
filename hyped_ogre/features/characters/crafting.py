@@ -71,6 +71,21 @@ def initialise(path):
                 channel_id INTEGER NOT NULL, reply_id INTEGER,
                 requested_at INTEGER NOT NULL, resolved_at INTEGER,
                 resolved_by INTEGER);
+            CREATE TABLE IF NOT EXISTS craft_guild_members (
+                blizzard_id INTEGER PRIMARY KEY, slug TEXT NOT NULL,
+                name TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 0,
+                rank INTEGER NOT NULL DEFAULT 99,
+                active INTEGER NOT NULL DEFAULT 1,
+                seen_at INTEGER NOT NULL,
+                checked_at INTEGER NOT NULL DEFAULT 0);
+            CREATE INDEX IF NOT EXISTS idx_craft_guild_scan
+                ON craft_guild_members(active,checked_at);
+            CREATE TABLE IF NOT EXISTS craft_desires (
+                request_id INTEGER PRIMARY KEY, guild_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL, recipe_id INTEGER,
+                term TEXT NOT NULL, requested_at INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS idx_craft_desires_recipe
+                ON craft_desires(recipe_id);
         """)
         # Known Forever craft: a checked seed so Arcanite lookups work even
         # before the static Blizzard catalogue's first successful import.
@@ -273,6 +288,130 @@ def mark_catalog(path, now=None):
             (str(int(now or time.time())),))
 
 
+
+def guild_roster_due(path, now=None, interval=3600):
+    now = int(time.time() if now is None else now)
+    with closing(connect(path)) as con:
+        row = con.execute(
+            "SELECT value FROM craft_state WHERE key='guild_roster_checked'"
+        ).fetchone()
+    return not row or now - int(row[0]) >= interval
+
+
+def guild_roster(path, members, *, observed_at=None):
+    """Replace *membership*, not recipe evidence, after a valid guild response.
+
+    Blizzard character IDs are stored as negative craft IDs so they cannot
+    collide with Discord-registered characters or change raid registrations.
+    An empty or malformed response must never mark everyone as departed.
+    """
+    if not isinstance(members, list) or not members:
+        return 0
+    valid = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        ident = member.get("id")
+        name, slug = member.get("name"), member.get("slug")
+        if (type(ident) is not int or ident <= 0
+                or not isinstance(name, str) or not name.strip()
+                or not isinstance(slug, str) or not slug.strip()):
+            continue
+        rank, level = member.get("rank"), member.get("level")
+        valid.append((ident, slug.strip()[:120], name.strip()[:120],
+                      level if type(level) is int and 0 <= level <= 60 else 0,
+                      rank if type(rank) is int and rank >= 0 else 99))
+    if not valid:
+        return 0
+    stamp = int(time.time() if observed_at is None else observed_at)
+    with closing(connect(path)) as con, con:
+        con.execute("UPDATE craft_guild_members SET active=0")
+        for ident, slug, name, level, rank in valid:
+            prior = con.execute(
+                "SELECT name FROM craft_guild_members WHERE blizzard_id=?",
+                (ident,),
+            ).fetchone()
+            if prior and prior[0].casefold() != name.casefold():
+                con.execute("DELETE FROM craft_known WHERE character_id=?", (-ident,))
+                con.execute("DELETE FROM craft_professions WHERE character_id=?", (-ident,))
+                con.execute("DELETE FROM craft_discoveries WHERE character_id=?", (-ident,))
+            con.execute(
+                "INSERT INTO craft_guild_members "
+                "(blizzard_id,slug,name,level,rank,active,seen_at,checked_at) "
+                "VALUES (?,?,?,?,?,1,?,0) ON CONFLICT(blizzard_id) DO UPDATE SET "
+                "slug=excluded.slug,name=excluded.name,level=excluded.level,"
+                "rank=excluded.rank,active=1,seen_at=excluded.seen_at,"
+                "checked_at=CASE WHEN craft_guild_members.name=excluded.name "
+                "THEN craft_guild_members.checked_at ELSE 0 END",
+                (ident, slug, name, level, rank, stamp),
+            )
+        con.execute(
+            "INSERT INTO craft_state VALUES ('guild_roster_checked',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(stamp),),
+        )
+    return len(valid)
+
+
+def guild_candidates(path, *, now=None, limit=18, interval=6 * 3600):
+    now = int(time.time() if now is None else now)
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        return [dict(row) for row in con.execute(
+            "SELECT blizzard_id,slug,name FROM craft_guild_members "
+            "WHERE active=1 AND checked_at<=? "
+            "ORDER BY checked_at ASC, LOWER(name) LIMIT ?",
+            (now - interval, min(max(1, limit), 36)),
+        )]
+
+
+def guild_profile_checked(path, blizzard_id, *, observed_at=None):
+    stamp = int(time.time() if observed_at is None else observed_at)
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "UPDATE craft_guild_members SET checked_at=? "
+            "WHERE blizzard_id=? AND active=1",
+            (stamp, blizzard_id),
+        )
+
+
+def guild_statistics(path):
+    with closing(connect(path)) as con:
+        members = con.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN checked_at>0 THEN 1 ELSE 0 END) "
+            "FROM craft_guild_members WHERE active=1",
+        ).fetchone()
+        verified = con.execute(
+            "SELECT COUNT(DISTINCT m.blizzard_id) "
+            "FROM craft_guild_members m JOIN craft_professions p "
+            "ON p.character_id=-m.blizzard_id "
+            "WHERE m.active=1 AND p.recipe_count>=0",
+        ).fetchone()[0]
+    return {"members": members[0] or 0, "checked": members[1] or 0,
+            "verified": verified or 0}
+
+
+def store_desire(path, *, request_id, guild_id, user_id, term,
+                 recipe_id=None, requested_at=None):
+    """A request remains in the wanted ledger after its Discord message expires."""
+    if (type(request_id) is not int or request_id <= 0
+            or type(user_id) is not int or user_id <= 0):
+        return False
+    if type(recipe_id) is not int or recipe_id <= 0:
+        recipe_id = None
+    term = str(term or "").strip()[:180]
+    if len(term) < 3:
+        return False
+    with closing(connect(path)) as con, con:
+        con.execute(
+            "INSERT OR IGNORE INTO craft_desires "
+            "(request_id,guild_id,user_id,recipe_id,term,requested_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (request_id, guild_id, user_id, recipe_id, term,
+             int(time.time() if requested_at is None else requested_at)),
+        )
+        return bool(con.total_changes)
+
 def leaderboard(path):
     """Only known registrants, no hidden characters, minimum 200 skill."""
     with closing(connect(path)) as con:
@@ -290,8 +429,34 @@ def leaderboard(path):
                      p.skill DESC,LOWER(c.name)
         """, (MIN_SKILL,)).fetchall()
     grouped = {}
+    registered_names = set()
     for row in rows:
         grouped.setdefault(row["profession"], []).append(dict(row))
+        registered_names.add((row["profession"].casefold(), row["name"].casefold()))
+    with closing(connect(path)) as con:
+        con.row_factory = sqlite3.Row
+        discovered = con.execute(
+            "SELECT -m.blizzard_id AS character_id,NULL AS discord_id,"
+            "m.name,p.profession,p.skill,p.recipe_count,p.observed_at "
+            "FROM craft_professions p JOIN craft_guild_members m "
+            "ON p.character_id=-m.blizzard_id "
+            "WHERE m.active=1 AND p.skill>=? "
+            "AND NOT EXISTS (SELECT 1 FROM characters c "
+            "JOIN character_board_overrides h ON h.character_id=c.character_id "
+            "WHERE LOWER(c.name)=LOWER(m.name) AND h.hidden=1) "
+            "ORDER BY LOWER(p.profession),p.recipe_count DESC,p.skill DESC,"
+            "LOWER(m.name)",
+            (MIN_SKILL,),
+        ).fetchall()
+    for row in discovered:
+        key = (row["profession"].casefold(), row["name"].casefold())
+        if key in registered_names:
+            continue
+        registered_names.add(key)
+        grouped.setdefault(row["profession"], []).append(dict(row))
+    for people in grouped.values():
+        people.sort(key=lambda person: (-person["recipe_count"],
+                                         -person["skill"], person["name"].casefold()))
     return grouped
 
 
@@ -304,6 +469,10 @@ def board_rows(path):
     grouped = leaderboard(path)
     seen = {
         (row["character_id"], prof.casefold())
+        for prof, rows in grouped.items() for row in rows
+    }
+    names_seen = {
+        (prof.casefold(), row["name"].casefold())
         for prof, rows in grouped.items() for row in rows
     }
     from . import equipment
@@ -334,9 +503,11 @@ def board_rows(path):
                     or type(skill) is not int or skill < MIN_SKILL):
                 continue
             key = (char_id, name.casefold())
-            if key in seen:
+            name_key = (name.casefold(), export["name"].casefold())
+            if key in seen or name_key in names_seen:
                 continue
             seen.add(key)
+            names_seen.add(name_key)
             grouped.setdefault(name, []).append({
                 "character_id": char_id,
                 "discord_id": export["discord_id"],
@@ -379,6 +550,7 @@ def diagnostics(path):
         "verified_professions": counts[1] or 0,
         "verified_recipes": counts[2] or 0,
         "catalog": index_count, "wowsims_exports": exports,
+        "guild_census": guild_statistics(path),
     }
 
 
@@ -599,8 +771,8 @@ def query(path, question):
             ]
             if not matches:
                 matches = [r for r in all_recipes if any(
-                    target in name or name in target
-                    for name in aliases(r) if len(name) >= 6
+                    target in name or (len(target) >= 6 and name in target)
+                    for name in aliases(r) if len(name) >= 3
                 )]
         if not matches:
             return {
@@ -619,7 +791,7 @@ def query(path, question):
                         r["name"] for r in matches))[:5],
                 }
         match_ids = [r["recipe_id"] for r in matches]
-        found = con.execute(
+        holders = con.execute(
             "SELECT c.discord_id,c.name,k.recipe_id,p.skill "
             "FROM craft_known k JOIN characters c ON c.character_id=k.character_id "
             "JOIN craft_professions p ON p.character_id=k.character_id "
@@ -627,8 +799,29 @@ def query(path, question):
             "LEFT JOIN character_board_overrides h ON h.character_id=c.character_id "
             "WHERE k.recipe_id IN (" + ",".join("?" for _ in match_ids) + ") "
             "AND c.roster_visible=1 AND COALESCE(h.hidden,0)=0 "
-            "ORDER BY p.skill DESC,LOWER(c.name) LIMIT 12", match_ids).fetchall()
-        crafters = [dict(row) for row in found]
+            "UNION ALL "
+            "SELECT NULL AS discord_id,m.name,k.recipe_id,p.skill "
+            "FROM craft_known k JOIN craft_guild_members m "
+            "ON k.character_id=-m.blizzard_id "
+            "JOIN craft_professions p ON p.character_id=k.character_id "
+            "AND p.profession=k.profession "
+            "WHERE k.recipe_id IN (" + ",".join("?" for _ in match_ids) + ") "
+            "AND m.active=1 "
+            "AND NOT EXISTS (SELECT 1 FROM characters c "
+            "JOIN character_board_overrides h ON h.character_id=c.character_id "
+            "WHERE LOWER(c.name)=LOWER(m.name) AND h.hidden=1) "
+            "ORDER BY skill DESC,name LIMIT 30",
+            [*match_ids, *match_ids]).fetchall()
+        crafters = []
+        seen = set()
+        for item in holders:
+            key = item["name"].casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            crafters.append(dict(item))
+            if len(crafters) >= 12:
+                break
     return {"status": "found", "recipes": matches, "crafters": crafters}
 
 def channel(path, guild_id):

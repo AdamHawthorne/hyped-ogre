@@ -13,7 +13,8 @@ from discord.ext import commands, tasks
 
 from cogs import raid_signup as raid
 from hyped_ogre.features.classrooms.config import GUILD_ID, LEADERSHIP_ROLE_ID
-from . import crafting, craft_catalog, armory, camp_tools, priority_recipes
+from . import (crafting, craft_catalog, armory, camp_tools, priority_recipes,
+               guild_craft_sync, craft_wanted)
 
 LOG = logging.getLogger(__name__)
 COLOUR = 0xA87535
@@ -331,8 +332,10 @@ def request_kind(content):
     return "crafter"
 
 
-def answer(path, term, *, kind="crafter"):
-    result = crafting.query(path, term)
+def answer(path, term, *, kind="crafter", result=None):
+    """Guild-friendly replies. Verification remains strict, wording does not."""
+    result = result if result is not None else crafting.query(path, term)
+    safe_term = discord.utils.escape_mentions(discord.utils.escape_markdown(term))
     if not result or result["status"] == "unknown":
         options = (result or {}).get("suggestions", [])
         if options:
@@ -340,78 +343,62 @@ def answer(path, term, *, kind="crafter"):
                 f"**{discord.utils.escape_markdown(name)}**"
                 for name in options[:3]
             )
-            return (
-                f"Ogre couldn't verify **{discord.utils.escape_markdown(term)}** "
-                f"as a recipe. Did you mean {names}? "
-                "Reply with a recipe name and Ogre will check the guild."
-            )
-        return (
-            f"Ogre couldn't match **{discord.utils.escape_markdown(term)}** "
-            "to the Forever recipe database. Try a full recipe name, "
-            "an item, or an enchant bonus and equipment slot, "
-            "for example '+100 HP on chest'."
-        )
+            return (f"Ogre can't find **{safe_term}** in the recipe book. "
+                    f"Did you mean {names}? Give Ogre a name to hunt.")
+        return (f"Not finding **{safe_term}** in Ogre's recipe book yet. "
+                "Try the item name or a few more words.")
     if result["status"] == "unavailable":
-        return ("Ogre hasn't finished collecting the Forever recipe list. "
-                "Try again after the next Blizzard sync.")
+        return "Ogre's recipe book is still loading. Come back after the Blizzard scan."
     if result["status"] == "ambiguous":
-        labels = ", ".join(result["matches"][:4])
-        return (f"Ogre found multiple matching crafts: {labels}. "
-                "Which one do you need? Reply with its full name.")
+        labels = ", ".join(
+            discord.utils.escape_markdown(name)
+            for name in result["matches"][:4]
+        )
+        return (f"Ogre found a few possibilities: **{labels}**. "
+                "Which one are we after? Ogre's noted your request.")
     recipes = result["recipes"]
     people = result["crafters"]
-    recipe_label = recipes[0]["name"] if len(recipes) == 1 else term
+    recipe_label = discord.utils.escape_markdown(
+        recipes[0]["name"] if len(recipes) == 1 else term
+    )
     if kind == "materials":
-        return (
-            f"Ogre found **{recipe_label}**, but verified reagent quantities "
-            "aren't in the crafting database yet. Ogre won't guess. "
-            "The guild crafter list can still be checked with "
-            f"'Who can make {recipe_label}?'"
-        )
+        return (f"**{recipe_label}** is in Ogre's book, but the exact "
+                "reagent quantities aren't verified yet. Ogre won't invent a shopping list.")
     if kind == "source":
         known = next(
-            (recipe for recipe in recipes if
-             recipe["verified"] and recipe["acquisition"]), None
+            (recipe for recipe in recipes
+             if recipe["verified"] and recipe["acquisition"]), None
         )
         if known:
-            extra = (
-                f" Source: {known['source_url']}"
-                if known["source_url"] else ""
-            )
-            return (
-                f"**{recipe_label}**: {known['acquisition']}." + extra
-            )
-        return (
-            f"Ogre recognises **{recipe_label}**, but hasn't verified "
-            "where its recipe is learned or obtained."
-        )
+            source = (f" {known['source_url']}" if known["source_url"] else "")
+            return f"Ogre found it! **{recipe_label}**: {known['acquisition']}.{source}"
+        return (f"Ogre knows **{recipe_label}**, but hasn't tracked down "
+                "a reliable drop or trainer yet. No made-up directions.")
     if people:
-        # One Discord user may have several capable characters. Show up to 3.
-        unique = set()
-        display = []
+        seen, display = set(), []
         for player in people:
-            key = (player["discord_id"], player["name"])
-            if key in unique:
+            name = discord.utils.escape_mentions(discord.utils.escape_markdown(player["name"]))
+            if name.casefold() in seen:
                 continue
-            unique.add(key)
-            display.append(
-                f"<@{player['discord_id']}> can do **{recipe_label}** "
-                f"on **{discord.utils.escape_markdown(player['name'])}**.")
+            seen.add(name.casefold())
+            ident = player.get("discord_id")
+            if type(ident) is int and ident > 0:
+                display.append(f"<@{ident}> on **{name}**")
+            else:
+                display.append(f"**{name}** (guild roster)")
             if len(display) >= 3:
                 break
-        return "\n".join(display)
-    verified = next((r for r in recipes if r["verified"] and r["acquisition"]), None)
-    if verified:
-        return (
-            f"Ogre has no verified guild crafter for **{recipe_label}** yet. "
-            f"It requires **{verified['acquisition']}**. "
-            f"Source: {verified['source_url']}"
-        )
-    return (
-        f"Ogre recognises **{recipe_label}**, but no verified guild crafter "
-        "is currently recorded as knowing it. "
-        "Recipe acquisition source not verified yet."
+        return (f"Ogre's found **{recipe_label}**! Try " +
+                ", ".join(display) + ". Their recipe lists checked out.")
+    known = next(
+        (r for r in recipes if r["verified"] and r["acquisition"]), None
     )
+    if known:
+        return (f"Ogre hasn't spotted a guild crafter for **{recipe_label}** yet. "
+                f"Here's where to hunt the recipe: {known['acquisition']}."
+                + (f" {known['source_url']}" if known["source_url"] else ""))
+    return (f"**{recipe_label}**? Ogre knows the craft, but hasn't caught "
+            "a guildie who can make it yet. It's on the wanted pile.")
 
 
 class ProfessionBoard(commands.GroupCog, group_name="professions",
@@ -424,6 +411,7 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         self.scheduled = {}
         self.previous_signature = None
         self.public_activation_done = False
+        self.guild_scan_lock = asyncio.Lock()
 
     async def cog_load(self):
         if int(os.getenv("HYPED_GUILD_ID") or 0) != GUILD_ID:
@@ -569,12 +557,32 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         term = extract_question(message.content)
         if not term:
-            return
+            # In #professions, a bare/partial recipe name is a valid request.
+            # Do not treat unrelated guild chatter as a request.
+            candidate = str(message.content or "").strip(" ?!.")
+            if not (3 <= len(candidate) <= 120
+                    and "://" not in candidate and "<@" not in candidate):
+                return
+            lookup = await asyncio.to_thread(crafting.query, raid.RAID_DB, candidate)
+            if not lookup or lookup["status"] not in ("found", "ambiguous"):
+                return
+            term = candidate
+        result = await asyncio.to_thread(crafting.query, raid.RAID_DB, term)
+        if result and result["status"] in ("found", "ambiguous"):
+            ident = (result["recipes"][0]["recipe_id"]
+                     if result["status"] == "found" else None)
+            await asyncio.to_thread(
+                crafting.store_desire, raid.RAID_DB,
+                request_id=message.id, guild_id=GUILD_ID,
+                user_id=message.author.id, term=term,
+                recipe_id=ident,
+                requested_at=int(message.created_at.timestamp()),
+            )
         reply_id = None
         try:
             answer_text = await asyncio.to_thread(
                 answer, raid.RAID_DB, term,
-                kind=request_kind(message.content),
+                kind=request_kind(message.content), result=result,
             )
             reply = await message.reply(
                 answer_text, mention_author=False,
@@ -672,17 +680,17 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
         try:
             if not self.public_activation_done:
                 self.public_activation_done = await self.activate_existing_public_channel()
-            # Refresh profession ownership every 15 minutes, including
-            # members whose level/iLvl cache is otherwise still fresh.
-            # 36 requests is bounded to approximately the current roster.
-            # Failed API responses retain previous verified recipe snapshots.
+            # Scan the whole Blizzard guild roster, including unregistered
+            # members. Registered character snapshots remain available.
             if armory.credentials_configured():
                 try:
+                    async with self.guild_scan_lock:
+                        await guild_craft_sync.refresh(raid.RAID_DB)
                     await armory.refresh(
-                        raid.RAID_DB, for_crafting=True, limit=36,
+                        raid.RAID_DB, for_crafting=True, limit=18,
                     )
                 except (sqlite3.Error, ValueError, aiohttp.ClientError):
-                    LOG.warning("Profession API refresh delayed.")
+                    LOG.warning("Guild profession API refresh delayed.")
             await craft_catalog.refresh(raid.RAID_DB)
             await self.expire_requests()
             record = await asyncio.to_thread(
@@ -695,6 +703,62 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
     @maintenance.before_loop
     async def before_maintenance(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(
+        name="wanted", description="Ogre's ten most wanted guild recipes",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    async def wanted(self, interaction: discord.Interaction):
+        if interaction.guild_id != GUILD_ID:
+            await interaction.response.send_message("Hyped only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        results = await asyncio.to_thread(craft_wanted.top_ten, raid.RAID_DB)
+        await interaction.followup.send(
+            craft_wanted.format_wanted(results), ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @app_commands.command(
+        name="scan", description="Guild owner: refresh Blizzard guild recipe census",
+    )
+    @app_commands.guilds(discord.Object(id=GUILD_ID))
+    @app_commands.guild_only()
+    async def scan(self, interaction: discord.Interaction):
+        owner_id = int(os.getenv("OWNER_ID") or 0)
+        if interaction.guild_id != GUILD_ID or interaction.user.id not in (
+                owner_id, getattr(interaction.guild, "owner_id", None)):
+            await interaction.response.send_message("Guild owner only.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        if self.guild_scan_lock.locked():
+            await interaction.followup.send(
+                "Ogre's already checking the guild. Try again shortly.",
+                ephemeral=True,
+            )
+            return
+        async with self.guild_scan_lock:
+            status = await guild_craft_sync.refresh(
+                raid.RAID_DB, force_roster=True,
+                force_profiles=True, max_profiles=36,
+            )
+        stats = await asyncio.to_thread(crafting.guild_statistics, raid.RAID_DB)
+        try:
+            await self.publish_panel()
+        except discord.HTTPException:
+            LOG.warning("Guild scan succeeded but Discord board refresh failed.")
+        await interaction.followup.send(
+            f"**Ogre's guild recipe census**\n"
+            f"Guild members found: {stats['members']}\n"
+            f"Members checked: {stats['checked']}\n"
+            f"Profiles attempted now: {status['attempted']}\n"
+            f"Recipe profiles imported now: {status['verified']}\n"
+            f"Missing/blocked: {status['not_found']}; errors: {status['errors']}\n"
+            + ("Blizzard slowed Ogre down. Rest will retry."
+               if status['rate_limited'] else "Ogre will keep scanning in the background."),
+            ephemeral=True,
+        )
 
     @app_commands.command(
         name="priorities",
@@ -791,7 +855,11 @@ class ProfessionBoard(commands.GroupCog, group_name="professions",
             return
         await interaction.response.defer(ephemeral=True)
         try:
-            await armory.refresh(raid.RAID_DB, for_crafting=True, limit=6)
+            async with self.guild_scan_lock:
+                await guild_craft_sync.refresh(
+                    raid.RAID_DB, force_roster=True,
+                    force_profiles=True, max_profiles=18,
+                )
             await craft_catalog.refresh(raid.RAID_DB)
             active = await self.activate_existing_public_channel()
             posted = await self.publish_panel(bump=True) if active else False
@@ -850,6 +918,9 @@ class ProfessionPilotCommands(commands.Cog):
             f"Profession entries with verified recipe lists: **{stats['verified_professions']}**\n"
             f"Individual learned-recipe records: **{stats['verified_recipes']}**\n"
             f"Official recipe catalogue: **{stats['catalog']}**\n"
+            f"Guild members in Blizzard roster: **{stats['guild_census']['members']}**\n"
+            f"Guild profiles checked: **{stats['guild_census']['checked']}**\n"
+            f"Guild profiles with verified recipes: **{stats['guild_census']['verified']}**\n"
             f"Saved WoWSims gear exports: **{stats['wowsims_exports']}**\n"
             "WoWSims supplies profession skills only, not verified recipe ownership. "
             "If credentials are missing, configure BLIZZARD_CLIENT_ID and "

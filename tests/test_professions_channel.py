@@ -100,7 +100,7 @@ class CraftingTests(unittest.TestCase):
         self.assertEqual(result["status"], "found")
         self.assertTrue(result["recipes"][0]["verified"])
         self.assertIn("Pestlezugg", channel.answer(self.path, "Arcanite Bar"))
-        self.assertIn("not verified", channel.answer(self.path, "Crusader"))
+        self.assertIn("wanted pile", channel.answer(self.path, "Crusader"))
 
     def test_top_crafters_sorted_by_recipes_not_skill(self):
         crafting.save_profile(self.path, 1, self.payload(
@@ -170,7 +170,7 @@ class CraftingTests(unittest.TestCase):
                 )
         no_owner = channel.answer(self.path, "+100 hp on chest")
         self.assertIn("Enchant Chest - Major Health", no_owner)
-        self.assertIn("no verified guild crafter", no_owner)
+        self.assertIn("wanted pile", no_owner)
 
     def test_recipe_ownership_and_uncertain_suggestions_are_not_invented(self):
         crafting.save_catalog(self.path, [
@@ -213,12 +213,12 @@ class CraftingTests(unittest.TestCase):
         source = channel.answer(self.path, "Arcanite Bar", kind="source")
         self.assertIn("Pestlezugg", source)
         mats = channel.answer(self.path, "+100 hp on chest", kind="materials")
-        self.assertIn("verified reagent quantities", mats)
+        self.assertIn("reagent quantities aren't verified", mats)
         self.assertNotIn("Pestlezugg", mats)
         other = channel.answer(
             self.path, "+100 hp on chest", kind="source"
         )
-        self.assertIn("hasn't verified", other)
+        self.assertIn("hasn't tracked down", other)
 
     def test_extract_blizzard_static_nested_categories(self):
         result = craft_catalog.extract_tier(

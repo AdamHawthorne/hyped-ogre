@@ -20,7 +20,7 @@ class CustomCheckTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_crafting_request_uses_custom_emoji_not_unicode(self):
         reply = SimpleNamespace(id=5500)
         message = SimpleNamespace(
-            author=SimpleNamespace(bot=False),
+            author=SimpleNamespace(bot=False, id=42),
             guild=self.guild,
             channel=SimpleNamespace(id=raid.TEST_CHANNEL_ID),
             content="Can anyone do +100 hp on chest?",
@@ -33,12 +33,18 @@ class CustomCheckTests(unittest.IsolatedAsyncioTestCase):
             patch.object(feature.crafting, "channel", return_value=(
                 raid.TEST_CHANNEL_ID, 8888)),
             patch.object(feature, "answer", return_value="Matched recipe"),
+            patch.object(feature.crafting, "query", return_value={
+                "status": "found", "recipes": [{"recipe_id": 17187}],
+                "crafters": [],
+            }),
+            patch.object(feature.crafting, "store_desire") as wanted,
             patch.object(feature.crafting, "store_request") as saved,
         ):
             await self.board.on_message(message)
         message.add_reaction.assert_awaited_once_with(self.emoji)
         message.reply.assert_awaited_once()
         self.assertEqual(saved.call_args.kwargs["reply_id"], 5500)
+        wanted.assert_called_once()
 
     async def test_completion_requires_matching_custom_check_id(self):
         payload = SimpleNamespace(
